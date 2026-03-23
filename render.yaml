@@ -32,6 +32,8 @@ services:
         sync: false
       - key: S3_ENDPOINT
         sync: false
+      - key: S3_PUBLIC_BASE_URL
+        sync: false
       - key: SMTP_HOST
         sync: false
       - key: SMTP_PORT
@@ -68,6 +70,8 @@ services:
       - key: S3_BUCKET
         sync: false
       - key: S3_ENDPOINT
+        sync: false
+      - key: S3_PUBLIC_BASE_URL
         sync: false
       - key: SMTP_HOST
         sync: false

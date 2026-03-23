@@ -55,6 +55,11 @@ Required backend envs:
 - `AWS_REGION`
 - `S3_BUCKET`
 - `S3_ENDPOINT` if the provider is not AWS S3
+- `S3_PUBLIC_BASE_URL` when the upload API endpoint is different from the public file URL
+
+For Cloudflare R2 specifically:
+- `S3_ENDPOINT=https://<account-id>.r2.cloudflarestorage.com`
+- `S3_PUBLIC_BASE_URL=https://<your-public-bucket-domain-or-custom-domain>`
 
 ## 5. Backend on Render
 
@@ -86,6 +91,7 @@ Use the Render blueprint in [`render.yaml`](../render.yaml), or configure manual
 - `AWS_SECRET_KEY`
 - `AWS_REGION`
 - `S3_BUCKET`
+- `S3_PUBLIC_BASE_URL`
 - `SMTP_HOST`
 - `SMTP_PORT`
 - `SMTP_USER`

@@ -30,6 +30,7 @@ type S3StorageService struct {
 	bucket   string
 	region   string
 	endpoint string
+	publicBaseURL string
 }
 
 var allowedContentTypes = map[string]struct{}{
@@ -69,10 +70,11 @@ func NewS3StorageService(cfg *config.Config) (*S3StorageService, error) {
 	})
 
 	return &S3StorageService{
-		client:   client,
-		bucket:   cfg.S3Bucket,
-		region:   cfg.AWSRegion,
-		endpoint: cfg.S3Endpoint,
+		client:        client,
+		bucket:        cfg.S3Bucket,
+		region:        cfg.AWSRegion,
+		endpoint:      cfg.S3Endpoint,
+		publicBaseURL: strings.TrimRight(strings.TrimSpace(cfg.S3PublicBaseURL), "/"),
 	}, nil
 }
 
@@ -117,6 +119,9 @@ func (s *S3StorageService) Delete(fileURL string) error {
 }
 
 func (s *S3StorageService) publicURL(key string) string {
+	if strings.TrimSpace(s.publicBaseURL) != "" {
+		return s.publicBaseURL + "/" + key
+	}
 	if strings.TrimSpace(s.endpoint) != "" {
 		return strings.TrimRight(s.endpoint, "/") + "/" + s.bucket + "/" + key
 	}
@@ -130,6 +135,16 @@ func (s *S3StorageService) extractObjectKey(fileURL string) (string, error) {
 	}
 
 	trimmedPath := strings.TrimPrefix(parsedURL.Path, "/")
+	if strings.TrimSpace(s.publicBaseURL) != "" {
+		publicBase, err := url.Parse(s.publicBaseURL)
+		if err == nil {
+			basePath := strings.Trim(strings.TrimSpace(publicBase.Path), "/")
+			if basePath != "" && strings.HasPrefix(trimmedPath, basePath+"/") {
+				return strings.TrimPrefix(trimmedPath, basePath+"/"), nil
+			}
+		}
+		return trimmedPath, nil
+	}
 	if strings.TrimSpace(s.endpoint) != "" {
 		prefix := s.bucket + "/"
 		if strings.HasPrefix(trimmedPath, prefix) {

@@ -19,6 +19,7 @@ type Config struct {
 	AWSRegion          string
 	S3Bucket           string
 	S3Endpoint         string
+	S3PublicBaseURL    string
 	SMTPHost           string
 	SMTPPort           string
 	SMTPUser           string
@@ -41,6 +42,7 @@ func Load() (*Config, error) {
 		AWSRegion:          os.Getenv("AWS_REGION"),
 		S3Bucket:           firstNonEmpty(os.Getenv("S3_BUCKET"), os.Getenv("AWS_S3_BUCKET")),
 		S3Endpoint:         os.Getenv("S3_ENDPOINT"),
+		S3PublicBaseURL:    os.Getenv("S3_PUBLIC_BASE_URL"),
 		SMTPHost:           os.Getenv("SMTP_HOST"),
 		SMTPPort:           os.Getenv("SMTP_PORT"),
 		SMTPUser:           os.Getenv("SMTP_USER"),
