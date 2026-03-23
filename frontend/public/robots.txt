@@ -1,0 +1,12 @@
+# Allow crawling of public pages
+User-agent: *
+Allow: /
+Allow: /login
+Allow: /register
+
+# Disallow dashboard and authenticated pages
+Disallow: /dashboard
+Disallow: /api
+
+# Sitemap
+Sitemap: https://recruitmatch.com/sitemap.xml

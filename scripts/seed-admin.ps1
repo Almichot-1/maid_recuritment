@@ -1,0 +1,16 @@
+$env:PORT = "8080"
+$env:DATABASE_URL = "postgres://maid_app:maid_app_pw@127.0.0.1:55432/maid_tracking?sslmode=disable"
+$env:JWT_SECRET = "dev-jwt-secret"
+$env:REDIS_URL = "redis://127.0.0.1:6379/0"
+$env:AWS_ACCESS_KEY = "dev-access"
+$env:AWS_SECRET_KEY = "dev-secret"
+$env:AWS_REGION = "us-east-1"
+$env:AWS_S3_BUCKET = "e2e-local-bucket"
+$env:S3_ENDPOINT = "http://127.0.0.1:9000"
+$env:SMTP_HOST = "127.0.0.1"
+$env:SMTP_PORT = "1025"
+$env:SMTP_USER = "noreply@example.test"
+$env:SMTP_PASS = "dev-pass"
+$env:APP_BASE_URL = "http://localhost:3001"
+
+go run ./cmd/adminseed @args

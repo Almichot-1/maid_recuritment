@@ -1,0 +1,51 @@
+# Binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Test binary, built with `go test -c`
+*.test
+
+# Output of the go coverage tool
+*.out
+coverage.out
+
+# Dependency directories
+vendor/
+
+# Go workspace file
+go.work
+
+# Environment files
+.env
+.env.*
+!.env.example
+!frontend/.env.example
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Local development artifacts
+.dev-artifacts/
+.dev-postgres/
+.dev-s3-data/
+tmp/
+reports/
+*.log
+coverage-service
+coverage_service
+
+# Frontend build and local files
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+frontend/.vercel/
+frontend/coverage/
+frontend/*.tsbuildinfo
