@@ -163,14 +163,18 @@ func main() {
 	adminPairingHandler := handler.NewAdminPairingHandler(pairingService, userRepository)
 	notificationService.SetRealtimeNotifier(notificationHandler)
 
-	if _, err := jobs.StartExpiryScheduler(selectionService); err != nil {
-		log.Fatalf("failed to start expiry scheduler: %v", err)
+	if cfg.RunExpiryScheduler {
+		if _, err := jobs.StartExpiryScheduler(selectionService); err != nil {
+			log.Fatalf("failed to start expiry scheduler: %v", err)
+		}
+	} else {
+		log.Printf("expiry scheduler disabled for this process")
 	}
 
 	router := chi.NewRouter()
 	router.Use(chimiddleware.RequestID)
 	router.Use(chimiddleware.Recoverer)
-	router.Use(appmiddleware.CORS)
+	router.Use(appmiddleware.CORS(cfg.CORSAllowedOrigins))
 	router.Use(appmiddleware.Logging)
 
 	apiRouter := chi.NewRouter()

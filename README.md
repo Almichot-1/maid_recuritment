@@ -1,52 +1,71 @@
-# Maid Recruitment Tracking Platform (Go Backend)
+# Maid Recruitment Platform
 
-A Clean Architecture project skeleton for a maid recruitment tracking platform.
+Full-stack recruitment platform for Ethiopian and foreign agencies, with:
+- agency authentication and approvals
+- private partner workspaces
+- candidate sharing, selection, approvals, and tracking
+- admin portal with audit logs and platform settings
 
-## Project Structure
+## Tech Stack
 
-- `cmd/api` - API entry point
-- `internal/domain` - Core entities and interfaces
-- `internal/repository` - Data access layer
-- `internal/service` - Business logic layer
-- `internal/handler` - HTTP handlers
-- `internal/middleware` - Cross-cutting concerns (auth, logging)
-- `internal/config` - Configuration loader
-- `pkg/utils` - Shared utility functions
-- `migrations` - SQL migration files
+- Backend: Go, Chi, GORM, PostgreSQL
+- Frontend: Next.js 14, TypeScript, Tailwind, React Query, Zustand
+- File storage: S3-compatible object storage
+- Email: SMTP
 
-## Prerequisites
+## Repository Layout
 
-- Go 1.22+
-- `make`
-- Optional for migrations: [golang-migrate](https://github.com/golang-migrate/migrate)
+- [`cmd/api`](./cmd/api) - main API server
+- [`cmd/expiryworker`](./cmd/expiryworker) - scheduled expiry worker for production
+- [`cmd/adminseed`](./cmd/adminseed) - admin seeding tool
+- [`frontend`](./frontend) - Next.js application
+- [`internal`](./internal) - backend domain, services, handlers, repositories, middleware
+- [`migrations`](./migrations) - SQL migrations
+- [`scripts`](./scripts) - local dev and test helpers
 
-## Setup
+## Local Development
 
-1. Install dependencies:
+1. Copy [`.env.example`](./.env.example) to `.env` and fill values.
+2. Copy [`frontend/.env.example`](./frontend/.env.example) to `frontend/.env.local`.
+3. Run migrations.
+4. Start the API:
    ```bash
-   go mod tidy
+   make run-api
    ```
-2. Copy/edit environment variables in `.env`.
-3. Run the API:
+5. Start the frontend:
    ```bash
-   make run
+   cd frontend
+   npm install
+   npm run dev
    ```
 
-## Environment Variables
+## Useful Commands
 
-- `PORT` (default: `8080`)
-- `DATABASE_URL`
-- `JWT_SECRET`
-- `AWS_S3_BUCKET`
-- `REDIS_URL`
+- `make run-api`
+- `make run-expiry-worker`
+- `make build-api`
+- `make build-expiry-worker`
+- `make migrate-up`
+- `make migrate-down`
+- `make test`
 
-## Available Make Commands
+Frontend:
+- `npm run dev`
+- `npm run build`
+- `npm run lint`
+- `npx tsc --noEmit`
 
-- `make run` - Start API server
-- `make migrate-up` - Apply SQL migrations
-- `make migrate-down` - Rollback one migration step
-- `make test` - Run tests
+## Health Check
 
-## Current Endpoints
+- `GET /api/v1/health`
 
-- `GET /health` - Health check endpoint
+## Deployment
+
+Deployment is prepared for:
+- Frontend on Vercel
+- Backend API on Render
+- Expiry worker on Render Cron Jobs
+- PostgreSQL on Supabase
+- S3-compatible storage for documents and media
+
+See the full deployment guide in [docs/deployment.md](./docs/deployment.md).
