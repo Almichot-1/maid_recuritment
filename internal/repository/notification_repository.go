@@ -7,7 +7,6 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"maid-recruitment-tracking/internal/config"
@@ -49,16 +48,9 @@ func (r *GormNotificationRepository) CountByUserID(userID string, unreadOnly boo
 }
 
 func NewGormNotificationRepository(cfg *config.Config) (*GormNotificationRepository, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	if strings.TrimSpace(cfg.DatabaseURL) == "" {
-		return nil, fmt.Errorf("database url is empty")
-	}
-
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	db, err := openDatabase(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("connect postgres: %w", err)
+		return nil, err
 	}
 
 	return &GormNotificationRepository{db: db}, nil

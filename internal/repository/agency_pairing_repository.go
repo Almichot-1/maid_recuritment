@@ -7,7 +7,6 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgconn"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"maid-recruitment-tracking/internal/config"
@@ -28,16 +27,9 @@ func (r *GormAgencyPairingRepository) DB() *gorm.DB {
 }
 
 func NewGormAgencyPairingRepository(cfg *config.Config) (*GormAgencyPairingRepository, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	if strings.TrimSpace(cfg.DatabaseURL) == "" {
-		return nil, fmt.Errorf("database url is empty")
-	}
-
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	db, err := openDatabase(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("connect postgres: %w", err)
+		return nil, err
 	}
 
 	return &GormAgencyPairingRepository{db: db}, nil

@@ -49,3 +49,4 @@ frontend/.env.local
 frontend/.vercel/
 frontend/coverage/
 frontend/*.tsbuildinfo
+.lh/

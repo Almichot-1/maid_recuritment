@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 
 	"maid-recruitment-tracking/internal/config"
@@ -20,16 +19,9 @@ type GormAgencyApprovalRepository struct {
 }
 
 func NewGormAgencyApprovalRepository(cfg *config.Config) (*GormAgencyApprovalRepository, error) {
-	if cfg == nil {
-		return nil, fmt.Errorf("config is nil")
-	}
-	if strings.TrimSpace(cfg.DatabaseURL) == "" {
-		return nil, fmt.Errorf("database url is empty")
-	}
-
-	db, err := gorm.Open(postgres.Open(cfg.DatabaseURL), &gorm.Config{})
+	db, err := openDatabase(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("connect postgres: %w", err)
+		return nil, err
 	}
 
 	return &GormAgencyApprovalRepository{db: db}, nil
