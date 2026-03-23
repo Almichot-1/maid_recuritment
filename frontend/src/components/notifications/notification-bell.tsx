@@ -20,12 +20,17 @@ import { getNotificationIcon, getNotificationColor } from "@/lib/notification-ut
 
 export function NotificationBell() {
   const router = useRouter()
+  const [open, setOpen] = React.useState(false)
   const { count } = useUnreadCount()
-  const { data: recentNotifications = [], isLoading } = useNotifications()
+  const { data: notificationData, isLoading } = useNotifications(false, {
+    enabled: open,
+    pageSize: 5,
+    refetchInterval: open ? 60000 : false,
+  })
   const { mutate: markAsRead } = useMarkAsRead()
   const { mutate: markAllAsRead, isPending: isMarkingAll } = useMarkAllAsRead()
 
-  const lastFive = recentNotifications.slice(0, 5)
+  const lastFive = notificationData?.notifications || []
 
   const handleNotificationClick = (notification: Notification) => {
     if (!notification.is_read) {
@@ -43,7 +48,7 @@ export function NotificationBell() {
   }
 
   return (
-    <DropdownMenu>
+    <DropdownMenu open={open} onOpenChange={setOpen}>
       <DropdownMenuTrigger asChild>
         <Button variant="ghost" size="icon" className="relative">
           <Bell className="h-5 w-5" />

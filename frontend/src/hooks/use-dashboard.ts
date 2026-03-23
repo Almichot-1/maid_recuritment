@@ -26,6 +26,8 @@ export function useDashboardStats() {
       return response.data;
     },
     enabled: Boolean(user) && (!requiresWorkspace || (isPairingReady && Boolean(activePairingId))),
-    refetchInterval: 30000, // Background polling every 30 seconds
+    staleTime: 60000,
+    refetchInterval: 120000,
+    refetchOnWindowFocus: false,
   });
 }

@@ -6,6 +6,7 @@ import api from "@/lib/api"
 import { useAuthStore } from "@/stores/auth-store"
 import { LoginInput, RegisterFormInput } from "@/lib/validations"
 import { AccountStatus, User, UserRole } from "@/types"
+import { getRoleHomePath } from "@/lib/role-home"
 
 interface AuthResponse {
   user: User
@@ -53,7 +54,7 @@ export function useLogin() {
     onSuccess: (data) => {
       setAuth(data.user, data.token)
       toast.success("Successfully logged in")
-      router.push("/dashboard")
+      router.replace(getRoleHomePath(data.user.role))
     },
     onError: (error) => {
       const message = getLoginErrorMessage(error)

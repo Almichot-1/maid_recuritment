@@ -24,7 +24,8 @@ export function usePairingContext() {
       return response.data.context
     },
     enabled: Boolean(user),
-    staleTime: 30_000,
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
   })
 
   React.useEffect(() => {

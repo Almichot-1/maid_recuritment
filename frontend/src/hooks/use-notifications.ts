@@ -6,20 +6,44 @@ import { useCurrentUser } from '@/hooks/use-auth';
 import { usePairingStore } from '@/stores/pairing-store';
 import { Notification, UserRole } from '@/types';
 
-export function useNotifications(unreadOnly: boolean = false) {
+interface NotificationApiResponse {
+  notifications: Notification[];
+  unread_count: number;
+  pagination?: {
+    page: number;
+    page_size: number;
+    total: number;
+  };
+}
+
+interface UseNotificationsOptions {
+  enabled?: boolean;
+  pageSize?: number;
+  refetchInterval?: number | false;
+}
+
+export function useNotifications(unreadOnly: boolean = false, options: UseNotificationsOptions = {}) {
   const { user } = useCurrentUser();
   const activePairingId = usePairingStore((state) => state.activePairingId);
   const isPairingReady = usePairingStore((state) => state.isReady);
   const requiresWorkspace = user?.role === UserRole.ETHIOPIAN_AGENT || user?.role === UserRole.FOREIGN_AGENT;
+  const { enabled = true, pageSize, refetchInterval = 60000 } = options;
 
   return useQuery({
-    queryKey: ['notifications', unreadOnly],
+    queryKey: ['notifications', unreadOnly, pageSize],
     queryFn: async () => {
-      const response = await api.get<{ notifications: Notification[] }>('/notifications', { params: { unread_only: unreadOnly } });
-      return response.data.notifications;
+      const response = await api.get<NotificationApiResponse>('/notifications', {
+        params: {
+          unread_only: unreadOnly,
+          ...(pageSize ? { page_size: pageSize } : {}),
+        },
+      });
+      return response.data;
     },
-    enabled: Boolean(user) && (!requiresWorkspace || (isPairingReady && Boolean(activePairingId))),
-    refetchInterval: 30000, // Refetch organically every 30 seconds
+    enabled: enabled && Boolean(user) && (!requiresWorkspace || (isPairingReady && Boolean(activePairingId))),
+    staleTime: 60000,
+    refetchInterval,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
       const status = (error as AxiosError)?.response?.status;
       if (status === 401 || status === 403) {
@@ -32,8 +56,8 @@ export function useNotifications(unreadOnly: boolean = false) {
 }
 
 export function useUnreadCount() {
-  const { data: notifications = [] } = useNotifications(true);
-  return { count: notifications.length };
+  const { data } = useNotifications(false, { pageSize: 1 });
+  return { count: data?.unread_count ?? 0 };
 }
 
 export function useMarkAsRead() {
