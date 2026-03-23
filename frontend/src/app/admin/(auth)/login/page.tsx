@@ -3,6 +3,7 @@
 import * as React from "react"
 import Link from "next/link"
 import { useRouter } from "next/navigation"
+import axios from "axios"
 import { Eye, EyeOff, KeyRound, Loader2, Mail, ShieldCheck } from "lucide-react"
 
 import { useAdminLogin } from "@/hooks/use-admin-auth"
@@ -14,7 +15,7 @@ import { Label } from "@/components/ui/label"
 
 export default function AdminLoginPage() {
   const router = useRouter()
-  const { mutate: login, isPending } = useAdminLogin()
+  const { mutate: login, isPending, error, reset } = useAdminLogin()
   const isAuthenticated = useAdminAuthStore((state) => state.isAuthenticated)
 
   const [email, setEmail] = React.useState("")
@@ -28,8 +29,30 @@ export default function AdminLoginPage() {
     }
   }, [isAuthenticated, router])
 
+  const feedbackMessage = React.useMemo(() => {
+    if (!error) {
+      return ""
+    }
+
+    if (axios.isAxiosError<{ error?: string }>(error)) {
+      const status = error.response?.status
+      if (status === 423) {
+        return "This admin account is temporarily locked after repeated failed attempts. Please wait 15 minutes, then try again."
+      }
+
+      if (status === 401) {
+        return "The email, password, or MFA code is not correct. Your entries were kept so you can fix only the wrong part."
+      }
+
+      return error.response?.data?.error || "We could not sign you in right now."
+    }
+
+    return "We could not sign you in right now."
+  }, [error])
+
   const handleSubmit = (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault()
+    reset()
     login({ email, password, otp_code: otpCode })
   }
 
@@ -54,6 +77,12 @@ export default function AdminLoginPage() {
       </CardHeader>
       <CardContent>
         <form className="space-y-5" onSubmit={handleSubmit}>
+          {feedbackMessage ? (
+            <div className="rounded-2xl border border-rose-400/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+              {feedbackMessage}
+            </div>
+          ) : null}
+
           <div className="space-y-2">
             <Label htmlFor="admin-email" className="text-slate-200">Email</Label>
             <div className="relative">
@@ -65,7 +94,12 @@ export default function AdminLoginPage() {
                 className="border-white/10 bg-white/5 pl-9 text-white placeholder:text-slate-500"
                 placeholder="admin@platform.test"
                 value={email}
-                onChange={(event) => setEmail(event.target.value)}
+                onChange={(event) => {
+                  if (error) {
+                    reset()
+                  }
+                  setEmail(event.target.value)
+                }}
                 required
               />
             </div>
@@ -81,7 +115,12 @@ export default function AdminLoginPage() {
                 className="border-white/10 bg-white/5 pr-10 text-white placeholder:text-slate-500"
                 placeholder="Enter your admin password"
                 value={password}
-                onChange={(event) => setPassword(event.target.value)}
+                onChange={(event) => {
+                  if (error) {
+                    reset()
+                  }
+                  setPassword(event.target.value)
+                }}
                 required
               />
               <Button
@@ -108,7 +147,12 @@ export default function AdminLoginPage() {
                 className="border-white/10 bg-white/5 pl-9 text-white placeholder:text-slate-500"
                 placeholder="123456"
                 value={otpCode}
-                onChange={(event) => setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))}
+                onChange={(event) => {
+                  if (error) {
+                    reset()
+                  }
+                  setOtpCode(event.target.value.replace(/\D/g, "").slice(0, 6))
+                }}
                 required
               />
             </div>

@@ -4,6 +4,7 @@ import * as React from "react"
 import Link from "next/link"
 import { useParams } from "next/navigation"
 import {
+  AlertTriangle,
   ArrowLeft,
   ChevronRight,
   Clock3,
@@ -71,6 +72,7 @@ export default function CandidateTrackingPage() {
   const canTrack = hasTracking || candidate.status === CandidateStatus.IN_PROGRESS || candidate.status === CandidateStatus.COMPLETED
   const completedSteps = progressData?.steps.filter((step) => step.step_status === "completed").length ?? 0
   const activeStep = progressData?.steps.find((step) => step.step_status === "in_progress")
+  const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
 
   return (
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
@@ -131,8 +133,8 @@ export default function CandidateTrackingPage() {
               />
               <MetricCard
                 icon={<Gauge className="h-5 w-5 text-sky-300" />}
-                label="Progress"
-                value={hasTracking ? `${completedSteps}/${progressData.steps.length} steps` : "Not started"}
+                label={failedStep ? "Blocked at" : "Progress"}
+                value={failedStep ? failedStep.step_name : hasTracking ? `${completedSteps}/${progressData.steps.length} steps` : "Not started"}
               />
               <MetricCard
                 icon={<Clock3 className="h-5 w-5 text-amber-300" />}
@@ -163,7 +165,7 @@ export default function CandidateTrackingPage() {
         </Card>
       ) : hasTracking ? (
         <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_320px]">
-          <Card className="animated-border shadow-sm">
+            <Card className="animated-border shadow-sm">
             <CardHeader>
               <div className="flex items-center justify-between gap-4">
                 <CardTitle>Step-by-step progress</CardTitle>
@@ -179,6 +181,18 @@ export default function CandidateTrackingPage() {
               </div>
             </CardHeader>
             <CardContent>
+              {failedStep ? (
+                <div className="mb-5 rounded-[1.4rem] border border-rose-300/40 bg-rose-50/85 px-4 py-4 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100">
+                  <div className="flex items-start gap-3">
+                    <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <div className="space-y-1">
+                      <p className="font-semibold">Issue reported in {failedStep.step_name}</p>
+                      <p>{failedStep.notes || "The Ethiopian agency marked this milestone as failed and will update it here once it is resolved."}</p>
+                    </div>
+                  </div>
+                </div>
+              ) : null}
+
               {!canUpdateProgress && isEthiopianAgent ? (
                 <div className="mb-5 rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
                   This candidate belongs to another Ethiopian agency account, so you can view the process but you cannot update it.
@@ -201,12 +215,20 @@ export default function CandidateTrackingPage() {
               <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Current focus</p>
                 <p className="mt-2 text-base font-semibold text-foreground">
-                  {activeStep ? activeStep.step_name : candidate.status === CandidateStatus.COMPLETED ? "Recruitment completed" : "Waiting for the next milestone"}
+                  {failedStep
+                    ? `${failedStep.step_name} needs attention`
+                    : activeStep
+                      ? activeStep.step_name
+                      : candidate.status === CandidateStatus.COMPLETED
+                        ? "Recruitment completed"
+                        : "Waiting for the next milestone"}
                 </p>
                 <p className="mt-2">
-                  {activeStep
-                    ? "This is the milestone that is currently active in the shared process."
-                    : "As soon as a step starts, it will show here for both agencies."}
+                  {failedStep
+                    ? failedStep.notes || "The current milestone has been marked as failed. The written reason will stay visible here for both agencies until the Ethiopian agency resumes it."
+                    : activeStep
+                      ? "This is the milestone that is currently active in the shared process."
+                      : "As soon as a step starts, it will show here for both agencies."}
                 </p>
               </div>
               <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">

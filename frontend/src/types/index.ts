@@ -124,7 +124,7 @@ export interface StatusStep {
   id: string;
   candidate_id: string;
   step_name: string;
-  step_status: 'pending' | 'in_progress' | 'completed';
+  step_status: 'pending' | 'in_progress' | 'completed' | 'failed';
   completed_at?: string;
   notes?: string;
   updated_at: string;

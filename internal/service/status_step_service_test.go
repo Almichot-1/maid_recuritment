@@ -353,10 +353,13 @@ func TestStatusStepService_UpdateStepAuthorizationAndTransitions(t *testing.T) {
 
 func TestStatusStepHelpers(t *testing.T) {
 	assert.True(t, isValidStepStatus(domain.Pending))
+	assert.True(t, isValidStepStatus(domain.Failed))
 	assert.False(t, isValidStepStatus(domain.StepStatus("invalid")))
 
 	assert.True(t, canTransitionStep(domain.Pending, domain.InProgress))
 	assert.True(t, canTransitionStep(domain.InProgress, domain.Completed))
+	assert.True(t, canTransitionStep(domain.InProgress, domain.Failed))
+	assert.True(t, canTransitionStep(domain.Failed, domain.InProgress))
 	assert.False(t, canTransitionStep(domain.Pending, domain.Completed))
 	assert.True(t, canTransitionStep(domain.Completed, domain.Completed))
 	assert.False(t, canTransitionStep(domain.Completed, domain.InProgress))
@@ -364,6 +367,26 @@ func TestStatusStepHelpers(t *testing.T) {
 	steps := predefinedStepNames()
 	assert.Len(t, steps, len(predefinedStepNames()))
 	assert.Equal(t, domain.MedicalTest, steps[0])
+}
+
+func TestStatusStepService_UpdateStepRequiresReasonWhenFailing(t *testing.T) {
+	service := &StatusStepService{
+		statusStepRepository: &statusStepRepoBehaviorMock{
+			getByCandidateIDFn: func(candidateID string) ([]*domain.StatusStep, error) {
+				return []*domain.StatusStep{{ID: "s1", CandidateID: candidateID, StepName: domain.Medical, StepStatus: domain.InProgress}}, nil
+			},
+		},
+		candidateRepository: &statusStepCandidateRepoMock{
+			getByIDFn: func(id string) (*domain.Candidate, error) {
+				return &domain.Candidate{ID: id, CreatedBy: "owner-1", Status: domain.CandidateStatusInProgress}, nil
+			},
+		},
+		selectionRepository: &statusStepSelectionRepoMock{},
+		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
+	}
+
+	err := service.UpdateStep("cand-1", domain.Medical, "owner-1", domain.Failed, "")
+	require.ErrorIs(t, err, ErrStepFailureReasonRequired)
 }
 
 func TestStatusStepService_UpdateStepMarksCandidateCompletedWhenFinalStepFinishes(t *testing.T) {

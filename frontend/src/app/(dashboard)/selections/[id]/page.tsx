@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { format } from "date-fns"
 import {
+  AlertTriangle,
   BadgeCheck,
   CheckCircle2,
   ChevronRight,
@@ -49,11 +50,17 @@ export default function SelectionDetailPage() {
   const { data: approvalStatus, isLoading: isApprovalsLoading } = useSelectionApprovals(selectionId)
   const { mutate: approveSelection, isPending: isApproving } = useApproveSelection(selectionId, candidateId)
   const { mutate: rejectSelection, isPending: isRejecting } = useRejectSelection(selectionId, candidateId)
-  const { mutate: uploadSelectionDocument, isPending: isUploadingSelectionDocument } = useUploadSelectionDocument(selectionId)
+  const { mutateAsync: uploadSelectionDocument, isPending: isUploadingSelectionDocument } = useUploadSelectionDocument(selectionId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId || "")
 
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
+  const [replacingDocumentType, setReplacingDocumentType] = React.useState<"contract" | "employer_id" | null>(null)
+  const [activeUploadType, setActiveUploadType] = React.useState<"contract" | "employer_id" | null>(null)
+  const [uploadProgress, setUploadProgress] = React.useState<Record<"contract" | "employer_id", number>>({
+    contract: 0,
+    employer_id: 0,
+  })
 
   if (isSelectionLoading || isApprovalsLoading || (candidateId && isProgressLoading)) {
     return (
@@ -88,6 +95,7 @@ export default function SelectionDetailPage() {
   const hasEmployerContract = !!selection.employer_contract?.file_url
   const hasEmployerID = !!selection.employer_id?.file_url
   const hasRequiredEmployerDocuments = hasEmployerContract && hasEmployerID
+  const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
 
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
     if (!candidateId || !canUpdateProgress) {
@@ -96,8 +104,23 @@ export default function SelectionDetailPage() {
     updateStep({ step_name: stepName, status, notes })
   }
 
-  const handleUploadSelectionDocument = (type: "contract" | "employer_id", file: File) => {
-    uploadSelectionDocument({ type, file })
+  const handleUploadSelectionDocument = async (type: "contract" | "employer_id", file: File) => {
+    setActiveUploadType(type)
+    setUploadProgress((current) => ({ ...current, [type]: 0 }))
+
+    try {
+      await uploadSelectionDocument({
+        type,
+        file,
+        onProgress: (progress) => {
+          setUploadProgress((current) => ({ ...current, [type]: progress }))
+        },
+      })
+      setReplacingDocumentType((current) => (current === type ? null : current))
+    } finally {
+      setActiveUploadType((current) => (current === type ? null : current))
+      setUploadProgress((current) => ({ ...current, [type]: 0 }))
+    }
   }
 
   const handleApprove = () => {
@@ -240,12 +263,20 @@ export default function SelectionDetailPage() {
                   label="Contract file"
                   description="Offer letter, signed contract, or requested working terms."
                   document={selection.employer_contract}
+                  canReplace={!isEthiopianAgent && isPending}
+                  onReplace={() => setReplacingDocumentType("contract")}
+                  uploading={activeUploadType === "contract"}
+                  progress={uploadProgress.contract}
                 />
                 <SupportingDocumentCard
                   icon={<FileBadge2 className="h-4 w-4" />}
                   label="Employer ID"
                   description="Passport, national ID, or employer identity proof."
                   document={selection.employer_id}
+                  canReplace={!isEthiopianAgent && isPending}
+                  onReplace={() => setReplacingDocumentType("employer_id")}
+                  uploading={activeUploadType === "employer_id"}
+                  progress={uploadProgress.employer_id}
                 />
               </div>
 
@@ -257,11 +288,15 @@ export default function SelectionDetailPage() {
 
               {!isEthiopianAgent && isPending ? (
                 <div className="grid gap-4 md:grid-cols-2">
-                  {!hasEmployerContract ? (
+                  {!hasEmployerContract || replacingDocumentType === "contract" ? (
                     <DocumentUpload
                       documentType="contract"
-                      title="Upload contract"
-                      description="Drop a PDF, JPG, or PNG contract file."
+                      title={hasEmployerContract ? "Replace contract" : "Upload contract"}
+                      description={
+                        activeUploadType === "contract" && uploadProgress.contract > 0
+                          ? `Uploading... ${uploadProgress.contract}%`
+                          : "Drop a PDF, JPG, or PNG contract file."
+                      }
                       accept={{
                         "application/pdf": [".pdf"],
                         "image/jpeg": [".jpg", ".jpeg"],
@@ -269,16 +304,23 @@ export default function SelectionDetailPage() {
                       }}
                       maxSize={10485760}
                       mode="instant"
-                      disabled={isUploadingSelectionDocument}
-                      onUpload={(file) => handleUploadSelectionDocument("contract", file)}
+                      disabled={isUploadingSelectionDocument && activeUploadType !== "contract"}
+                      onRemove={() => setReplacingDocumentType((current) => (current === "contract" ? null : current))}
+                      onUpload={(file) => {
+                        void handleUploadSelectionDocument("contract", file)
+                      }}
                     />
                   ) : null}
 
-                  {!hasEmployerID ? (
+                  {!hasEmployerID || replacingDocumentType === "employer_id" ? (
                     <DocumentUpload
                       documentType="employer_id"
-                      title="Upload employer ID"
-                      description="Drop a PDF, JPG, or PNG identity document."
+                      title={hasEmployerID ? "Replace employer ID" : "Upload employer ID"}
+                      description={
+                        activeUploadType === "employer_id" && uploadProgress.employer_id > 0
+                          ? `Uploading... ${uploadProgress.employer_id}%`
+                          : "Drop a PDF, JPG, or PNG identity document."
+                      }
                       accept={{
                         "application/pdf": [".pdf"],
                         "image/jpeg": [".jpg", ".jpeg"],
@@ -286,8 +328,11 @@ export default function SelectionDetailPage() {
                       }}
                       maxSize={10485760}
                       mode="instant"
-                      disabled={isUploadingSelectionDocument}
-                      onUpload={(file) => handleUploadSelectionDocument("employer_id", file)}
+                      disabled={isUploadingSelectionDocument && activeUploadType !== "employer_id"}
+                      onRemove={() => setReplacingDocumentType((current) => (current === "employer_id" ? null : current))}
+                      onUpload={(file) => {
+                        void handleUploadSelectionDocument("employer_id", file)
+                      }}
                     />
                   ) : null}
                 </div>
@@ -305,6 +350,20 @@ export default function SelectionDetailPage() {
             <CardContent className="space-y-4">
               {showTrackingTimeline ? (
                 <>
+                  {failedStep ? (
+                    <div className="rounded-[1.4rem] border border-rose-300/40 bg-rose-50/80 px-4 py-4 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100">
+                      <div className="flex items-start gap-3">
+                        <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                        <div className="space-y-1">
+                          <p className="font-semibold">Issue reported in {failedStep.step_name}</p>
+                          <p>
+                            {failedStep.notes || "The Ethiopian agency marked this milestone as failed and will post the recovery update here."}
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  ) : null}
+
                   <div className="space-y-2">
                     <div className="flex items-center justify-between gap-3 text-sm">
                       <span className="text-muted-foreground">Overall candidate status</span>
@@ -436,17 +495,20 @@ export default function SelectionDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <SummaryRow label="Selection ID" value={selection.id} mono />
-              <SummaryRow label="Candidate ID" value={selection.candidate_id} mono />
-              <SummaryRow label="Selected By" value={selection.selected_by} mono />
-              <SummaryRow label="Expires" value={format(new Date(selection.expires_at), "MMM dd, yyyy h:mm a")} />
-            </CardContent>
-          </Card>
+          {failedStep ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Current Issue</CardTitle>
+                <CardDescription>The shared recruitment process is waiting on this issue to be resolved.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="rounded-2xl border border-rose-300/50 bg-rose-50/80 p-4 text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/25 dark:text-rose-100">
+                  <p className="font-semibold">{failedStep.step_name}</p>
+                  <p className="mt-2">{failedStep.notes || "The Ethiopian agency has not added a written reason yet."}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </div>
 
@@ -504,25 +566,24 @@ function ApprovalPartyCard({ label, approved }: { label: string; approved: boole
   )
 }
 
-function SummaryRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={mono ? "break-all font-mono text-xs" : "font-medium"}>{value}</p>
-    </div>
-  )
-}
-
 function SupportingDocumentCard({
   icon,
   label,
   description,
   document,
+  canReplace = false,
+  onReplace,
+  uploading = false,
+  progress = 0,
 }: {
   icon: React.ReactNode
   label: string
   description: string
   document?: { file_url: string; file_name: string; uploaded_at?: string }
+  canReplace?: boolean
+  onReplace?: () => void
+  uploading?: boolean
+  progress?: number
 }) {
   if (!document) {
     return (
@@ -547,10 +608,10 @@ function SupportingDocumentCard({
         {label}
       </div>
       <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-      <div className="mt-4 space-y-3 rounded-2xl border border-emerald-200/60 bg-background/90 p-3 dark:border-emerald-900/30">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium text-foreground">{document.file_name}</p>
+        <div className="mt-4 space-y-3 rounded-2xl border border-emerald-200/60 bg-background/90 p-3 dark:border-emerald-900/30">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-foreground">{document.file_name}</p>
             <p className="text-xs text-muted-foreground">
               {document.uploaded_at ? `Uploaded ${format(new Date(document.uploaded_at), "MMM dd, yyyy h:mm a")}` : "Uploaded"}
             </p>
@@ -560,12 +621,21 @@ function SupportingDocumentCard({
             Ready
           </Badge>
         </div>
+        {uploading ? (
+          <p className="text-xs font-medium text-primary">Uploading replacement... {progress}%</p>
+        ) : null}
         <Button variant="outline" size="sm" asChild>
           <a href={document.file_url} target="_blank" rel="noreferrer">
             <Eye className="mr-2 h-4 w-4" />
             View File
           </a>
         </Button>
+        {canReplace && onReplace ? (
+          <Button variant="ghost" size="sm" onClick={onReplace}>
+            <FileText className="mr-2 h-4 w-4" />
+            Replace File
+          </Button>
+        ) : null}
       </div>
     </div>
   )

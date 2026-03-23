@@ -19,7 +19,6 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
 import { NotificationBell } from "@/components/notifications/notification-bell"
-import { MobileNav } from "./mobile-nav"
 import { isRoleHomePath } from "@/lib/role-home"
 
 export function Header() {
@@ -46,10 +45,6 @@ export function Header() {
 
   return (
     <header className="flex h-14 items-center gap-4 border-b bg-background px-4 lg:px-6 sticky top-0 z-40 w-full shadow-sm md:shadow-none min-w-0">
-      
-      {/* Mobile Drawer Trigger via MobileNav component */}
-      <MobileNav />
-      
       <div className="flex-1 flex items-center">
         <h1 className="text-lg font-semibold tracking-tight truncate hidden md:block">
           {title}

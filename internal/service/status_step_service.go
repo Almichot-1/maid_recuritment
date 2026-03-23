@@ -16,6 +16,7 @@ import (
 
 var ErrStepNotFound = errors.New("step not found")
 var ErrInvalidStepTransition = errors.New("invalid step transition")
+var ErrStepFailureReasonRequired = errors.New("add a short reason before marking this step as failed")
 
 type StatusStepService struct {
 	statusStepRepository domain.StatusStepRepository
@@ -102,6 +103,9 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	}
 	if !isValidStepStatus(status) {
 		return fmt.Errorf("invalid step status")
+	}
+	if status == domain.Failed && strings.TrimSpace(notes) == "" {
+		return ErrStepFailureReasonRequired
 	}
 
 	candidate, err := s.candidateRepository.GetByID(candidateID)
@@ -213,6 +217,22 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 				selection.SelectedBy,
 				"Recruitment completed",
 				"All recruitment steps have been completed for this candidate.",
+				"status_update",
+				"candidate",
+				candidateID,
+			)
+			return nil
+		}
+
+		if status == domain.Failed {
+			failureMessage := fmt.Sprintf("Step '%s' was marked as failed.", target.StepName)
+			if strings.TrimSpace(target.Notes) != "" {
+				failureMessage = fmt.Sprintf("%s Reason: %s", failureMessage, target.Notes)
+			}
+			_ = s.notificationService.Send(
+				selection.SelectedBy,
+				"Recruitment issue reported",
+				failureMessage,
 				"status_update",
 				"candidate",
 				candidateID,
@@ -385,7 +405,7 @@ func approximateCompletedSteps(completedLegacy, totalLegacy, totalCurrent int) i
 
 func isValidStepStatus(status domain.StepStatus) bool {
 	switch status {
-	case domain.Pending, domain.InProgress, domain.Completed:
+	case domain.Pending, domain.InProgress, domain.Completed, domain.Failed:
 		return true
 	default:
 		return false
@@ -401,7 +421,9 @@ func canTransitionStep(current, next domain.StepStatus) bool {
 	case domain.Pending:
 		return next == domain.InProgress
 	case domain.InProgress:
-		return next == domain.Completed
+		return next == domain.Completed || next == domain.Failed
+	case domain.Failed:
+		return next == domain.InProgress || next == domain.Failed
 	default:
 		return false
 	}

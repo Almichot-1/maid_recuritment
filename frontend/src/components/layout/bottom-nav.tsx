@@ -9,6 +9,18 @@ import { useCurrentUser } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { getRoleHomePath, isRoleHomePath } from "@/lib/role-home"
 
+function matchesNavPath(pathname: string, href: string) {
+  if (isRoleHomePath(href)) {
+    return isRoleHomePath(pathname)
+  }
+
+  if (pathname === href) {
+    return true
+  }
+
+  return pathname.startsWith(`${href}/`)
+}
+
 export function BottomNav() {
   const pathname = usePathname()
   const { user } = useCurrentUser()
@@ -54,13 +66,6 @@ export function BottomNav() {
     }
   }, [])
 
-  const isActive = (href: string) => {
-    if (isRoleHomePath(href)) {
-      return isRoleHomePath(pathname)
-    }
-    return pathname.startsWith(href)
-  }
-
   if (isKeyboardOpen || (isReady && !hasActivePairs)) {
     return null
   }
@@ -70,7 +75,7 @@ export function BottomNav() {
       <div className="grid grid-cols-4 h-16">
         {navItems.map((item) => {
           const Icon = item.icon
-          const active = isActive(item.href)
+          const active = matchesNavPath(pathname, item.href)
 
           return (
             <Link

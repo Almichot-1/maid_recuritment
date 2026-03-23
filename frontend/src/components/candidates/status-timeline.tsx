@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { CheckCircle2, Circle, Loader2, Lock, PlayCircle } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Circle, Loader2, Lock, PlayCircle, RotateCcw } from "lucide-react"
 import { format, isValid } from "date-fns"
 
 import { StatusStep } from "@/types"
@@ -47,20 +47,41 @@ const STEP_TONES: Record<StatusStep["step_status"], StepTone> = {
     cardClassName: "border-emerald-200/70 bg-emerald-50/65 dark:border-emerald-900/40 dark:bg-emerald-950/25",
     label: "Completed",
   },
+  failed: {
+    badgeClassName: "border-rose-200 bg-rose-100 text-rose-800 dark:border-rose-900/60 dark:bg-rose-950/40 dark:text-rose-200",
+    iconClassName: "border-rose-300 bg-rose-50 text-rose-700 shadow-[0_0_0_6px_rgba(244,63,94,0.12)] dark:border-rose-700 dark:bg-rose-950/60 dark:text-rose-200",
+    glowClassName: "bg-rose-400/30 dark:bg-rose-500/20",
+    cardClassName: "border-rose-200/70 bg-rose-50/65 dark:border-rose-900/40 dark:bg-rose-950/25",
+    label: "Needs Attention",
+  },
 }
 
 export function StatusTimeline({ steps, canUpdate, onUpdateStep, isUpdating }: StatusTimelineProps) {
   const [editingStep, setEditingStep] = React.useState<string | null>(null)
   const [notes, setNotes] = React.useState("")
+  const [editorError, setEditorError] = React.useState("")
+
+  const openEditor = (step: StatusStep) => {
+    setEditingStep(step.step_name)
+    setNotes(step.notes || "")
+    setEditorError("")
+  }
 
   const handleUpdateStatus = (stepName: string, newStatus: string) => {
     if (!onUpdateStep) {
       return
     }
 
-    onUpdateStep(stepName, newStatus, notes || undefined)
+    const trimmedNotes = notes.trim()
+    if (newStatus === "failed" && !trimmedNotes) {
+      setEditorError("Add a short reason so both agencies understand the issue.")
+      return
+    }
+
+    onUpdateStep(stepName, newStatus, trimmedNotes || undefined)
     setEditingStep(null)
     setNotes("")
+    setEditorError("")
   }
 
   return (
@@ -112,6 +133,8 @@ export function StatusTimeline({ steps, canUpdate, onUpdateStep, isUpdating }: S
                       <p className="mt-1 text-sm text-muted-foreground">
                         {step.step_status === "completed"
                           ? "This milestone has been completed and recorded in the shared process."
+                          : step.step_status === "failed"
+                            ? "This milestone is blocked right now. Open the notes below to see why it stopped and what needs to happen next."
                           : step.step_status === "in_progress"
                             ? "This milestone is currently active and waiting for the next update."
                             : "This milestone has not started yet."}
@@ -125,7 +148,7 @@ export function StatusTimeline({ steps, canUpdate, onUpdateStep, isUpdating }: S
                         size="sm"
                         variant={canStartStep ? "default" : "outline"}
                         disabled={isUpdating || !canStartStep}
-                        onClick={() => setEditingStep(step.step_name)}
+                        onClick={() => openEditor(step)}
                       >
                         {canStartStep ? (
                           <>
@@ -142,14 +165,39 @@ export function StatusTimeline({ steps, canUpdate, onUpdateStep, isUpdating }: S
                     ) : null}
 
                     {canUpdate && step.step_status === "in_progress" ? (
+                      <>
+                        <Button
+                          size="sm"
+                          onClick={() => handleUpdateStatus(step.step_name, "completed")}
+                          disabled={isUpdating}
+                          className="bg-emerald-600 text-white hover:bg-emerald-700"
+                        >
+                          {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
+                          Complete Step
+                        </Button>
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          className="border-rose-300 text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-200 dark:hover:bg-rose-950/30"
+                          onClick={() => openEditor(step)}
+                          disabled={isUpdating}
+                        >
+                          <AlertTriangle className="h-3.5 w-3.5" />
+                          Report Issue
+                        </Button>
+                      </>
+                    ) : null}
+
+                    {canUpdate && step.step_status === "failed" ? (
                       <Button
                         size="sm"
-                        onClick={() => handleUpdateStatus(step.step_name, "completed")}
+                        variant="outline"
+                        className="border-sky-300 text-sky-700 hover:bg-sky-50 dark:border-sky-900/60 dark:text-sky-200 dark:hover:bg-sky-950/30"
+                        onClick={() => openEditor(step)}
                         disabled={isUpdating}
-                        className="bg-emerald-600 text-white hover:bg-emerald-700"
                       >
-                        {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <CheckCircle2 className="h-3.5 w-3.5" />}
-                        Complete Step
+                        <RotateCcw className="h-3.5 w-3.5" />
+                        Resume Step
                       </Button>
                     ) : null}
                   </div>
@@ -171,9 +219,16 @@ export function StatusTimeline({ steps, canUpdate, onUpdateStep, isUpdating }: S
                 </div>
 
                 {step.notes ? (
-                  <div className="rounded-2xl border border-border/70 bg-background/80 px-4 py-3 text-sm text-muted-foreground">
+                  <div
+                    className={cn(
+                      "rounded-2xl border bg-background/80 px-4 py-3 text-sm text-muted-foreground",
+                      step.step_status === "failed"
+                        ? "border-rose-300/70 bg-rose-50/70 text-rose-950 dark:border-rose-900/50 dark:bg-rose-950/25 dark:text-rose-100"
+                        : "border-border/70"
+                    )}
+                  >
                     <span className="mb-1 block text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">
-                      Notes
+                      {step.step_status === "failed" ? "Failure reason" : "Notes"}
                     </span>
                     {step.notes}
                   </div>
@@ -183,30 +238,59 @@ export function StatusTimeline({ steps, canUpdate, onUpdateStep, isUpdating }: S
                   <div className="rounded-[1.4rem] border border-primary/20 bg-background/85 p-4 shadow-soft">
                     <div className="mb-3 flex items-center gap-2">
                       <Badge className="rounded-full bg-primary/12 px-3 py-1 text-primary hover:bg-primary/12">
-                        Update {step.step_name}
+                        {step.step_status === "failed"
+                          ? `Resume ${step.step_name}`
+                          : step.step_status === "in_progress"
+                            ? `Report issue for ${step.step_name}`
+                            : `Start ${step.step_name}`}
                       </Badge>
                     </div>
                     <Textarea
-                      placeholder="Add an update note so both agencies understand what changed..."
+                      placeholder={
+                        step.step_status === "in_progress"
+                          ? "Explain the issue clearly so the employer understands what blocked this milestone..."
+                          : step.step_status === "failed"
+                            ? "Add a recovery note if needed before restarting this milestone..."
+                            : "Add an optional note so both agencies understand what changed..."
+                      }
                       value={notes}
-                      onChange={(event) => setNotes(event.target.value)}
+                      onChange={(event) => {
+                        setEditorError("")
+                        setNotes(event.target.value)
+                      }}
                       className="min-h-[96px] resize-none"
                     />
+                    {editorError ? (
+                      <p className="mt-3 text-sm font-medium text-rose-600 dark:text-rose-300">{editorError}</p>
+                    ) : null}
                     <div className="mt-3 flex flex-wrap gap-2">
-                      <Button
-                        size="sm"
-                        onClick={() => handleUpdateStatus(step.step_name, "in_progress")}
-                        disabled={isUpdating}
-                      >
-                        {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <PlayCircle className="h-3.5 w-3.5" />}
-                        Mark In Progress
-                      </Button>
+                      {step.step_status === "in_progress" ? (
+                        <Button
+                          size="sm"
+                          className="bg-rose-600 text-white hover:bg-rose-700"
+                          onClick={() => handleUpdateStatus(step.step_name, "failed")}
+                          disabled={isUpdating}
+                        >
+                          {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <AlertTriangle className="h-3.5 w-3.5" />}
+                          Mark as Failed
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => handleUpdateStatus(step.step_name, "in_progress")}
+                          disabled={isUpdating}
+                        >
+                          {isUpdating ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : step.step_status === "failed" ? <RotateCcw className="h-3.5 w-3.5" /> : <PlayCircle className="h-3.5 w-3.5" />}
+                          {step.step_status === "failed" ? "Resume Step" : "Mark In Progress"}
+                        </Button>
+                      )}
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => {
                           setEditingStep(null)
                           setNotes("")
+                          setEditorError("")
                         }}
                         disabled={isUpdating}
                       >
@@ -230,6 +314,8 @@ function renderStatusIcon(status: StatusStep["step_status"]) {
       return <CheckCircle2 className="h-5 w-5" />
     case "in_progress":
       return <Loader2 className="h-5 w-5 animate-spin" />
+    case "failed":
+      return <AlertTriangle className="h-5 w-5" />
     default:
       return <Circle className="h-5 w-5" />
   }

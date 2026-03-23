@@ -139,8 +139,8 @@ func (h *StatusHandler) UpdateStatusStep(w http.ResponseWriter, r *http.Request)
 	}
 
 	status := domain.StepStatus(strings.TrimSpace(req.Status))
-	if status != domain.InProgress && status != domain.Completed {
-		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be in_progress or completed"})
+	if status != domain.InProgress && status != domain.Completed && status != domain.Failed {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be in_progress, completed, or failed"})
 		return
 	}
 
@@ -259,7 +259,7 @@ func (h *StatusHandler) writeStatusError(w http.ResponseWriter, err error) {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "select a partner workspace to continue"})
 	case errors.Is(err, service.ErrNoActivePairings), errors.Is(err, service.ErrPairingAccessDenied):
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-	case errors.Is(err, service.ErrInvalidStepTransition):
+	case errors.Is(err, service.ErrInvalidStepTransition), errors.Is(err, service.ErrStepFailureReasonRequired):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	default:
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})

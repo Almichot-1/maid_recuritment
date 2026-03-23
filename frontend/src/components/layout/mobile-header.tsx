@@ -2,15 +2,12 @@
 
 import * as React from "react"
 import { usePathname } from "next/navigation"
-import { Menu } from "lucide-react"
-import { Button } from "@/components/ui/button"
 import { NotificationBell } from "@/components/notifications/notification-bell"
-import { useLayoutStore } from "@/stores/layout-store"
+import { MobileNav } from "@/components/layout/mobile-nav"
 import { isRoleHomePath } from "@/lib/role-home"
 
 export function MobileHeader() {
   const pathname = usePathname()
-  const { toggleSidebar } = useLayoutStore()
 
   const getPageTitle = (path: string) => {
     if (path.startsWith("/dashboard/agency")) return "Agency Home"
@@ -31,14 +28,7 @@ export function MobileHeader() {
   return (
     <header className="sticky top-0 z-40 border-b bg-background px-4 py-3 md:hidden">
       <div className="flex items-center gap-4">
-        <Button
-          variant="ghost"
-          size="icon"
-          onClick={toggleSidebar}
-          className="min-h-[44px] min-w-[44px]"
-        >
-          <Menu className="h-5 w-5" />
-        </Button>
+        <MobileNav />
 
         <h1 className="flex-1 truncate text-lg font-semibold">{title}</h1>
 
