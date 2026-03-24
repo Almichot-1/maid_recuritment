@@ -209,3 +209,39 @@ func TestNotificationService_NotifyApprovalAndStatusUpdate(t *testing.T) {
 	assert.Equal(t, "selector-1", notifRepo.created[1].UserID)
 	assert.Equal(t, "selector-1", notifRepo.created[2].UserID)
 }
+
+func TestNotificationService_NotifySelectionTargetsSelectionWhenAvailable(t *testing.T) {
+	notifRepo := &notificationRepoMock{}
+	userRepo := &notificationUserRepoMock{
+		users: map[string]*domain.User{
+			"owner-1":    {ID: "owner-1", Email: ""},
+			"selector-1": {ID: "selector-1", Email: "", CompanyName: "Agency"},
+		},
+	}
+	candidateRepo := &notificationCandidateRepoMock{
+		byID: map[string]*domain.Candidate{
+			"cand-1": {ID: "cand-1", CreatedBy: "owner-1", FullName: "Candidate"},
+		},
+	}
+	selectionRepo := &notificationSelectionRepoMock{
+		byCandidateID: map[string]*domain.Selection{
+			"cand-1": {ID: "sel-1", CandidateID: "cand-1", SelectedBy: "selector-1"},
+		},
+	}
+
+	service, err := NewNotificationService(
+		&config.Config{AppBaseURL: "https://app.example.com"},
+		notifRepo,
+		&notificationEmailMock{},
+		userRepo,
+		candidateRepo,
+		selectionRepo,
+	)
+	require.NoError(t, err)
+
+	require.NoError(t, service.NotifySelection("cand-1", "selector-1"))
+	require.Len(t, notifRepo.created, 1)
+	require.Equal(t, "selection", notifRepo.created[0].RelatedEntityType)
+	require.NotNil(t, notifRepo.created[0].RelatedEntityID)
+	assert.Equal(t, "sel-1", *notifRepo.created[0].RelatedEntityID)
+}

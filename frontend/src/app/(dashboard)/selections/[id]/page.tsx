@@ -95,6 +95,7 @@ export default function SelectionDetailPage() {
   const hasEmployerContract = !!selection.employer_contract?.file_url
   const hasEmployerID = !!selection.employer_id?.file_url
   const hasRequiredEmployerDocuments = hasEmployerContract && hasEmployerID
+  const approvalBlockedByEmployerPackage = isEthiopianAgent && !hasRequiredEmployerDocuments
   const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
 
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
@@ -282,7 +283,9 @@ export default function SelectionDetailPage() {
 
               {isPending && !hasRequiredEmployerDocuments ? (
                 <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                  The approval package is not complete yet. Both the contract and the employer ID must be uploaded before this selection can be approved.
+                  {isEthiopianAgent
+                    ? "The employer package is still incomplete. Wait for the foreign agency to upload both the contract and the employer ID before you approve."
+                    : "Upload both the contract and the employer ID here so the Ethiopian agency can review them and complete approval."}
                 </div>
               ) : null}
 
@@ -306,9 +309,7 @@ export default function SelectionDetailPage() {
                       mode="instant"
                       disabled={isUploadingSelectionDocument && activeUploadType !== "contract"}
                       onRemove={() => setReplacingDocumentType((current) => (current === "contract" ? null : current))}
-                      onUpload={(file) => {
-                        void handleUploadSelectionDocument("contract", file)
-                      }}
+                      onUpload={(file) => handleUploadSelectionDocument("contract", file)}
                     />
                   ) : null}
 
@@ -330,9 +331,7 @@ export default function SelectionDetailPage() {
                       mode="instant"
                       disabled={isUploadingSelectionDocument && activeUploadType !== "employer_id"}
                       onRemove={() => setReplacingDocumentType((current) => (current === "employer_id" ? null : current))}
-                      onUpload={(file) => {
-                        void handleUploadSelectionDocument("employer_id", file)
-                      }}
+                      onUpload={(file) => handleUploadSelectionDocument("employer_id", file)}
                     />
                   ) : null}
                 </div>
@@ -426,15 +425,20 @@ export default function SelectionDetailPage() {
             <CardContent className="space-y-3">
               {isPending && !userHasApproved && (
                 <>
-                  {!hasRequiredEmployerDocuments ? (
+                  {approvalBlockedByEmployerPackage ? (
                     <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                      Approval is blocked until the employer contract package is complete.
+                      Approval is blocked until the foreign agency finishes the contract package.
+                    </div>
+                  ) : null}
+                  {!isEthiopianAgent && !hasRequiredEmployerDocuments ? (
+                    <div className="rounded-[1.4rem] border border-sky-300/40 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
+                      You can record your approval now, but the Ethiopian agency still needs your contract and employer ID upload before the process can move forward.
                     </div>
                   ) : null}
                   <Button
                     className="w-full bg-green-600 hover:bg-green-700"
                     onClick={() => setApproveDialogOpen(true)}
-                    disabled={isApproving || isRejecting || !hasRequiredEmployerDocuments}
+                    disabled={isApproving || isRejecting || approvalBlockedByEmployerPackage}
                   >
                     {isApproving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Approve Selection

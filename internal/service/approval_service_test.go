@@ -215,6 +215,26 @@ func TestApprovalService_BothApprovalsNeededToProceed(t *testing.T) {
 	assert.Len(t, steps, len(predefinedStepNames()))
 }
 
+func TestApprovalService_OnlyEthiopianApprovalRequiresEmployerPackage(t *testing.T) {
+	service, db := setupApprovalService(t)
+	seedApprovalScenario(t, db, domain.SelectionPending, time.Now().UTC().Add(2*time.Hour))
+
+	require.NoError(t, db.Model(&approvalTestSelection{}).Where("id = ?", "sel-1").Updates(map[string]any{
+		"employer_contract_url":         "",
+		"employer_contract_file_name":   "",
+		"employer_contract_uploaded_at": nil,
+		"employer_id_url":               "",
+		"employer_id_file_name":         "",
+		"employer_id_uploaded_at":       nil,
+	}).Error)
+
+	err := service.ApproveSelection("sel-1", "selector-1")
+	require.NoError(t, err)
+
+	err = service.ApproveSelection("sel-1", "owner-1")
+	require.ErrorIs(t, err, ErrSelectionSupportingDocumentsRequired)
+}
+
 func TestApprovalService_CannotApproveTwice(t *testing.T) {
 	service, db := setupApprovalService(t)
 	seedApprovalScenario(t, db, domain.SelectionPending, time.Now().UTC().Add(2*time.Hour))

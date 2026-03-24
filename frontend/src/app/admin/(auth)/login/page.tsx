@@ -156,6 +156,9 @@ export default function AdminLoginPage() {
                 required
               />
             </div>
+            <p className="text-xs text-slate-400">
+              Enter the current six-digit code from your authenticator app. Previously shared codes expire every 30 seconds.
+            </p>
           </div>
 
           <Button type="submit" className="w-full bg-amber-400 text-slate-950 hover:bg-amber-300" disabled={isPending}>

@@ -44,6 +44,8 @@ export function SelectionCard({ selection }: SelectionCardProps) {
   const isApproved = selection.status === SelectionStatus.APPROVED
   const isRejected = selection.status === SelectionStatus.REJECTED
   const isExpired = selection.status === SelectionStatus.EXPIRED
+  const hasRequiredEmployerDocuments = !!selection.employer_contract?.file_url && !!selection.employer_id?.file_url
+  const approvalBlockedByEmployerPackage = isEthiopianAgent && isPending && !hasRequiredEmployerDocuments
 
   const getStatusBadge = () => {
     switch (selection.status) {
@@ -182,11 +184,16 @@ export function SelectionCard({ selection }: SelectionCardProps) {
               <div className="flex flex-wrap gap-2">
                 {isPending && !userHasApproved && (
                   <>
+                    {approvalBlockedByEmployerPackage && (
+                      <div className="w-full rounded-md border border-amber-300/50 bg-amber-50/80 px-3 py-2 text-center text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+                        Waiting for the foreign agency to upload the contract package.
+                      </div>
+                    )}
                     <Button
                       size="sm"
                       onClick={() => setApproveDialogOpen(true)}
                       className="bg-green-600 hover:bg-green-700 flex-1"
-                      disabled={isApproving || isRejecting}
+                      disabled={isApproving || isRejecting || approvalBlockedByEmployerPackage}
                     >
                       {isApproving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
                       Approve

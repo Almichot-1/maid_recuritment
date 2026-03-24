@@ -91,7 +91,7 @@ func (s *ApprovalService) ApproveSelection(selectionID, userID string) error {
 		if !isInvolvedUser(selection, candidate, userID) {
 			return ErrNotAuthorized
 		}
-		if !selectionHasRequiredSupportingDocuments(selection) {
+		if requiresEmployerDocumentReview(candidate, userID) && !selectionHasRequiredSupportingDocuments(selection) {
 			return ErrSelectionSupportingDocumentsRequired
 		}
 
@@ -184,8 +184,28 @@ func (s *ApprovalService) ApproveSelection(selectionID, userID string) error {
 		if err := s.notificationService.Send(userID, "Approval received", waitingMessage, "approval", "selection", selectionID); err != nil {
 			return fmt.Errorf("notify waiting approval: %w", err)
 		}
+
+		otherPartyID := selection.SelectedBy
+		otherPartyMessage := "The Ethiopian agency approved this selection. Open the selection to continue."
+		if strings.TrimSpace(userID) == strings.TrimSpace(selection.SelectedBy) {
+			otherPartyID = candidate.CreatedBy
+			otherPartyMessage = "The foreign agency approved this selection. Open the selection to continue."
+		}
+		if strings.TrimSpace(otherPartyID) != "" && strings.TrimSpace(otherPartyID) != strings.TrimSpace(userID) {
+			if err := s.notificationService.Send(otherPartyID, "Approval needed", otherPartyMessage, "approval", "selection", selectionID); err != nil {
+				return fmt.Errorf("notify counterpart approval: %w", err)
+			}
+		}
 		return nil
 	})
+}
+
+func requiresEmployerDocumentReview(candidate *domain.Candidate, userID string) bool {
+	if candidate == nil {
+		return false
+	}
+
+	return strings.TrimSpace(candidate.CreatedBy) == strings.TrimSpace(userID)
 }
 
 func (s *ApprovalService) RejectSelection(selectionID, userID, reason string) error {

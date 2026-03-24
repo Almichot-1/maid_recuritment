@@ -104,6 +104,15 @@ type notificationSenderMock struct {
 	foreignByID  map[string]bool
 	sendCalls    int
 	sentToUserID []string
+	payloads     []notificationSendPayload
+}
+
+type notificationSendPayload struct {
+	userID            string
+	title             string
+	notificationType  string
+	relatedEntityType string
+	relatedEntityID   string
 }
 
 func (m *notificationSenderMock) IsForeignAgent(userID string) (bool, error) {
@@ -117,6 +126,13 @@ func (m *notificationSenderMock) Send(userID, title, message, notificationType, 
 	defer m.mu.Unlock()
 	m.sendCalls++
 	m.sentToUserID = append(m.sentToUserID, userID)
+	m.payloads = append(m.payloads, notificationSendPayload{
+		userID:            userID,
+		title:             title,
+		notificationType:  notificationType,
+		relatedEntityType: relatedEntityType,
+		relatedEntityID:   relatedEntityID,
+	})
 	return nil
 }
 
@@ -179,6 +195,11 @@ func TestSelectionService_SelectCandidate_SuccessLocksCandidate(t *testing.T) {
 
 	assert.Equal(t, 2, notifier.sendCalls)
 	assert.ElementsMatch(t, []string{"ethiopian-owner", "foreign-1"}, notifier.sentToUserID)
+	require.Len(t, notifier.payloads, 2)
+	assert.Equal(t, "selection", notifier.payloads[0].relatedEntityType)
+	assert.Equal(t, selection.ID, notifier.payloads[0].relatedEntityID)
+	assert.Equal(t, "selection", notifier.payloads[1].relatedEntityType)
+	assert.Equal(t, selection.ID, notifier.payloads[1].relatedEntityID)
 }
 
 func TestSelectionService_SelectCandidate_CandidateStateRules(t *testing.T) {

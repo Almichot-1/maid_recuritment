@@ -12,7 +12,7 @@ export interface DocumentUploadProps {
   documentType: string
   accept: Record<string, string[]>
   maxSize: number // in bytes
-  onUpload?: (file: File) => void // Triggered when file naturally resolves
+  onUpload?: (file: File) => void | Promise<unknown> // Triggered when file naturally resolves
   onRemove?: () => void
   title: string
   description?: string
@@ -36,7 +36,7 @@ export function DocumentUpload({
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
 
   const onDrop = React.useCallback(
-    (acceptedFiles: File[], fileRejections: FileRejection[]) => {
+    async (acceptedFiles: File[], fileRejections: FileRejection[]) => {
       if (fileRejections.length > 0) {
         setStatus("error")
         setErrorMessage(fileRejections[0].errors[0]?.message || "File rejected")
@@ -45,17 +45,30 @@ export function DocumentUpload({
 
       if (acceptedFiles.length > 0) {
         const selectedFile = acceptedFiles[0]
+        let objectUrl: string | null = null
         setFile(selectedFile)
         setStatus("selected")
         setErrorMessage(null)
 
         // Create preview
         if (selectedFile.type.startsWith("image/") || selectedFile.type.startsWith("video/")) {
-          const objectUrl = URL.createObjectURL(selectedFile)
+          objectUrl = URL.createObjectURL(selectedFile)
           setPreview(objectUrl)
         }
 
-        if (onUpload) onUpload(selectedFile)
+        if (onUpload) {
+          try {
+            await onUpload(selectedFile)
+          } catch (error) {
+            if (objectUrl) {
+              URL.revokeObjectURL(objectUrl)
+            }
+            setPreview(null)
+            setFile(null)
+            setStatus("error")
+            setErrorMessage(error instanceof Error ? error.message : "Upload failed")
+          }
+        }
       }
     },
     [onUpload]

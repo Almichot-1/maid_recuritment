@@ -66,6 +66,9 @@ export function NotificationItem({ notification }: NotificationItemProps) {
     }
 
     if (notification.related_entity_type === "selection") {
+      const label = notification.type === "selection" || notification.type === "approval"
+        ? "Open Selection"
+        : "View Selection"
       return (
         <Button
           variant="link"
@@ -77,7 +80,7 @@ export function NotificationItem({ notification }: NotificationItemProps) {
           }}
         >
           <Eye className="h-3 w-3 mr-1" />
-          View Selection
+          {label}
         </Button>
       )
     }

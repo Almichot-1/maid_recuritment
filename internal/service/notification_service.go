@@ -161,6 +161,9 @@ func (s *NotificationService) NotifySelection(candidateID, selectedBy string) er
 	}
 
 	message := fmt.Sprintf("Your candidate %s has been selected by %s", candidate.FullName, agency)
+	if selection, err := s.selectionRepository.GetByCandidateID(candidateID); err == nil && selection != nil {
+		return s.Send(owner.ID, "Candidate selected", message+"\n"+s.selectionLink(selection.ID), string(domain.NotificationSelection), "selection", selection.ID)
+	}
 	return s.Send(owner.ID, "Candidate selected", message+"\n"+s.candidateLink(candidate.ID), string(domain.NotificationSelection), "candidate", candidate.ID)
 }
 
