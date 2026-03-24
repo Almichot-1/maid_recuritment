@@ -39,7 +39,16 @@ func validateAndBufferUpload(file io.Reader, fileName string) (io.Reader, string
 		return nil, "", ErrInvalidFileType
 	}
 
-	return io.MultiReader(bytes.NewReader(header), file), actualContentType, nil
+	remaining, err := io.ReadAll(file)
+	if err != nil {
+		return nil, "", fmt.Errorf("buffer upload body: %w", err)
+	}
+
+	buffered := make([]byte, 0, len(header)+len(remaining))
+	buffered = append(buffered, header...)
+	buffered = append(buffered, remaining...)
+
+	return bytes.NewReader(buffered), actualContentType, nil
 }
 
 func detectContentTypeFromBytes(header []byte) (string, error) {
