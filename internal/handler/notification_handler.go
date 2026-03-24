@@ -40,6 +40,10 @@ type NotificationListResponse struct {
 	Pagination    NotificationListPagination `json:"pagination"`
 }
 
+type NotificationSummaryResponse struct {
+	UnreadCount int64 `json:"unread_count"`
+}
+
 type notificationPaginator interface {
 	GetByUserIDPaginated(userID string, unreadOnly bool, page, pageSize int) ([]*domain.Notification, error)
 	CountByUserID(userID string, unreadOnly bool) (int64, error)
@@ -59,13 +63,20 @@ type NotificationHandler struct {
 	connectionsMu          sync.RWMutex
 }
 
-func NewNotificationHandler(notificationRepository domain.NotificationRepository) *NotificationHandler {
+func NewNotificationHandler(notificationRepository domain.NotificationRepository, allowedOrigins []string) *NotificationHandler {
 	paginator, _ := notificationRepository.(notificationPaginator)
+	normalizedOrigins := normalizeAllowedOrigins(allowedOrigins)
 	return &NotificationHandler{
 		notificationRepository: notificationRepository,
 		paginator:              paginator,
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool { return true },
+			CheckOrigin: func(r *http.Request) bool {
+				origin := strings.TrimSpace(r.Header.Get("Origin"))
+				if origin == "" {
+					return true
+				}
+				return isAllowedOrigin(origin, normalizedOrigins)
+			},
 		},
 		connections: make(map[string]map[*wsConn]struct{}),
 	}
@@ -124,6 +135,28 @@ func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Re
 			PageSize: pageSize,
 			Total:    total,
 		},
+	})
+}
+
+func (h *NotificationHandler) GetSummary(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if h.paginator == nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "notification pagination unavailable"})
+		return
+	}
+
+	unreadCount, err := h.paginator.CountByUserID(userID, true)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, NotificationSummaryResponse{
+		UnreadCount: unreadCount,
 	})
 }
 
@@ -199,6 +232,7 @@ func (h *NotificationHandler) NotificationsWebSocket(w http.ResponseWriter, r *h
 	}
 
 	client := &wsConn{conn: conn}
+	conn.SetReadLimit(4096)
 	h.addConnection(userID, client)
 	defer func() {
 		h.removeConnection(userID, client)
@@ -303,4 +337,33 @@ func mapNotification(notification *domain.Notification) NotificationResponse {
 		RelatedEntityID:   notification.RelatedEntityID,
 		CreatedAt:         notification.CreatedAt.UTC().Format(time.RFC3339),
 	}
+}
+
+func normalizeAllowedOrigins(origins []string) []string {
+	if len(origins) == 0 {
+		return []string{"http://localhost:3000", "http://localhost:3001"}
+	}
+
+	normalized := make([]string, 0, len(origins))
+	for _, origin := range origins {
+		trimmed := strings.TrimSpace(origin)
+		if trimmed != "" {
+			normalized = append(normalized, trimmed)
+		}
+	}
+
+	if len(normalized) == 0 {
+		return []string{"http://localhost:3000", "http://localhost:3001"}
+	}
+
+	return normalized
+}
+
+func isAllowedOrigin(origin string, allowedOrigins []string) bool {
+	for _, allowed := range allowedOrigins {
+		if allowed == "*" || strings.EqualFold(origin, allowed) {
+			return true
+		}
+	}
+	return false
 }

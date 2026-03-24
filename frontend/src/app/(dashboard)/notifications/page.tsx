@@ -12,7 +12,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 
 export default function NotificationsPage() {
-  const { data: notificationData, isLoading } = useNotifications()
+  const { data: notificationData, isLoading } = useNotifications(false, { refetchInterval: false, pageSize: 20 })
   const { mutate: markAllAsRead, isPending: isMarkingAll } = useMarkAllAsRead()
   const allNotifications = React.useMemo(
     () => notificationData?.notifications || [],

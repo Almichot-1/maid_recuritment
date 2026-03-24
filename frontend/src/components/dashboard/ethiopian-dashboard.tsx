@@ -15,8 +15,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { useCandidates } from "@/hooks/use-candidates"
-import { useDashboardStats } from "@/hooks/use-dashboard"
+import { useDashboardHome } from "@/hooks/use-dashboard"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -25,16 +24,13 @@ import { cn } from "@/lib/utils"
 export function EthiopianDashboard() {
   const { user } = useCurrentUser()
   const { activeWorkspace } = usePairingContext()
-  const { data: stats, isLoading } = useDashboardStats()
-  const { data: candidateData, isLoading: isCandidatesLoading } = useCandidates({ page: 1, page_size: 5 })
+  const { data: home, isLoading } = useDashboardHome()
 
   if (!user) return null
 
-  const recentCandidates = candidateData?.data || []
-  const incompleteProfiles = (candidateData?.data || []).filter((candidate) => {
-    const documentTypes = new Set(candidate.documents.map((document) => document.document_type))
-    return !documentTypes.has("passport") || !documentTypes.has("photo")
-  }).length
+  const stats = home?.stats
+  const recentCandidates = home?.recent_candidates || []
+  const incompleteProfiles = home?.pending_actions?.incompleteProfiles ?? 0
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -115,7 +111,7 @@ export function EthiopianDashboard() {
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isCandidatesLoading ? (
+                  {isLoading ? (
                     <TableRow>
                       <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
                         Loading recent candidates...

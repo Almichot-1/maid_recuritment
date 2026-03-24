@@ -1,19 +1,26 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { User, Lock, PencilLine } from "lucide-react"
 
 import { Candidate, CandidateStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
-import { CandidateShareDialog } from "@/components/candidates/candidate-share-dialog"
-import { SelectCandidateDialog } from "@/components/selections/select-candidate-dialog"
 import { LockCountdown } from "@/components/selections/lock-countdown"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+
+const CandidateShareDialog = dynamic(
+  () => import("@/components/candidates/candidate-share-dialog").then((module) => module.CandidateShareDialog)
+)
+const SelectCandidateDialog = dynamic(
+  () => import("@/components/selections/select-candidate-dialog").then((module) => module.SelectCandidateDialog)
+)
 
 interface CandidateCardProps {
   candidate: Candidate
@@ -62,10 +69,12 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
           {/* Photo */}
           <div className="relative w-full aspect-square bg-muted overflow-hidden">
             {photoUrl ? (
-              <img
+              <Image
                 src={photoUrl}
                 alt={candidate.full_name}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                fill
+                sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 25vw"
+                className="object-cover transition-transform duration-300 group-hover:scale-105"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">

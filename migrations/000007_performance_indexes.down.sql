@@ -1,0 +1,6 @@
+DROP INDEX IF EXISTS idx_documents_candidate_type;
+DROP INDEX IF EXISTS idx_selections_selected_by_pairing_status_created_at;
+DROP INDEX IF EXISTS idx_selections_pairing_status_created_at;
+DROP INDEX IF EXISTS idx_candidate_pair_shares_pairing_active_candidate;
+DROP INDEX IF EXISTS idx_candidates_created_by_status_created_at;
+DROP INDEX IF EXISTS idx_notifications_user_unread_created_at;

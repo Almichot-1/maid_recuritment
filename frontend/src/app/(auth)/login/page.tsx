@@ -10,6 +10,7 @@ import { AlertCircle, Eye, EyeOff, Loader2, Mail } from "lucide-react"
 import { loginSchema, type LoginInput } from "@/lib/validations"
 import { getLoginErrorMessage, useLogin } from "@/hooks/use-auth"
 import { useAuthStore } from "@/stores/auth-store"
+import { getRoleHomePath } from "@/lib/role-home"
 import { Button } from "@/components/ui/button"
 import {
   Card,
@@ -27,13 +28,14 @@ export default function LoginPage() {
   const router = useRouter()
   const { mutate: login, isPending } = useLogin()
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
+  const user = useAuthStore((state) => state.user)
   const [showPassword, setShowPassword] = React.useState(false)
 
   React.useEffect(() => {
     if (isAuthenticated) {
-      router.push("/dashboard")
+      router.replace(getRoleHomePath(user?.role))
     }
-  }, [isAuthenticated, router])
+  }, [isAuthenticated, router, user?.role])
 
   const form = useForm<LoginInput>({
     resolver: zodResolver(loginSchema),

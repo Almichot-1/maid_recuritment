@@ -16,6 +16,10 @@ interface NotificationApiResponse {
   };
 }
 
+interface NotificationSummaryResponse {
+  unread_count: number;
+}
+
 interface UseNotificationsOptions {
   enabled?: boolean;
   pageSize?: number;
@@ -56,8 +60,32 @@ export function useNotifications(unreadOnly: boolean = false, options: UseNotifi
 }
 
 export function useUnreadCount() {
-  const { data } = useNotifications(false, { pageSize: 1 });
-  return { count: data?.unread_count ?? 0 };
+  const { user } = useCurrentUser();
+  const activePairingId = usePairingStore((state) => state.activePairingId);
+  const isPairingReady = usePairingStore((state) => state.isReady);
+  const requiresWorkspace = user?.role === UserRole.ETHIOPIAN_AGENT || user?.role === UserRole.FOREIGN_AGENT;
+
+  const query = useQuery({
+    queryKey: ['notifications', 'summary', activePairingId],
+    queryFn: async () => {
+      const response = await api.get<NotificationSummaryResponse>('/notifications/summary');
+      return response.data;
+    },
+    enabled: Boolean(user) && (!requiresWorkspace || (isPairingReady && Boolean(activePairingId))),
+    staleTime: 30_000,
+    refetchInterval: 60_000,
+    refetchOnWindowFocus: false,
+    retry: (failureCount, error) => {
+      const status = (error as AxiosError)?.response?.status;
+      if (status === 401 || status === 403) {
+        return false;
+      }
+
+      return failureCount < 1;
+    },
+  });
+
+  return { count: query.data?.unread_count ?? 0 };
 }
 
 export function useMarkAsRead() {
@@ -70,6 +98,7 @@ export function useMarkAsRead() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'summary'] });
     },
     onError: () => {
       toast.error('Failed to mark notification as read');
@@ -87,6 +116,7 @@ export function useMarkAllAsRead() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['notifications'] });
+      queryClient.invalidateQueries({ queryKey: ['notifications', 'summary'] });
       toast.success('All notifications marked as read');
     },
     onError: () => {

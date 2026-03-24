@@ -1,10 +1,14 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { usePathname } from "next/navigation"
-import { NotificationBell } from "@/components/notifications/notification-bell"
 import { MobileNav } from "@/components/layout/mobile-nav"
 import { isRoleHomePath } from "@/lib/role-home"
+
+const NotificationBell = dynamic(
+  () => import("@/components/notifications/notification-bell").then((module) => module.NotificationBell)
+)
 
 export function MobileHeader() {
   const pathname = usePathname()

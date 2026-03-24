@@ -4,12 +4,10 @@ import * as React from "react"
 import Link from "next/link"
 import { ArrowRight, CheckCircle, Clock, Search, Sparkles, Star, Users } from "lucide-react"
 
-import { useCandidates } from "@/hooks/use-candidates"
 import { useCurrentUser } from "@/hooks/use-auth"
-import { useDashboardStats } from "@/hooks/use-dashboard"
+import { useDashboardHome } from "@/hooks/use-dashboard"
 import { usePairingContext } from "@/hooks/use-pairings"
-import { useMySelections } from "@/hooks/use-selections"
-import { CandidateStatus, SelectionStatus } from "@/types"
+import { CandidateStatus } from "@/types"
 import { CandidateCard } from "@/components/candidates/candidate-card"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
@@ -20,15 +18,14 @@ import { cn } from "@/lib/utils"
 export function ForeignDashboard() {
   const { user } = useCurrentUser()
   const { activeWorkspace } = usePairingContext()
-  const { data: stats, isLoading } = useDashboardStats()
-  const { data: candidateData, isLoading: candidatesLoading } = useCandidates({ page: 1, page_size: 4 })
-  const { data: selections } = useMySelections()
+  const { data: home, isLoading } = useDashboardHome()
 
   if (!user) return null
 
-  const availableCandidates = (candidateData?.data || []).filter((candidate) => candidate.status === CandidateStatus.AVAILABLE)
-  const activeSelections = (selections || []).filter((selection) => selection.status === SelectionStatus.PENDING).slice(0, 3)
-  const approvedSelections = (selections || []).filter((selection) => selection.status === SelectionStatus.APPROVED).slice(0, 2)
+  const stats = home?.stats
+  const availableCandidates = (home?.available_candidates || []).filter((candidate) => candidate.status === CandidateStatus.AVAILABLE)
+  const activeSelections = home?.active_selections || []
+  const approvedSelections = home?.approved_selections || []
 
   return (
     <div className="space-y-6 animate-in fade-in duration-500">
@@ -97,7 +94,7 @@ export function ForeignDashboard() {
             </Link>
           </div>
 
-          {candidatesLoading ? (
+          {isLoading ? (
             <div className="grid gap-4 md:grid-cols-2">
               {Array.from({ length: 4 }).map((_, index) => (
                 <div key={index} className="rounded-2xl border bg-card p-4 shadow-sm">
@@ -135,9 +132,9 @@ export function ForeignDashboard() {
                   <div key={selection.id} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
                     <div className="flex items-start justify-between gap-3">
                       <div>
-                        <p className="font-semibold">{selection.candidate?.full_name || "Candidate"}</p>
+                        <p className="font-semibold">{selection.candidate_name || "Candidate"}</p>
                         <p className="text-xs text-muted-foreground">
-                          Expires {new Date(selection.expires_at).toLocaleString()}
+                          {selection.expires_at ? `Expires ${new Date(selection.expires_at).toLocaleString()}` : "Pending approval"}
                         </p>
                       </div>
                       <Badge className="bg-amber-500 text-white hover:bg-amber-500">Pending</Badge>
@@ -169,13 +166,13 @@ export function ForeignDashboard() {
             <CardContent className="space-y-3">
               {approvedSelections.length > 0 ? (
                 approvedSelections.map((selection) => (
-                  <Link
+                      <Link
                     key={selection.id}
                     href={`/selections/${selection.id}`}
                     className="flex items-center justify-between rounded-2xl border border-border/70 px-4 py-3 transition-colors hover:bg-muted/30"
                   >
                     <div>
-                      <p className="font-semibold">{selection.candidate?.full_name || "Candidate"}</p>
+                      <p className="font-semibold">{selection.candidate_name || "Candidate"}</p>
                       <p className="text-xs text-muted-foreground">Shared recruitment tracking is active</p>
                     </div>
                     <ArrowRight className="h-4 w-4 text-muted-foreground" />

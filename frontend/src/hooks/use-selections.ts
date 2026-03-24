@@ -109,6 +109,8 @@ export function useMySelections() {
       return response.data.selections;
     },
     enabled: !!user && isPairingReady && !!activePairingId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -124,6 +126,8 @@ export function useSelection(id?: string) {
       return response.data.selection;
     },
     enabled: !!id && !!user && isPairingReady && !!activePairingId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -139,6 +143,8 @@ export function useSelectionApprovals(id?: string) {
       return response.data;
     },
     enabled: !!id && !!user && isPairingReady && !!activePairingId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 

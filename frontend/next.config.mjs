@@ -1,5 +1,40 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+	images: {
+		remotePatterns: [
+			{
+				protocol: "https",
+				hostname: "**.r2.dev",
+			},
+			{
+				protocol: "https",
+				hostname: "api.dicebear.com",
+			},
+			{
+				protocol: "https",
+				hostname: "**.onrender.com",
+			},
+			{
+				protocol: "http",
+				hostname: "localhost",
+			},
+		],
+	},
+	async headers() {
+		return [
+			{
+				source: "/:path*",
+				headers: [
+					{ key: "X-Content-Type-Options", value: "nosniff" },
+					{ key: "X-Frame-Options", value: "DENY" },
+					{ key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
+					{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+					{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
+					{ key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'" },
+				],
+			},
+		];
+	},
 	async redirects() {
 		return [
 			{ source: '/dashboard/candidates', destination: '/candidates', permanent: false },

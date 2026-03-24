@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import dynamic from "next/dynamic"
 import { usePathname } from "next/navigation"
 import { Search, LogOut, User as UserIcon, Settings } from "lucide-react"
 
@@ -18,8 +19,11 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
-import { NotificationBell } from "@/components/notifications/notification-bell"
 import { isRoleHomePath } from "@/lib/role-home"
+
+const NotificationBell = dynamic(
+  () => import("@/components/notifications/notification-bell").then((module) => module.NotificationBell)
+)
 
 export function Header() {
   const pathname = usePathname()

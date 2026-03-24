@@ -152,7 +152,7 @@ func main() {
 	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService)
 	approvalHandler := handler.NewApprovalHandler(approvalService, selectionService, candidateRepository, pairingService)
 	statusHandler := handler.NewStatusHandler(statusStepService, candidateRepository, selectionRepository, userRepository, pairingService)
-	notificationHandler := handler.NewNotificationHandler(notificationRepository)
+	notificationHandler := handler.NewNotificationHandler(notificationRepository, cfg.CORSAllowedOrigins)
 	pairingHandler := handler.NewPairingHandler(pairingService, userRepository, candidateRepository)
 	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService)
 	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
@@ -174,6 +174,7 @@ func main() {
 	router := chi.NewRouter()
 	router.Use(chimiddleware.RequestID)
 	router.Use(chimiddleware.Recoverer)
+	router.Use(appmiddleware.SecurityHeaders)
 	router.Use(appmiddleware.CORS(cfg.CORSAllowedOrigins))
 	router.Use(appmiddleware.Logging)
 
@@ -268,12 +269,14 @@ func main() {
 		})
 
 		protected.Route("/notifications", func(nr chi.Router) {
+			nr.Get("/summary", notificationHandler.GetSummary)
 			nr.Get("/", notificationHandler.GetNotifications)
 			nr.Patch("/{id}/read", notificationHandler.MarkAsRead)
 			nr.Post("/mark-all-read", notificationHandler.MarkAllAsRead)
 		})
 
 		protected.Route("/dashboard", func(dr chi.Router) {
+			dr.Get("/home", dashboardHandler.GetHome)
 			dr.Get("/stats", dashboardHandler.GetStats)
 		})
 
@@ -290,6 +293,10 @@ func main() {
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	log.Printf("API server listening on :%s", cfg.Port)

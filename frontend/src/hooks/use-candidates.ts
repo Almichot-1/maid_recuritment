@@ -31,7 +31,7 @@ export interface GenerateCVRequest {
   company_name?: string;
 }
 
-interface CandidateDocumentApiResponse {
+export interface CandidateDocumentApiResponse {
   id: string;
   document_type: string;
   file_url: string;
@@ -40,7 +40,7 @@ interface CandidateDocumentApiResponse {
   uploaded_at?: string;
 }
 
-interface CandidateApiResponse {
+export interface CandidateApiResponse {
   id: string;
   full_name: string;
   age?: number;
@@ -67,7 +67,7 @@ interface CandidateListApiResponse {
   };
 }
 
-function normalizeCandidate(candidate: CandidateApiResponse): Candidate {
+export function normalizeCandidate(candidate: CandidateApiResponse): Candidate {
   const createdBy = typeof candidate.created_by === 'string'
     ? candidate.created_by
     : candidate.created_by?.id || '';
@@ -120,6 +120,7 @@ export function useCandidates(filters: CandidateFilters = {}) {
     },
     enabled: !!user && (!requiresWorkspace || (isPairingReady && !!activePairingId)),
     staleTime: 30000,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
       const status = (error as AxiosError)?.response?.status;
       if (status === 401 || status === 403) {
@@ -144,6 +145,8 @@ export function useCandidate(id?: string) {
       return normalizeCandidate(response.data.candidate);
     },
     enabled: !!id && !!user && (!requiresWorkspace || (isPairingReady && !!activePairingId)),
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
       const status = (error as AxiosError)?.response?.status;
       if (status === 401 || status === 403 || status === 404) {
