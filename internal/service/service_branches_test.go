@@ -142,7 +142,7 @@ func TestCandidateService_RemainingBranches(t *testing.T) {
 	repo.updateFn = func(candidate *domain.Candidate) error { return nil }
 	require.NoError(t, svc.PublishCandidate("id", "owner"))
 
-	_, err = svc.UploadCandidateDocument("id", "owner", UploadCandidateDocumentInput{DocumentType: "photo", File: bytes.NewBufferString("x"), FileName: "p.png", FileSize: 1})
+	_, err = svc.UploadCandidateDocument("id", "owner", UploadCandidateDocumentInput{DocumentType: "photo", File: bytes.NewReader(validPNGBytes()), FileName: "p.png", FileSize: int64(len(validPNGBytes()))})
 	require.NoError(t, err)
 
 	_, err = svc.UploadCandidateDocument("id", "owner", UploadCandidateDocumentInput{DocumentType: "bad", File: bytes.NewBufferString("x"), FileName: "bad.bin", FileSize: 1})

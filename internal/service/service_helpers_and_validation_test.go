@@ -151,6 +151,6 @@ func TestDocumentService_StorageUploadError(t *testing.T) {
 		return "", errors.New("upload failed")
 	}})
 	require.NoError(t, err)
-	_, err = svc.UploadDocument("cand", string(domain.Passport), bytes.NewBufferString("x"), "passport.pdf", 1)
+	_, err = svc.UploadDocument("cand", string(domain.Passport), bytes.NewReader(validPDFBytes()), "passport.pdf", int64(len(validPDFBytes())))
 	require.Error(t, err)
 }

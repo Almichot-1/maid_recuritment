@@ -59,7 +59,7 @@ func TestDocumentService_UploadDocument_Success(t *testing.T) {
 	svc, err := NewDocumentService(repo, storage)
 	require.NoError(t, err)
 
-	doc, err := svc.UploadDocument("cand-1", string(domain.Passport), bytes.NewBufferString("file"), "passport.pdf", 100)
+	doc, err := svc.UploadDocument("cand-1", string(domain.Passport), bytes.NewReader(validPDFBytes()), "passport.pdf", int64(len(validPDFBytes())))
 	require.NoError(t, err)
 	require.NotNil(t, doc)
 	assert.Equal(t, domain.Passport, doc.DocumentType)
@@ -102,7 +102,7 @@ func TestDocumentService_UploadDocument_SaveFailureDeletesUploadedFile(t *testin
 	svc, err := NewDocumentService(repo, storage)
 	require.NoError(t, err)
 
-	_, err = svc.UploadDocument("cand-1", string(domain.Passport), bytes.NewBufferString("x"), "passport.pdf", 100)
+	_, err = svc.UploadDocument("cand-1", string(domain.Passport), bytes.NewReader(validPDFBytes()), "passport.pdf", int64(len(validPDFBytes())))
 	require.Error(t, err)
 	assert.True(t, deleted)
 }

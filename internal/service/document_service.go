@@ -59,7 +59,7 @@ func (s *DocumentService) UploadDocument(candidateID, documentType string, file 
 		return nil, err
 	}
 
-	contentType, err := detectContentTypeFromFileName(fileName)
+	bufferedFile, contentType, err := validateAndBufferUpload(file, fileName)
 	if err != nil {
 		return nil, err
 	}
@@ -67,7 +67,7 @@ func (s *DocumentService) UploadDocument(candidateID, documentType string, file 
 		return nil, err
 	}
 
-	fileURL, err := s.storageService.Upload(file, fileName, contentType)
+	fileURL, err := s.storageService.Upload(bufferedFile, fileName, contentType)
 	if err != nil {
 		return nil, fmt.Errorf("upload file: %w", err)
 	}

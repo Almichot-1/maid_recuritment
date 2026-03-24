@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/url"
-	"path"
 	"strings"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -26,10 +25,10 @@ type StorageService interface {
 }
 
 type S3StorageService struct {
-	client   *s3.Client
-	bucket   string
-	region   string
-	endpoint string
+	client        *s3.Client
+	bucket        string
+	region        string
+	endpoint      string
 	publicBaseURL string
 }
 
@@ -86,7 +85,10 @@ func (s *S3StorageService) Upload(file io.Reader, fileName, contentType string) 
 		return "", fmt.Errorf("file is nil")
 	}
 
-	ext := path.Ext(fileName)
+	ext := extensionForContentType(contentType)
+	if ext == "" {
+		return "", ErrUnsupportedContentType
+	}
 	objectKey := fmt.Sprintf("documents/%s%s", uuid.NewString(), ext)
 
 	_, err := s.client.PutObject(context.Background(), &s3.PutObjectInput{
