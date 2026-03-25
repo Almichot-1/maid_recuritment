@@ -24,6 +24,8 @@ type Config struct {
 	SMTPPort           string
 	SMTPUser           string
 	SMTPPass           string
+	SMTPFromEmail      string
+	SMTPFromName       string
 	AppBaseURL         string
 	CORSAllowedOrigins []string
 	RunExpiryScheduler bool
@@ -47,6 +49,8 @@ func Load() (*Config, error) {
 		SMTPPort:           os.Getenv("SMTP_PORT"),
 		SMTPUser:           os.Getenv("SMTP_USER"),
 		SMTPPass:           os.Getenv("SMTP_PASS"),
+		SMTPFromEmail:      os.Getenv("SMTP_FROM_EMAIL"),
+		SMTPFromName:       os.Getenv("SMTP_FROM_NAME"),
 		AppBaseURL:         os.Getenv("APP_BASE_URL"),
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001")),
 		RunExpiryScheduler: getEnvAsBool("RUN_EXPIRY_SCHEDULER", true),

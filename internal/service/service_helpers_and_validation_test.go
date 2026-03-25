@@ -118,7 +118,7 @@ func TestStatusStepUpdate_ErrorMapping(t *testing.T) {
 }
 
 func TestSMTPEmailService_SendSMTPError(t *testing.T) {
-	service, err := NewSMTPEmailService(&config.Config{SMTPHost: "127.0.0.1", SMTPPort: "1", SMTPUser: "u", SMTPPass: "p"})
+	service, err := NewSMTPEmailService(&config.Config{SMTPHost: "127.0.0.1", SMTPPort: "1", SMTPUser: "mailer@example.com", SMTPPass: "p"})
 	require.NoError(t, err)
 	err = service.Send("to@example.com", "s", "b")
 	require.Error(t, err)
