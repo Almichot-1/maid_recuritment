@@ -58,16 +58,23 @@ function isVisible(item: AdminNavItem, role?: AdminRole) {
   return role ? item.roles.includes(role) : false
 }
 
+function matchesAdminPath(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
 function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { admin } = useCurrentAdmin()
+  const visibleItems = navItems.filter((item) => isVisible(item, admin?.role))
+  const activeHref =
+    [...visibleItems]
+      .sort((left, right) => right.href.length - left.href.length)
+      .find((item) => matchesAdminPath(pathname, item.href))?.href ?? ""
 
   return (
     <nav className="space-y-1">
-      {navItems
-        .filter((item) => isVisible(item, admin?.role))
-        .map((item) => {
-          const active = pathname === item.href || (item.href !== "/admin/dashboard" && pathname.startsWith(item.href))
+      {visibleItems.map((item) => {
+          const active = item.href === activeHref
 
           return (
             <Link
