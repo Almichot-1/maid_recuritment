@@ -37,14 +37,16 @@ type AdminLoginResponse struct {
 }
 
 type AdminAuthHandler struct {
-	authService    *service.AdminAuthService
-	inputValidator *validator.Validate
+	authService     *service.AdminAuthService
+	adminRepository domain.AdminRepository
+	inputValidator  *validator.Validate
 }
 
-func NewAdminAuthHandler(authService *service.AdminAuthService) *AdminAuthHandler {
+func NewAdminAuthHandler(authService *service.AdminAuthService, adminRepository domain.AdminRepository) *AdminAuthHandler {
 	return &AdminAuthHandler{
-		authService:    authService,
-		inputValidator: validator.New(),
+		authService:     authService,
+		adminRepository: adminRepository,
+		inputValidator:  validator.New(),
 	}
 }
 
@@ -75,10 +77,29 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	}
 
 	expiresAt := time.Now().UTC().Add(1 * time.Hour)
+	middleware.SetSessionCookie(w, r, middleware.AdminSessionCookieName, token, middleware.AdminSessionMaxAgeSeconds)
 	_ = utils.WriteJSON(w, http.StatusOK, AdminLoginResponse{
 		Token:     token,
 		Admin:     mapAdminUserView(admin),
 		ExpiresAt: expiresAt.Format(time.RFC3339),
+	})
+}
+
+func (h *AdminAuthHandler) Me(w http.ResponseWriter, r *http.Request) {
+	adminID, ok := middleware.AdminIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(adminID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	admin, err := h.adminRepository.GetByID(adminID)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]AdminUserView{
+		"admin": mapAdminUserView(admin),
 	})
 }
 
@@ -87,6 +108,7 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	if ok {
 		_ = h.authService.LogLogout(adminID, clientIP(r))
 	}
+	middleware.ClearSessionCookie(w, r, middleware.AdminSessionCookieName)
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "admin logged out"})
 }
 
