@@ -143,7 +143,11 @@ export default function LoginPage() {
             </div>
 
             <div className="flex justify-end">
-              <Link href="/forgot-password" className="text-sm font-medium text-primary transition-colors hover:underline">
+              <Link
+                href="/forgot-password"
+                aria-label="Open forgot password page"
+                className="text-sm font-semibold text-primary underline-offset-4 transition-colors hover:underline"
+              >
                 Forgot password?
               </Link>
             </div>
