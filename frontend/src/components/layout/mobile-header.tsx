@@ -5,6 +5,7 @@ import dynamic from "next/dynamic"
 import { usePathname } from "next/navigation"
 import { MobileNav } from "@/components/layout/mobile-nav"
 import { isRoleHomePath } from "@/lib/role-home"
+import { ThemeToggle } from "@/components/shared/theme-toggle"
 
 const NotificationBell = dynamic(
   () => import("@/components/notifications/notification-bell").then((module) => module.NotificationBell)
@@ -36,6 +37,7 @@ export function MobileHeader() {
 
         <h1 className="flex-1 truncate text-lg font-semibold">{title}</h1>
 
+        <ThemeToggle />
         <NotificationBell />
       </div>
     </header>

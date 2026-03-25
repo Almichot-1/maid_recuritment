@@ -3,12 +3,13 @@
 import * as React from "react"
 import Link from "next/link"
 import { toast } from "sonner"
+import { Building2, Clock3, ShieldAlert, Users } from "lucide-react"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
+import { AdminEmptyState, AdminStatCard, AdminSurface, AdminToolbar } from "@/components/admin/admin-ui"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -23,6 +24,9 @@ export default function AgenciesManagementPage() {
 
   const { data: agencies = [], isLoading } = useAgencies({ status, role, search })
   const { mutateAsync: updateStatus, isPending } = useUpdateAgencyStatus()
+  const activeCount = agencies.filter((agency) => agency.account_status === AccountStatus.ACTIVE).length
+  const pendingCount = agencies.filter((agency) => agency.account_status === AccountStatus.PENDING_APPROVAL).length
+  const suspendedCount = agencies.filter((agency) => agency.account_status === AccountStatus.SUSPENDED).length
 
   const handleStatusUpdate = async (agencyId: string, nextStatus: AccountStatus) => {
     const reason =
@@ -51,16 +55,22 @@ export default function AgenciesManagementPage() {
         description="Monitor every registered agency, filter by status and role, and take operational actions without entering the agency portal."
       />
 
-      <Card className="border-slate-200 bg-white/90">
-        <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.3fr_0.8fr_0.8fr]">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard label="All agencies" value={agencies.length} detail="Filtered result set" icon={Building2} />
+        <AdminStatCard label="Active" value={activeCount} detail="Can access the platform" icon={Users} />
+        <AdminStatCard label="Pending" value={pendingCount} detail="Awaiting review or approval" icon={Clock3} />
+        <AdminStatCard label="Suspended" value={suspendedCount} detail="Temporarily blocked accounts" icon={ShieldAlert} />
+      </div>
+
+      <AdminToolbar className="grid gap-4 lg:grid-cols-[1.3fr_0.8fr_0.8fr]">
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search company, email, or contact person"
-            className="bg-white"
+            className="bg-white dark:bg-slate-950"
           />
           <Select value={status} onValueChange={(value) => setStatus(value as AccountStatus | "all")}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-white dark:bg-slate-950">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -72,7 +82,7 @@ export default function AgenciesManagementPage() {
             </SelectContent>
           </Select>
           <Select value={role} onValueChange={(value) => setRole(value as UserRole | "all")}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-white dark:bg-slate-950">
               <SelectValue placeholder="Filter by role" />
             </SelectTrigger>
             <SelectContent>
@@ -81,11 +91,9 @@ export default function AgenciesManagementPage() {
               <SelectItem value={UserRole.FOREIGN_AGENT}>Foreign agencies</SelectItem>
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
+      </AdminToolbar>
 
-      <Card className="border-slate-200 bg-white/90">
-        <CardContent className="p-0">
+      <AdminSurface className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -101,7 +109,7 @@ export default function AgenciesManagementPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-500">
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">
                     Loading agencies...
                   </TableCell>
                 </TableRow>
@@ -109,8 +117,11 @@ export default function AgenciesManagementPage() {
 
               {!isLoading && !agencies.length ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-500">
-                    No agencies matched the current filters.
+                  <TableCell colSpan={7} className="p-6">
+                    <AdminEmptyState
+                      title="No agencies matched"
+                      description="Try widening the search or clearing one of the filters to bring agencies back into view."
+                    />
                   </TableCell>
                 </TableRow>
               ) : null}
@@ -119,23 +130,23 @@ export default function AgenciesManagementPage() {
                 <TableRow key={agency.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium text-slate-950">{agency.company_name || agency.contact_person}</p>
-                      <p className="text-xs text-slate-500">{agency.contact_person}</p>
+                      <p className="font-medium text-slate-950 dark:text-slate-100">{agency.company_name || agency.contact_person}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{agency.contact_person}</p>
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-600">{agency.email}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{agency.email}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="rounded-full">{titleize(agency.role)}</Badge>
                   </TableCell>
                   <TableCell>
                     <AdminStatusBadge status={agency.account_status} />
                   </TableCell>
-                  <TableCell className="text-slate-600">{formatShortDate(agency.registration_date)}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{formatShortDate(agency.registration_date)}</TableCell>
                   <TableCell>
                     {agency.role === UserRole.ETHIOPIAN_AGENT ? (
-                      <span className="text-sm text-slate-600">{agency.total_candidates} candidates</span>
+                      <span className="text-sm text-slate-600 dark:text-slate-300">{agency.total_candidates} candidates</span>
                     ) : (
-                      <span className="text-sm text-slate-600">{agency.total_selections} selections</span>
+                      <span className="text-sm text-slate-600 dark:text-slate-300">{agency.total_selections} selections</span>
                     )}
                   </TableCell>
                   <TableCell>
@@ -167,8 +178,7 @@ export default function AgenciesManagementPage() {
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </AdminSurface>
     </div>
   )
 }

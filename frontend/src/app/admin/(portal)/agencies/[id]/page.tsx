@@ -3,19 +3,21 @@
 import * as React from "react"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
+import { CheckCheck, ClipboardList, Link2, Loader2, ShieldCheck } from "lucide-react"
 
+import { AdminEmptyState, AdminInfoTile, AdminMetricRow, AdminStatCard, AdminSurface } from "@/components/admin/admin-ui"
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
-import { useAgency, useApproveAgency, useRejectAgency, useUpdateAgencyStatus } from "@/hooks/use-admin-portal"
+import { useApproveAgency, useAgency, useRejectAgency, useUpdateAgencyStatus } from "@/hooks/use-admin-portal"
 import { useAgencyPairings } from "@/hooks/use-pairings"
-import { AccountStatus } from "@/types"
 import { formatDateTime, titleize } from "@/lib/admin-utils"
+import { AccountStatus } from "@/types"
 
 export default function AdminAgencyDetailPage({ params }: { params: { id: string } }) {
   const router = useRouter()
@@ -38,14 +40,24 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
   }, [data?.agency.account_status])
 
   if (isLoading || !data) {
-    return <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading agency profile...</div>
+    return (
+      <AdminSurface className="p-10">
+        <div className="flex items-center justify-center gap-3 text-sm text-slate-500 dark:text-slate-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading agency profile...
+        </div>
+      </AdminSurface>
+    )
   }
 
+  const agencyLabel = data.agency.company_name || data.agency.contact_person
+
   const handleApprove = async () => {
-    const confirmed = window.confirm(`Approve ${data.agency.company_name || data.agency.contact_person}?`)
+    const confirmed = window.confirm(`Approve ${agencyLabel}?`)
     if (!confirmed) {
       return
     }
+
     await approveAgency(data.agency.id)
     toast.success("Agency approved.")
     router.refresh()
@@ -56,9 +68,13 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
       toast.error("Rejection reason is required.")
       return
     }
+
     await rejectAgency({ agencyId: data.agency.id, reason: rejectReason, notes: rejectNotes })
     toast.success("Agency rejected.")
     setRejectOpen(false)
+    setRejectReason("")
+    setRejectNotes("")
+    router.refresh()
   }
 
   const handleApplyStatus = async () => {
@@ -66,14 +82,16 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
       toast.error("A reason is required for suspended or rejected status.")
       return
     }
+
     await updateStatus({ agencyId: data.agency.id, status: statusDraft, reason: statusReason })
     toast.success("Agency status updated.")
+    router.refresh()
   }
 
   return (
     <div className="space-y-6">
       <AdminPageHeader
-        title={data.agency.company_name || data.agency.contact_person}
+        title={agencyLabel}
         description="Review registration details, operational history, and current account controls for this agency."
         action={
           <div className="flex flex-wrap items-center gap-3">
@@ -92,30 +110,37 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
         }
       />
 
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard label="Approval state" value={titleize(data.approval_status)} detail="Registration review stage" icon={ShieldCheck} />
+        <AdminStatCard label="Active recruitments" value={data.activity_summary.active_recruitments} detail="Currently in motion" icon={CheckCheck} />
+        <AdminStatCard label="Pair workspaces" value={pairings.length} detail="Private linked partners" icon={Link2} />
+        <AdminStatCard label="Documents" value={data.submitted_documents.length} detail="Verification items on file" icon={ClipboardList} />
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="border-slate-200 bg-white/90">
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Agency profile</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Agency profile</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
-            <InfoItem label="Company name" value={data.agency.company_name || "Not provided"} />
-            <InfoItem label="Contact person" value={data.agency.contact_person} />
-            <InfoItem label="Email" value={data.agency.email} />
-            <InfoItem label="Agency type" value={titleize(data.agency.role)} />
-            <InfoItem label="Registration date" value={formatDateTime(data.agency.registration_date)} />
-            <InfoItem label="Approval state" value={titleize(data.approval_status)} />
-            <InfoItem label="Rejection reason" value={data.rejection_reason || "None"} />
-            <InfoItem label="Internal notes" value={data.admin_notes || "No internal notes recorded yet."} />
+            <AdminInfoTile label="Company name" value={data.agency.company_name || "Not provided"} />
+            <AdminInfoTile label="Contact person" value={data.agency.contact_person} />
+            <AdminInfoTile label="Email" value={data.agency.email} />
+            <AdminInfoTile label="Agency type" value={titleize(data.agency.role)} />
+            <AdminInfoTile label="Registration date" value={formatDateTime(data.agency.registration_date)} />
+            <AdminInfoTile label="Approval state" value={titleize(data.approval_status)} />
+            <AdminInfoTile label="Rejection reason" value={data.rejection_reason || "None"} />
+            <AdminInfoTile label="Internal notes" value={data.admin_notes || "No internal notes recorded yet."} className="sm:col-span-2" />
           </CardContent>
-        </Card>
+        </AdminSurface>
 
-        <Card className="border-slate-200 bg-white/90">
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Account controls</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Account controls</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Account status</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Account status</label>
               <Select value={statusDraft} onValueChange={(value) => setStatusDraft(value as AccountStatus)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -127,64 +152,71 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
                 </SelectContent>
               </Select>
             </div>
+
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Reason / admin note</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Reason / admin note</label>
               <Textarea
                 value={statusReason}
                 onChange={(event) => setStatusReason(event.target.value)}
                 placeholder="Explain the reason for this status change"
               />
             </div>
+
+            <div className="rounded-2xl border border-slate-200/80 bg-white/80 px-4 py-3 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/78 dark:text-slate-300">
+              Use this panel for operational restrictions only. No backend workflow rules are changed here, only the agency account state.
+            </div>
+
             <Button className="w-full" disabled={updatingStatus} onClick={handleApplyStatus}>
               Apply Status Change
             </Button>
           </CardContent>
-        </Card>
+        </AdminSurface>
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="border-slate-200 bg-white/90">
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Activity summary</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Activity summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
-            <MetricItem label="Total candidates" value={data.activity_summary.total_candidates} />
-            <MetricItem label="Active candidates" value={data.activity_summary.active_candidates} />
-            <MetricItem label="Completed recruitments" value={data.activity_summary.completed_recruitments} />
-            <MetricItem label="Total selections" value={data.activity_summary.total_selections} />
-            <MetricItem label="Approved selections" value={data.activity_summary.approved_selections} />
-            <MetricItem label="Active recruitments" value={data.activity_summary.active_recruitments} />
+            <AdminMetricRow label="Total candidates" value={data.activity_summary.total_candidates} />
+            <AdminMetricRow label="Active candidates" value={data.activity_summary.active_candidates} />
+            <AdminMetricRow label="Completed recruitments" value={data.activity_summary.completed_recruitments} />
+            <AdminMetricRow label="Total selections" value={data.activity_summary.total_selections} />
+            <AdminMetricRow label="Approved selections" value={data.activity_summary.approved_selections} />
+            <AdminMetricRow label="Active recruitments" value={data.activity_summary.active_recruitments} />
           </CardContent>
-        </Card>
+        </AdminSurface>
 
-        <Card className="border-slate-200 bg-white/90 lg:col-span-2">
+        <AdminSurface className="lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Recent activity</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Recent activity</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {data.recent_activity.map((item) => (
-              <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/75 p-4 dark:border-slate-800 dark:bg-slate-900/82">
                 <div>
-                  <p className="font-medium text-slate-950">{item.title}</p>
-                  <p className="text-sm text-slate-500">{titleize(item.type)} • {formatDateTime(item.occurred_at)}</p>
+                  <p className="font-medium text-slate-950 dark:text-slate-100">{item.title}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{titleize(item.type)} • {formatDateTime(item.occurred_at)}</p>
                 </div>
                 <AdminStatusBadge status={item.status} />
               </div>
             ))}
             {!data.recent_activity.length ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-                No recent activity has been recorded for this agency yet.
-              </div>
+              <AdminEmptyState
+                title="No recent activity yet"
+                description="Recent operational events for this agency will appear here as soon as the first workflow begins."
+              />
             ) : null}
           </CardContent>
-        </Card>
+        </AdminSurface>
       </div>
 
-      <Card className="border-slate-200 bg-white/90">
+      <AdminSurface>
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle className="text-lg text-slate-950">Pair workspaces</CardTitle>
-            <p className="text-sm text-slate-500">Private Ethiopian–Foreign relationships connected to this agency.</p>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Pair workspaces</CardTitle>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Private Ethiopian-to-Foreign relationships connected to this agency.</p>
           </div>
           <Button variant="outline" onClick={() => router.push("/admin/pairings")}>
             Open pairings manager
@@ -192,56 +224,51 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
         </CardHeader>
         <CardContent className="space-y-3">
           {pairingsLoading ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-              Loading pair workspaces...
-            </div>
+            <AdminEmptyState title="Loading workspaces" description="Fetching the linked pair workspaces for this agency." />
           ) : pairings.length ? (
             pairings.map((pairing) => (
-              <div key={pairing.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={pairing.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900/82">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <AdminStatusBadge status={pairing.status} />
-                    <p className="text-sm font-medium text-slate-950">
-                      {pairing.ethiopian_agency.company_name || pairing.ethiopian_agency.full_name} ↔ {pairing.foreign_agency.company_name || pairing.foreign_agency.full_name}
+                    <p className="text-sm font-medium text-slate-950 dark:text-slate-100">
+                      {pairing.ethiopian_agency.company_name || pairing.ethiopian_agency.full_name} {" -> "} {pairing.foreign_agency.company_name || pairing.foreign_agency.full_name}
                     </p>
                   </div>
-                  <p className="text-sm text-slate-500">
-                    Approved {formatDateTime(pairing.approved_at)}
-                  </p>
-                  {pairing.notes ? <p className="text-sm text-slate-500">{pairing.notes}</p> : null}
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Approved {formatDateTime(pairing.approved_at)}</p>
+                  {pairing.notes ? <p className="text-sm text-slate-500 dark:text-slate-400">{pairing.notes}</p> : null}
                 </div>
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-              This agency is not connected to any private workspaces yet.
-            </div>
+            <AdminEmptyState title="No pair workspaces yet" description="This agency is not connected to any private workspaces right now." />
           )}
         </CardContent>
-      </Card>
+      </AdminSurface>
 
-      <Card className="border-slate-200 bg-white/90">
+      <AdminSurface>
         <CardHeader>
-          <CardTitle className="text-lg text-slate-950">Verification documents</CardTitle>
+          <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Verification documents</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {data.submitted_documents.length ? (
             data.submitted_documents.map((document, index) => (
-              <div key={`${document.id ?? index}`} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-600">
+              <div key={`${document.id ?? index}`} className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 text-sm text-slate-600 dark:border-slate-800 dark:bg-slate-900/82 dark:text-slate-300">
                 {Object.entries(document).map(([key, value]) => (
                   <p key={key}>
-                    <span className="font-medium text-slate-900">{titleize(key)}:</span> {value}
+                    <span className="font-medium text-slate-950 dark:text-slate-100">{titleize(key)}:</span> {String(value)}
                   </p>
                 ))}
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-              Agency verification document upload is not captured in the current signup flow yet, so this section stays empty for now.
-            </div>
+            <AdminEmptyState
+              title="No verification documents captured"
+              description="Agency verification upload is not wired into the current signup flow yet, so this panel stays empty for now."
+            />
           )}
         </CardContent>
-      </Card>
+      </AdminSurface>
 
       <Dialog open={rejectOpen} onOpenChange={setRejectOpen}>
         <DialogContent>
@@ -251,11 +278,11 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
           </DialogHeader>
           <div className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium">Rejection reason</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Rejection reason</label>
               <Input value={rejectReason} onChange={(event) => setRejectReason(event.target.value)} placeholder="Incomplete documentation, invalid license, etc." />
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium">Internal notes</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Internal notes</label>
               <Textarea value={rejectNotes} onChange={(event) => setRejectNotes(event.target.value)} placeholder="Optional internal context for the admin team" />
             </div>
           </div>
@@ -265,24 +292,6 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
           </DialogFooter>
         </DialogContent>
       </Dialog>
-    </div>
-  )
-}
-
-function InfoItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-2 text-sm text-slate-700">{value}</p>
-    </div>
-  )
-}
-
-function MetricItem({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className="text-lg font-semibold text-slate-950">{value}</span>
     </div>
   )
 }

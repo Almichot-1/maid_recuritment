@@ -33,8 +33,9 @@ export default function RootLayout({
         <QueryProvider>
           <ThemeProvider
             attribute="class"
-            defaultTheme="system"
+            defaultTheme="dark"
             enableSystem
+            storageKey="maid-recruitment-theme"
             disableTransitionOnChange
           >
             {children}

@@ -1,9 +1,11 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, Save, ShieldAlert } from "lucide-react"
+import { Building2, Clock3, Loader2, MoonStar, Save, ShieldAlert, ShieldCheck, Wrench } from "lucide-react"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
+import { AdminStatCard, AdminSurface } from "@/components/admin/admin-ui"
+import { ThemeToggle } from "@/components/shared/theme-toggle"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
@@ -30,12 +32,12 @@ function SettingsToggle({
   onCheckedChange: (checked: boolean) => void
 }) {
   return (
-    <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200 p-4">
+    <div className="flex items-start justify-between gap-4 rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-900/78">
       <div className="space-y-1">
-        <Label htmlFor={id} className="text-sm font-semibold text-slate-950">
+        <Label htmlFor={id} className="text-sm font-semibold text-slate-950 dark:text-slate-100">
           {title}
         </Label>
-        <p className="text-sm text-slate-500">{description}</p>
+        <p className="text-sm text-slate-500 dark:text-slate-400">{description}</p>
       </div>
       <Switch id={id} checked={checked} onCheckedChange={onCheckedChange} />
     </div>
@@ -56,8 +58,8 @@ export default function AdminSettingsPage() {
 
   if (!isSuperAdmin) {
     return (
-      <Card className="border-amber-200 bg-amber-50">
-        <CardContent className="flex items-center gap-3 p-6 text-sm text-amber-900">
+      <Card className="border-amber-200 bg-amber-50 dark:border-amber-400/20 dark:bg-amber-400/10">
+        <CardContent className="flex items-center gap-3 p-6 text-sm text-amber-900 dark:text-amber-100">
           <ShieldAlert className="h-5 w-5" />
           Platform settings are restricted to Super Admin accounts.
         </CardContent>
@@ -97,7 +99,7 @@ export default function AdminSettingsPage() {
         title="Platform Settings"
         description="Control live platform behavior for approvals, expiry, maintenance, and admin-driven email policy."
         action={
-          <Button className="gap-2 bg-slate-950 hover:bg-slate-800" disabled={!form || !isDirty || updateSettings.isPending} onClick={saveSettings}>
+          <Button className="gap-2" disabled={!form || !isDirty || updateSettings.isPending} onClick={saveSettings}>
             {updateSettings.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Save className="h-4 w-4" />}
             Save changes
           </Button>
@@ -105,29 +107,36 @@ export default function AdminSettingsPage() {
       />
 
       {isLoading || !form ? (
-        <Card className="border-slate-200 bg-white/90">
-          <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-500">
+        <AdminSurface>
+          <CardContent className="flex items-center gap-3 p-6 text-sm text-slate-500 dark:text-slate-400">
             <Loader2 className="h-4 w-4 animate-spin" />
             Loading platform settings...
           </CardContent>
-        </Card>
+        </AdminSurface>
       ) : (
         <>
+          <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+            <AdminStatCard label="Selection lock" value={`${form.selection_lock_duration_hours}h`} detail="Platform-wide selection hold duration" icon={Clock3} />
+            <AdminStatCard label="Dual approval" value={form.require_both_approvals ? "On" : "Off"} detail="Both agencies must confirm the selection" icon={ShieldCheck} />
+            <AdminStatCard label="Auto-approve agencies" value={form.auto_approve_agencies ? "On" : "Off"} detail="Skips the manual registration queue" icon={Building2} />
+            <AdminStatCard label="Maintenance mode" value={form.maintenance_mode ? "Live" : "Off"} detail="Blocks agency access while admins stay online" icon={Wrench} />
+          </div>
+
           <div className="grid gap-6 xl:grid-cols-2">
-            <Card className="border-slate-200 bg-white/90">
+            <AdminSurface>
               <CardHeader>
-                <CardTitle className="text-lg text-slate-950">Recruitment rules</CardTitle>
+                <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Recruitment rules</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <div className="space-y-2">
-                  <Label htmlFor="selection-lock-duration" className="text-sm font-semibold text-slate-950">
+                  <Label htmlFor="selection-lock-duration" className="text-sm font-semibold text-slate-950 dark:text-slate-100">
                     Selection lock duration
                   </Label>
                   <Select
                     value={String(form.selection_lock_duration_hours)}
                     onValueChange={(value) => setField("selection_lock_duration_hours", Number(value))}
                   >
-                    <SelectTrigger id="selection-lock-duration" className="bg-white">
+                    <SelectTrigger id="selection-lock-duration">
                       <SelectValue placeholder="Select lock duration" />
                     </SelectTrigger>
                     <SelectContent>
@@ -136,7 +145,7 @@ export default function AdminSettingsPage() {
                       <SelectItem value="48">48 hours</SelectItem>
                     </SelectContent>
                   </Select>
-                  <p className="text-sm text-slate-500">Applies to all new foreign-agency selections.</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Applies to all new foreign-agency selections.</p>
                 </div>
 
                 <SettingsToggle
@@ -155,11 +164,11 @@ export default function AdminSettingsPage() {
                   onCheckedChange={(checked) => setField("auto_expire_selections", checked)}
                 />
               </CardContent>
-            </Card>
+            </AdminSurface>
 
-            <Card className="border-slate-200 bg-white/90">
+            <AdminSurface>
               <CardHeader>
-                <CardTitle className="text-lg text-slate-950">Agency onboarding and notifications</CardTitle>
+                <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Agency onboarding and notifications</CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <SettingsToggle
@@ -178,12 +187,12 @@ export default function AdminSettingsPage() {
                   onCheckedChange={(checked) => setField("email_notifications_enabled", checked)}
                 />
               </CardContent>
-            </Card>
+            </AdminSurface>
           </div>
 
-          <Card className="border-slate-200 bg-white/90">
+          <AdminSurface>
             <CardHeader>
-              <CardTitle className="text-lg text-slate-950">Maintenance mode</CardTitle>
+              <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Maintenance mode</CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
               <SettingsToggle
@@ -194,73 +203,99 @@ export default function AdminSettingsPage() {
                 onCheckedChange={(checked) => setField("maintenance_mode", checked)}
               />
               <div className="space-y-2">
-                <Label htmlFor="maintenance-message" className="text-sm font-semibold text-slate-950">
+                <Label htmlFor="maintenance-message" className="text-sm font-semibold text-slate-950 dark:text-slate-100">
                   Maintenance message
                 </Label>
                 <Input
                   id="maintenance-message"
                   value={form.maintenance_message}
                   onChange={(event) => setField("maintenance_message", event.target.value)}
-                  className="bg-white"
                 />
               </div>
             </CardContent>
-          </Card>
+          </AdminSurface>
 
-          <Card className="border-slate-200 bg-white/90">
+          <AdminSurface>
+            <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Appearance & operator experience</CardTitle>
+                <p className="text-sm text-slate-500 dark:text-slate-400">
+                  Light mode, dark mode, and system mode are now available across the website. Each user preference is stored locally in their browser.
+                </p>
+              </div>
+              <ThemeToggle showLabel className="w-full justify-between sm:w-auto" />
+            </CardHeader>
+            <CardContent>
+              <div className="rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-900/78">
+                <div className="flex items-start gap-3">
+                  <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-100 text-amber-700 dark:bg-amber-400/15 dark:text-amber-300">
+                    <MoonStar className="h-5 w-5" />
+                  </div>
+                  <div className="space-y-1">
+                    <p className="font-semibold text-slate-950 dark:text-slate-100">Theme switching is live</p>
+                    <p className="text-sm text-slate-500 dark:text-slate-400">
+                      Users can switch appearance from the website header, mobile header, auth screens, and the admin portal shell without touching backend settings.
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </AdminSurface>
+
+          <AdminSurface>
             <CardHeader>
-              <CardTitle className="text-lg text-slate-950">Email templates</CardTitle>
+              <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Email templates</CardTitle>
             </CardHeader>
             <CardContent className="grid gap-4 xl:grid-cols-2">
               <div className="space-y-2">
-                <Label htmlFor="approval-template" className="text-sm font-semibold text-slate-950">
+                <Label htmlFor="approval-template" className="text-sm font-semibold text-slate-950 dark:text-slate-100">
                   Agency approval
                 </Label>
                 <Textarea
                   id="approval-template"
                   value={form.agency_approval_email_template}
                   onChange={(event) => setField("agency_approval_email_template", event.target.value)}
-                  className="min-h-40 bg-white"
+                  className="min-h-40"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="rejection-template" className="text-sm font-semibold text-slate-950">
+                <Label htmlFor="rejection-template" className="text-sm font-semibold text-slate-950 dark:text-slate-100">
                   Agency rejection
                 </Label>
                 <Textarea
                   id="rejection-template"
                   value={form.agency_rejection_email_template}
                   onChange={(event) => setField("agency_rejection_email_template", event.target.value)}
-                  className="min-h-40 bg-white"
+                  className="min-h-40"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="selection-template" className="text-sm font-semibold text-slate-950">
+                <Label htmlFor="selection-template" className="text-sm font-semibold text-slate-950 dark:text-slate-100">
                   Selection notifications
                 </Label>
                 <Textarea
                   id="selection-template"
                   value={form.selection_notification_email_template}
                   onChange={(event) => setField("selection_notification_email_template", event.target.value)}
-                  className="min-h-40 bg-white"
+                  className="min-h-40"
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="expiry-template" className="text-sm font-semibold text-slate-950">
+                <Label htmlFor="expiry-template" className="text-sm font-semibold text-slate-950 dark:text-slate-100">
                   Expiry notifications
                 </Label>
                 <Textarea
                   id="expiry-template"
                   value={form.expiry_notification_email_template}
                   onChange={(event) => setField("expiry_notification_email_template", event.target.value)}
-                  className="min-h-40 bg-white"
+                  className="min-h-40"
                 />
               </div>
-              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500 xl:col-span-2">
+              <div className="rounded-2xl border border-dashed border-slate-300 bg-slate-50 p-4 text-sm text-slate-500 dark:border-slate-700 dark:bg-slate-900/72 dark:text-slate-400 xl:col-span-2">
                 Supported variables: <code>{"{company_name}"}</code>, <code>{"{full_name}"}</code>, <code>{"{candidate_name}"}</code>, <code>{"{reason}"}</code>, <code>{"{message}"}</code>, <code>{"{title}"}</code>.
               </div>
             </CardContent>
-          </Card>
+          </AdminSurface>
         </>
       )}
     </div>

@@ -2,9 +2,11 @@
 
 import * as React from "react"
 import { toast } from "sonner"
+import { KeyRound, ShieldCheck, ShieldMinus, UserCog } from "lucide-react"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
+import { AdminEmptyState, AdminStatCard, AdminSurface } from "@/components/admin/admin-ui"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -32,11 +34,14 @@ export default function AdminManagementPage() {
     provisioning_url: string
     invitation_warning?: string
   }>(null)
+  const activeAdmins = admins.filter((admin) => admin.is_active).length
+  const suspendedAdmins = admins.length - activeAdmins
+  const superAdmins = admins.filter((admin) => admin.role === AdminRole.SUPER_ADMIN).length
 
   if (!isSuperAdmin) {
     return (
-      <Card className="border-amber-200 bg-amber-50">
-        <CardContent className="p-6 text-sm text-amber-900">
+      <Card className="border-amber-200 bg-amber-50 dark:border-amber-400/20 dark:bg-amber-400/10">
+        <CardContent className="p-6 text-sm text-amber-900 dark:text-amber-100">
           Admin management is restricted to Super Admin accounts.
         </CardContent>
       </Card>
@@ -68,25 +73,31 @@ export default function AdminManagementPage() {
       <AdminPageHeader
         title="Admin Management"
         description="Create, review, and update the platform operator accounts that can enter the admin portal."
-        action={<Button className="bg-slate-950 hover:bg-slate-800" onClick={() => setOpen(true)}>Add Admin</Button>}
+        action={<Button onClick={() => setOpen(true)}>Add Admin</Button>}
       />
 
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard label="Operator accounts" value={admins.length} detail="Visible to super admins" icon={UserCog} />
+        <AdminStatCard label="Active" value={activeAdmins} detail="Can access the admin portal" icon={ShieldCheck} />
+        <AdminStatCard label="Suspended" value={suspendedAdmins} detail="Temporarily disabled logins" icon={ShieldMinus} />
+        <AdminStatCard label="Super admins" value={superAdmins} detail="Full platform control" icon={KeyRound} />
+      </div>
+
       {createdCredentials ? (
-        <Card className="border-amber-200 bg-amber-50">
+        <Card className="border-amber-300/40 bg-amber-50/90 dark:border-amber-400/20 dark:bg-amber-400/10">
           <CardContent className="space-y-2 p-5 text-sm text-amber-950">
             <p className="font-semibold">Initial admin credentials</p>
             <p>Temporary password: <span className="font-mono">{createdCredentials.temporary_password}</span></p>
             <p>MFA secret: <span className="font-mono">{createdCredentials.mfa_secret}</span></p>
             <p className="break-all">Provisioning URL: <span className="font-mono">{createdCredentials.provisioning_url}</span></p>
             {createdCredentials.invitation_warning ? (
-              <p className="text-amber-800">Invitation warning: {createdCredentials.invitation_warning}</p>
+              <p className="text-amber-800 dark:text-amber-200">Invitation warning: {createdCredentials.invitation_warning}</p>
             ) : null}
           </CardContent>
         </Card>
       ) : null}
 
-      <Card className="border-slate-200 bg-white/90">
-        <CardContent className="p-0">
+      <AdminSurface className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -101,26 +112,31 @@ export default function AdminManagementPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500">Loading admins...</TableCell>
+                  <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">Loading admins...</TableCell>
                 </TableRow>
               ) : null}
               {!isLoading && !admins.length ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500">No admins found.</TableCell>
+                  <TableCell colSpan={6} className="p-6">
+                    <AdminEmptyState
+                      title="No admins found"
+                      description="Create the next admin account from here and the credentials pack will appear immediately."
+                    />
+                  </TableCell>
                 </TableRow>
               ) : null}
               {admins.map((admin) => (
                 <TableRow key={admin.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium text-slate-950">{admin.full_name}</p>
-                      <p className="text-xs text-slate-500">{admin.email}</p>
+                      <p className="font-medium text-slate-950 dark:text-slate-100">{admin.full_name}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{admin.email}</p>
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-600">{titleize(admin.role)}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{titleize(admin.role)}</TableCell>
                   <TableCell><AdminStatusBadge status={admin.is_active ? "active" : "suspended"} /></TableCell>
-                  <TableCell className="text-slate-600">{formatDateTime(admin.last_login || undefined)}</TableCell>
-                  <TableCell className="text-slate-600">{formatDateTime(admin.created_at)}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{formatDateTime(admin.last_login || undefined)}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{formatDateTime(admin.created_at)}</TableCell>
                   <TableCell>
                     <div className="flex items-center justify-end gap-2">
                       <Button
@@ -137,8 +153,7 @@ export default function AdminManagementPage() {
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </AdminSurface>
 
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent>

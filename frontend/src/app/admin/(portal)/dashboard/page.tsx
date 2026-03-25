@@ -4,10 +4,11 @@ import * as React from "react"
 import Link from "next/link"
 import { ArrowRight, CheckCheck, Clock3, Layers3, Users } from "lucide-react"
 
+import { AdminEmptyState, AdminStatCard, AdminSurface } from "@/components/admin/admin-ui"
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
   useAdminCandidates,
   useAdminDashboard,
@@ -15,8 +16,8 @@ import {
   useAgencies,
   usePendingAgencies,
 } from "@/hooks/use-admin-portal"
-import { UserRole } from "@/types"
 import { buildDailySeries, formatPercent, formatRelative, formatShortDate, titleize } from "@/lib/admin-utils"
+import { UserRole } from "@/types"
 
 function MiniBars({ points }: { points: Array<{ label: string; value: number }> }) {
   const max = Math.max(...points.map((point) => point.value), 1)
@@ -27,13 +28,22 @@ function MiniBars({ points }: { points: Array<{ label: string; value: number }> 
         {points.map((point) => (
           <div key={point.label} className="flex flex-1 flex-col items-center gap-2">
             <div
-              className="w-full rounded-t-2xl bg-gradient-to-t from-slate-950 via-slate-800 to-amber-400"
+              className="w-full rounded-t-2xl bg-gradient-to-t from-amber-500 via-cyan-400 to-emerald-300"
               style={{ height: `${Math.max((point.value / max) * 100, point.value > 0 ? 12 : 4)}%` }}
             />
-            <span className="text-[11px] text-slate-500">{point.label}</span>
+            <span className="text-[11px] text-slate-500 dark:text-slate-400">{point.label}</span>
           </div>
         ))}
       </div>
+    </div>
+  )
+}
+
+function HeroMetric({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="rounded-2xl border border-slate-200/80 bg-white/82 p-4 dark:border-white/10 dark:bg-white/5">
+      <p className="text-xs uppercase tracking-[0.2em] text-slate-500 dark:text-slate-300">{label}</p>
+      <p className="mt-2 text-2xl font-semibold text-slate-950 dark:text-white">{value}</p>
     </div>
   )
 }
@@ -114,7 +124,7 @@ export default function AdminDashboardPage() {
         description="A live control center for approvals, agency activity, candidate supply, and recruitment progress across the platform."
         action={
           <Link href="/admin/agencies/pending">
-            <Button className="gap-2 bg-slate-950 hover:bg-slate-800">
+            <Button className="gap-2">
               Review queue
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -122,12 +132,12 @@ export default function AdminDashboardPage() {
         }
       />
 
-      <Card className="overflow-hidden border-0 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.22),_transparent_28%),radial-gradient(circle_at_bottom_right,_rgba(15,23,42,0.12),_transparent_30%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.98))] text-white shadow-xl">
+      <AdminSurface className="overflow-hidden">
         <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
           <div className="space-y-3">
-            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-200">Operator pulse</div>
-            <h2 className="text-3xl font-semibold tracking-tight">The platform, above every agency workflow</h2>
-            <p className="max-w-3xl text-sm text-slate-200/90">
+            <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-700 dark:text-amber-300">Operator pulse</div>
+            <h2 className="text-3xl font-semibold tracking-tight text-slate-950 dark:text-slate-50">A calmer view of the whole platform</h2>
+            <p className="max-w-3xl text-sm text-slate-600 dark:text-slate-300">
               Approvals, candidate supply, selection throughput, and recruitment momentum are visible here so platform operators can intervene quickly when something drifts.
             </p>
           </div>
@@ -138,45 +148,37 @@ export default function AdminDashboardPage() {
             <HeroMetric label="Selection stream" value={selections.length} />
           </div>
         </CardContent>
-      </Card>
+      </AdminSurface>
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metricCards.map((card) => (
-          <Card key={card.label} className="border-slate-200 bg-white/90 shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:shadow-lg">
-            <CardContent className="flex items-start justify-between p-6">
-              <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-500">{card.label}</p>
-                <p className="text-3xl font-semibold tracking-tight text-slate-950">
-                  {statsLoading ? "..." : card.value}
-                </p>
-                <p className="text-sm text-slate-500">{card.detail}</p>
-              </div>
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
-                <card.icon className="h-5 w-5" />
-              </div>
-            </CardContent>
-          </Card>
+          <AdminStatCard
+            key={card.label}
+            label={card.label}
+            value={statsLoading ? "..." : card.value}
+            detail={card.detail}
+            icon={card.icon}
+            className="transition-transform duration-200 hover:-translate-y-1"
+          />
         ))}
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <AdminSurface>
           <CardHeader className="space-y-2">
-            <CardTitle className="text-lg text-slate-950">Pending approval queue</CardTitle>
-            <p className="text-sm text-slate-500">Newest agency applications that still need an admin decision.</p>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Pending approval queue</CardTitle>
+            <p className="text-sm text-slate-500 dark:text-slate-400">Newest agency applications that still need an admin decision.</p>
           </CardHeader>
           <CardContent className="space-y-3">
             {pendingAgencies.slice(0, 5).map((agency) => (
-              <div key={agency.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={agency.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200/80 bg-white/80 p-4 sm:flex-row sm:items-center sm:justify-between dark:border-slate-800 dark:bg-slate-900/85">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-slate-950">{agency.company_name || agency.contact_person}</p>
+                    <p className="font-medium text-slate-950 dark:text-slate-100">{agency.company_name || agency.contact_person}</p>
                     <AdminStatusBadge status={agency.account_status} />
                   </div>
-                  <p className="text-sm text-slate-500">
-                    {agency.contact_person} • {agency.email}
-                  </p>
-                  <p className="text-xs uppercase tracking-wide text-slate-400">
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{agency.contact_person} • {agency.email}</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">
                     {titleize(agency.role)} • registered {formatRelative(agency.registration_date)}
                   </p>
                 </div>
@@ -186,110 +188,120 @@ export default function AdminDashboardPage() {
               </div>
             ))}
             {!pendingAgencies.length ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
-                No pending approvals right now. Newly registered agencies will appear here automatically.
-              </div>
+              <AdminEmptyState
+                title="Queue is clear"
+                description="No pending approvals right now. Newly registered agencies will appear here automatically."
+              />
             ) : null}
           </CardContent>
-        </Card>
+        </AdminSurface>
 
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Candidate status distribution</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Candidate status distribution</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {candidateDistribution.map(([status, count]) => (
               <div key={status} className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <AdminStatusBadge status={status} />
-                  <span className="font-semibold text-slate-950">{count}</span>
+                  <span className="font-semibold text-slate-950 dark:text-slate-100">{count}</span>
                 </div>
-                <div className="h-2 rounded-full bg-slate-100">
+                <div className="h-2 rounded-full bg-slate-200 dark:bg-slate-800">
                   <div
-                    className="h-2 rounded-full bg-slate-950"
+                    className="h-2 rounded-full bg-gradient-to-r from-amber-400 via-sky-400 to-emerald-400"
                     style={{ width: `${Math.max((count / Math.max(candidates.length, 1)) * 100, 8)}%` }}
                   />
                 </div>
               </div>
             ))}
-            {!candidateDistribution.length ? <p className="text-sm text-slate-500">No candidate data available yet.</p> : null}
+            {!candidateDistribution.length ? (
+              <AdminEmptyState
+                title="No candidate data yet"
+                description="Candidate status tracking will appear here once agencies begin publishing profiles."
+              />
+            ) : null}
           </CardContent>
-        </Card>
+        </AdminSurface>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Agency registrations over the last 7 days</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Agency registrations over the last 7 days</CardTitle>
           </CardHeader>
           <CardContent>
             <MiniBars points={registrationTrend} />
           </CardContent>
-        </Card>
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        </AdminSurface>
+
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Selections over the last 7 days</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Selections over the last 7 days</CardTitle>
           </CardHeader>
           <CardContent>
             <MiniBars points={selectionTrend} />
           </CardContent>
-        </Card>
+        </AdminSurface>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Top Ethiopian agencies</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Top Ethiopian agencies</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {topEthiopian.map((agency, index) => (
-              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-900/85">
                 <div>
-                  <p className="font-medium text-slate-950">
+                  <p className="font-medium text-slate-950 dark:text-slate-100">
                     {index + 1}. {agency.company_name || agency.contact_person}
                   </p>
-                  <p className="text-sm text-slate-500">Registered {formatShortDate(agency.registration_date)}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Registered {formatShortDate(agency.registration_date)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold text-slate-950">{agency.total_candidates}</p>
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Candidates</p>
+                  <p className="text-lg font-semibold text-slate-950 dark:text-slate-100">{agency.total_candidates}</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Candidates</p>
                 </div>
               </div>
             ))}
+            {!topEthiopian.length ? (
+              <AdminEmptyState
+                title="No Ethiopian agency rankings yet"
+                description="Agency performance will populate here once candidate supply starts moving."
+              />
+            ) : null}
           </CardContent>
-        </Card>
+        </AdminSurface>
 
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <AdminSurface>
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Top Foreign agencies</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Top Foreign agencies</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {topForeign.map((agency, index) => (
-              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-slate-200/80 bg-white/80 p-4 dark:border-slate-800 dark:bg-slate-900/85">
                 <div>
-                  <p className="font-medium text-slate-950">
+                  <p className="font-medium text-slate-950 dark:text-slate-100">
                     {index + 1}. {agency.company_name || agency.contact_person}
                   </p>
-                  <p className="text-sm text-slate-500">Registered {formatShortDate(agency.registration_date)}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">Registered {formatShortDate(agency.registration_date)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold text-slate-950">{agency.total_selections}</p>
-                  <p className="text-xs uppercase tracking-wide text-slate-400">Selections</p>
+                  <p className="text-lg font-semibold text-slate-950 dark:text-slate-100">{agency.total_selections}</p>
+                  <p className="text-xs uppercase tracking-wide text-slate-400 dark:text-slate-500">Selections</p>
                 </div>
               </div>
             ))}
+            {!topForeign.length ? (
+              <AdminEmptyState
+                title="No Foreign agency rankings yet"
+                description="Selection activity will populate here once employer-side demand grows."
+              />
+            ) : null}
           </CardContent>
-        </Card>
+        </AdminSurface>
       </div>
-    </div>
-  )
-}
-
-function HeroMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-2xl border border-white/10 bg-white/10 p-4">
-      <p className="text-xs uppercase tracking-[0.2em] text-slate-300">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
     </div>
   )
 }

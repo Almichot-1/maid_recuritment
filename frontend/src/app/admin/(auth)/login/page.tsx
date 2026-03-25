@@ -6,12 +6,12 @@ import { useRouter } from "next/navigation"
 import axios from "axios"
 import { Eye, EyeOff, KeyRound, Loader2, Mail, ShieldCheck } from "lucide-react"
 
-import { useAdminLogin } from "@/hooks/use-admin-auth"
-import { useAdminAuthStore } from "@/stores/admin-auth-store"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
+import { useAdminLogin } from "@/hooks/use-admin-auth"
+import { useAdminAuthStore } from "@/stores/admin-auth-store"
 
 export default function AdminLoginPage() {
   const router = useRouter()
@@ -61,7 +61,7 @@ export default function AdminLoginPage() {
   }
 
   return (
-    <Card className="w-full max-w-xl border-white/10 bg-slate-950/75 text-white shadow-2xl backdrop-blur">
+    <Card className="w-full max-w-xl border-slate-200/80 bg-white/92 text-slate-950 shadow-[0_28px_60px_-38px_rgba(15,23,42,0.24)] backdrop-blur dark:border-white/10 dark:bg-slate-950/75 dark:text-white dark:shadow-2xl">
       <CardHeader className="space-y-4 pb-4">
         <div className="flex items-center gap-3">
           <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-amber-400 text-slate-950">
@@ -69,7 +69,7 @@ export default function AdminLoginPage() {
           </div>
           <div>
             <CardTitle className="text-3xl tracking-tight">Admin Login</CardTitle>
-            <CardDescription className="text-slate-300">
+            <CardDescription className="text-slate-600 dark:text-slate-300">
               Sign in with your operator credentials and six-digit MFA code.
             </CardDescription>
           </div>
@@ -78,20 +78,20 @@ export default function AdminLoginPage() {
       <CardContent>
         <form className="space-y-5" onSubmit={handleSubmit}>
           {feedbackMessage ? (
-            <div className="rounded-2xl border border-rose-400/35 bg-rose-500/10 px-4 py-3 text-sm text-rose-100">
+            <div className="rounded-2xl border border-rose-300/60 bg-rose-50 px-4 py-3 text-sm text-rose-700 dark:border-rose-400/35 dark:bg-rose-500/10 dark:text-rose-100">
               {feedbackMessage}
             </div>
           ) : null}
 
           <div className="space-y-2">
-            <Label htmlFor="admin-email" className="text-slate-200">Email</Label>
+            <Label htmlFor="admin-email" className="text-slate-700 dark:text-slate-200">Email</Label>
             <div className="relative">
-              <Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
+              <Mail className="absolute left-3 top-3.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
               <Input
                 id="admin-email"
                 type="email"
                 autoComplete="email"
-                className="border-white/10 bg-white/5 pl-9 text-white placeholder:text-slate-500"
+                className="border-slate-200 bg-white pl-9 text-slate-950 placeholder:text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-500"
                 placeholder="admin@platform.test"
                 value={email}
                 onChange={(event) => {
@@ -106,13 +106,13 @@ export default function AdminLoginPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="admin-password" className="text-slate-200">Password</Label>
+            <Label htmlFor="admin-password" className="text-slate-700 dark:text-slate-200">Password</Label>
             <div className="relative">
               <Input
                 id="admin-password"
                 type={showPassword ? "text" : "password"}
                 autoComplete="current-password"
-                className="border-white/10 bg-white/5 pr-10 text-white placeholder:text-slate-500"
+                className="border-slate-200 bg-white pr-10 text-slate-950 placeholder:text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-500"
                 placeholder="Enter your admin password"
                 value={password}
                 onChange={(event) => {
@@ -127,7 +127,7 @@ export default function AdminLoginPage() {
                 type="button"
                 variant="ghost"
                 size="icon"
-                className="absolute right-0 top-0 h-full text-slate-400 hover:bg-transparent hover:text-white"
+                className="absolute right-0 top-0 h-full text-slate-500 hover:bg-transparent hover:text-slate-950 dark:text-slate-400 dark:hover:text-white"
                 onClick={() => setShowPassword((value) => !value)}
               >
                 {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
@@ -136,15 +136,15 @@ export default function AdminLoginPage() {
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="admin-otp" className="text-slate-200">MFA Code</Label>
+            <Label htmlFor="admin-otp" className="text-slate-700 dark:text-slate-200">MFA Code</Label>
             <div className="relative">
-              <KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-500" />
+              <KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-400 dark:text-slate-500" />
               <Input
                 id="admin-otp"
                 inputMode="numeric"
                 pattern="[0-9]{6}"
                 maxLength={6}
-                className="border-white/10 bg-white/5 pl-9 text-white placeholder:text-slate-500"
+                className="border-slate-200 bg-white pl-9 text-slate-950 placeholder:text-slate-400 dark:border-white/10 dark:bg-white/5 dark:text-white dark:placeholder:text-slate-500"
                 placeholder="123456"
                 value={otpCode}
                 onChange={(event) => {
@@ -156,7 +156,7 @@ export default function AdminLoginPage() {
                 required
               />
             </div>
-            <p className="text-xs text-slate-400">
+            <p className="text-xs text-slate-500 dark:text-slate-400">
               Enter the current six-digit code from your authenticator app. Previously shared codes expire every 30 seconds.
             </p>
           </div>
@@ -173,13 +173,13 @@ export default function AdminLoginPage() {
           </Button>
         </form>
 
-        <div className="mt-6 rounded-2xl border border-white/10 bg-white/5 p-4 text-sm text-slate-300">
+        <div className="mt-6 rounded-2xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 dark:border-white/10 dark:bg-white/5 dark:text-slate-300">
           Admin accounts are created manually by platform operators. Agency registrations cannot be used here.
         </div>
 
-        <div className="mt-4 text-sm text-slate-400">
+        <div className="mt-4 text-sm text-slate-500 dark:text-slate-400">
           Need the agency portal instead?{" "}
-          <Link href="/login" className="font-medium text-amber-300 hover:text-amber-200">
+          <Link href="/login" className="font-medium text-amber-700 hover:text-amber-600 dark:text-amber-300 dark:hover:text-amber-200">
             Go to agency login
           </Link>
         </div>

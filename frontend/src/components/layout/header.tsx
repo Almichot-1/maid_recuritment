@@ -20,6 +20,7 @@ import {
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
 import { isRoleHomePath } from "@/lib/role-home"
+import { ThemeToggle } from "@/components/shared/theme-toggle"
 
 const NotificationBell = dynamic(
   () => import("@/components/notifications/notification-bell").then((module) => module.NotificationBell)
@@ -67,7 +68,8 @@ export function Header() {
             />
           </div>
         </form>
-        
+
+        <ThemeToggle className="hidden md:inline-flex" />
         <NotificationBell />
         
         <DropdownMenu>

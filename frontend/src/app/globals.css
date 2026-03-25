@@ -67,6 +67,13 @@
     min-height: 100vh;
   }
 
+  .dark body {
+    background-image:
+      radial-gradient(circle at top left, rgba(14, 165, 233, 0.18), transparent 24%),
+      radial-gradient(circle at top right, rgba(245, 158, 11, 0.12), transparent 22%),
+      radial-gradient(circle at bottom, rgba(45, 212, 191, 0.12), transparent 24%);
+  }
+
   ::selection {
     background: hsl(var(--primary) / 0.24);
     color: hsl(var(--foreground));
@@ -103,6 +110,69 @@
 
   .clickable-glow {
     @apply hover:shadow-[0_0_0_1px_rgba(20,184,166,0.16),0_18px_42px_-24px_rgba(13,148,136,0.55)];
+  }
+
+  .admin-surface {
+    @apply rounded-[1.75rem] border border-slate-200/75 bg-white/95 text-slate-950 shadow-[0_24px_60px_-38px_rgba(15,23,42,0.28)] backdrop-blur-xl;
+    background-image:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.08), transparent 24%),
+      linear-gradient(180deg, rgba(255,255,255,0.95), rgba(248,250,252,0.9));
+  }
+
+  .dark .admin-surface {
+    @apply border-slate-800/90 bg-slate-950/80 text-slate-100 shadow-[0_24px_60px_-34px_rgba(2,6,23,0.75)];
+    background-image:
+      radial-gradient(circle at top right, rgba(251, 191, 36, 0.12), transparent 22%),
+      radial-gradient(circle at bottom left, rgba(14, 165, 233, 0.1), transparent 20%),
+      linear-gradient(180deg, rgba(15,23,42,0.96), rgba(2,6,23,0.94));
+  }
+
+  .admin-toolbar {
+    @apply rounded-[1.5rem] border border-slate-200/75 bg-white/90 p-5 shadow-[0_18px_44px_-34px_rgba(15,23,42,0.28)] backdrop-blur-xl;
+  }
+
+  .dark .admin-toolbar {
+    @apply border-slate-800/90 bg-slate-950/80 shadow-[0_20px_48px_-34px_rgba(2,6,23,0.82)];
+  }
+
+  .admin-muted-surface {
+    @apply rounded-2xl border border-slate-200/75 bg-slate-50/80 text-slate-700;
+  }
+
+  .dark .admin-muted-surface {
+    @apply border-slate-800 bg-slate-900/80 text-slate-300;
+  }
+
+  .admin-empty-state {
+    @apply rounded-[1.5rem] border border-dashed border-slate-300 bg-slate-50/70 px-6 py-8 text-center text-sm text-slate-500;
+  }
+
+  .dark .admin-empty-state {
+    @apply border-slate-700 bg-slate-900/70 text-slate-400;
+  }
+
+  .admin-info-tile {
+    @apply rounded-2xl border border-slate-200/75 bg-slate-50/75 p-4;
+  }
+
+  .dark .admin-info-tile {
+    @apply border-slate-800 bg-slate-900/80;
+  }
+
+  .admin-info-label {
+    @apply text-xs font-semibold uppercase tracking-[0.18em] text-slate-400;
+  }
+
+  .dark .admin-info-label {
+    @apply text-slate-500;
+  }
+
+  .admin-info-value {
+    @apply mt-2 text-sm text-slate-700;
+  }
+
+  .dark .admin-info-value {
+    @apply text-slate-200;
   }
 }
 

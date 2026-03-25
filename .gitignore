@@ -38,6 +38,8 @@ Thumbs.db
 .dev-s3-data/
 tmp/
 reports/
+!frontend/src/app/admin/(portal)/reports/
+!frontend/src/app/admin/(portal)/reports/page.tsx
 *.log
 coverage-service
 coverage_service

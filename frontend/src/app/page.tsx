@@ -1,8 +1,9 @@
-import Link from "next/link"
+﻿import Link from "next/link"
 import { ArrowRight, Clock, Eye, Bell, Users, TrendingUp } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { Logo } from "@/components/shared/logo"
+import { ThemeToggle } from "@/components/shared/theme-toggle"
 import { APP_NAME, COMPANY_INFO } from "@/constants/branding"
 
 export default function LandingPage() {
@@ -13,6 +14,7 @@ export default function LandingPage() {
         <div className="container flex h-16 items-center justify-between">
           <Logo size="md" />
           <nav className="flex items-center gap-4">
+            <ThemeToggle className="hidden sm:inline-flex" />
             <Link href="/login">
               <Button variant="ghost">Login</Button>
             </Link>
@@ -217,7 +219,7 @@ export default function LandingPage() {
           </div>
           <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
             <p className="text-sm text-muted-foreground">
-              © {COMPANY_INFO.year} {COMPANY_INFO.name}. All rights reserved.
+              (c) {COMPANY_INFO.year} {COMPANY_INFO.name}. All rights reserved.
             </p>
           </div>
         </div>
@@ -225,3 +227,4 @@ export default function LandingPage() {
     </div>
   )
 }
+

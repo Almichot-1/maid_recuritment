@@ -2,11 +2,13 @@
 
 import * as React from "react"
 import { toast } from "sonner"
+import { Link2, PauseCircle, PlayCircle, ShieldCheck } from "lucide-react"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
+import { AdminEmptyState, AdminStatCard, AdminSurface } from "@/components/admin/admin-ui"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
 import { useAgencies } from "@/hooks/use-admin-portal"
@@ -37,6 +39,9 @@ export default function AdminPairingsPage() {
   })
   const createPairing = useCreateAdminPairing()
   const updatePairing = useUpdateAdminPairing()
+  const activeCount = pairings.filter((pairing) => pairing.status === AgencyPairingStatus.ACTIVE).length
+  const suspendedCount = pairings.filter((pairing) => pairing.status === AgencyPairingStatus.SUSPENDED).length
+  const endedCount = pairings.filter((pairing) => pairing.status === AgencyPairingStatus.ENDED).length
 
   const handleCreatePairing = async () => {
     if (!ethiopianAgencyId || !foreignAgencyId) {
@@ -71,17 +76,24 @@ export default function AdminPairingsPage() {
     <div className="space-y-6">
       <AdminPageHeader
         title="Pair Workspaces"
-        description="Create and manage the private Ethiopian–Foreign agency workspaces that govern candidate visibility, selections, and tracking."
+        description="Create and manage the private Ethiopian-to-Foreign agency workspaces that govern candidate visibility, selections, and tracking."
       />
 
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard label="Workspaces" value={pairings.length} detail="Current pair relationships" icon={Link2} />
+        <AdminStatCard label="Active" value={activeCount} detail="Currently usable by both partners" icon={ShieldCheck} />
+        <AdminStatCard label="Suspended" value={suspendedCount} detail="Paused from operator controls" icon={PauseCircle} />
+        <AdminStatCard label="Ended" value={endedCount} detail="Closed historical workspaces" icon={PlayCircle} />
+      </div>
+
       <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <AdminSurface className="shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Create a private workspace</CardTitle>
+            <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Create a private workspace</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Ethiopian agency</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Ethiopian agency</label>
               <Select value={ethiopianAgencyId} onValueChange={setEthiopianAgencyId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose an Ethiopian agency" />
@@ -97,7 +109,7 @@ export default function AdminPairingsPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Foreign agency</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Foreign agency</label>
               <Select value={foreignAgencyId} onValueChange={setForeignAgencyId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a foreign agency" />
@@ -113,7 +125,7 @@ export default function AdminPairingsPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Internal note</label>
+              <label className="text-sm font-medium text-slate-700 dark:text-slate-200">Internal note</label>
               <Textarea
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
@@ -125,13 +137,13 @@ export default function AdminPairingsPage() {
               Create private workspace
             </Button>
           </CardContent>
-        </Card>
+        </AdminSurface>
 
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <AdminSurface className="shadow-sm">
           <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="text-lg text-slate-950">Existing workspaces</CardTitle>
-              <p className="text-sm text-slate-500">Every relationship below is a private operational workspace between one Ethiopian and one foreign agency.</p>
+              <CardTitle className="text-lg text-slate-950 dark:text-slate-50">Existing workspaces</CardTitle>
+              <p className="text-sm text-slate-500 dark:text-slate-400">Every relationship below is a private operational workspace between one Ethiopian and one foreign agency.</p>
             </div>
             <div className="w-full sm:w-[220px]">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -149,12 +161,12 @@ export default function AdminPairingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {isLoading ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+              <div className="admin-empty-state">
                 Loading pair workspaces...
               </div>
             ) : pairings.length ? (
               pairings.map((pairing) => (
-                <div key={pairing.id} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div key={pairing.id} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm dark:border-slate-800 dark:bg-slate-900/82">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
@@ -176,7 +188,7 @@ export default function AdminPairingsPage() {
                         />
                       </div>
                       {pairing.notes ? (
-                        <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">{pairing.notes}</p>
+                        <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600 dark:bg-slate-950 dark:text-slate-300">{pairing.notes}</p>
                       ) : null}
                     </div>
 
@@ -213,12 +225,13 @@ export default function AdminPairingsPage() {
                 </div>
               ))
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
-                No pair workspaces match this filter yet.
-              </div>
+              <AdminEmptyState
+                title="No workspaces matched"
+                description="Try switching the status filter or create a new pairing to open a private workspace."
+              />
             )}
           </CardContent>
-        </Card>
+        </AdminSurface>
       </div>
     </div>
   )
@@ -234,10 +247,10 @@ function WorkspacePartyCard({
   subtitle: string
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4 dark:border-slate-800 dark:bg-slate-950">
       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</p>
-      <p className="mt-2 font-semibold text-slate-950">{title}</p>
-      <p className="text-sm text-slate-500">{subtitle}</p>
+      <p className="mt-2 font-semibold text-slate-950 dark:text-slate-100">{title}</p>
+      <p className="text-sm text-slate-500 dark:text-slate-400">{subtitle}</p>
     </div>
   )
 }

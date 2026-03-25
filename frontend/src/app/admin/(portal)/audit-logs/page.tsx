@@ -1,9 +1,10 @@
 "use client"
 
 import * as React from "react"
+import { BellRing, KeyRound, ShieldCheck, UserCog } from "lucide-react"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
-import { Card, CardContent } from "@/components/ui/card"
+import { AdminEmptyState, AdminStatCard, AdminSurface, AdminToolbar } from "@/components/admin/admin-ui"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -19,6 +20,9 @@ export default function AdminAuditLogsPage() {
     action: action === "all" ? undefined : action,
     target_type: targetType === "all" ? undefined : targetType,
   })
+  const loginEvents = logs.filter((log) => log.action === "admin_login").length
+  const adminTargetEvents = logs.filter((log) => log.target_type === "admin").length
+  const agencyTargetEvents = logs.filter((log) => log.target_type === "agency").length
 
   const filtered = React.useMemo(
     () =>
@@ -43,11 +47,17 @@ export default function AdminAuditLogsPage() {
         description="Immutable operator activity across approvals, admin access, and sensitive management actions."
       />
 
-      <Card className="border-slate-200 bg-white/90">
-        <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
-          <Input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search admin or action" className="bg-white" />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <AdminStatCard label="Audit events" value={filtered.length} detail="Visible in the current result set" icon={BellRing} />
+        <AdminStatCard label="Logins" value={loginEvents} detail="Admin sign-in activity" icon={KeyRound} />
+        <AdminStatCard label="Agency actions" value={agencyTargetEvents} detail="Actions against agency records" icon={ShieldCheck} />
+        <AdminStatCard label="Admin actions" value={adminTargetEvents} detail="Actions against operator accounts" icon={UserCog} />
+      </div>
+
+      <AdminToolbar className="grid gap-4 p-5 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
+          <Input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search admin or action" className="bg-white dark:bg-slate-950" />
           <Select value={action} onValueChange={setAction}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-white dark:bg-slate-950">
               <SelectValue placeholder="Action type" />
             </SelectTrigger>
             <SelectContent>
@@ -61,7 +71,7 @@ export default function AdminAuditLogsPage() {
             </SelectContent>
           </Select>
           <Select value={targetType} onValueChange={setTargetType}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-white dark:bg-slate-950">
               <SelectValue placeholder="Target type" />
             </SelectTrigger>
             <SelectContent>
@@ -70,11 +80,9 @@ export default function AdminAuditLogsPage() {
               <SelectItem value="admin">Admin</SelectItem>
             </SelectContent>
           </Select>
-        </CardContent>
-      </Card>
+      </AdminToolbar>
 
-      <Card className="border-slate-200 bg-white/90">
-        <CardContent className="p-0">
+      <AdminSurface className="overflow-hidden">
           <Table>
             <TableHeader>
               <TableRow>
@@ -88,32 +96,36 @@ export default function AdminAuditLogsPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">Loading audit logs...</TableCell>
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500 dark:text-slate-400">Loading audit logs...</TableCell>
                 </TableRow>
               ) : null}
               {!isLoading && !filtered.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">No audit logs matched the current filters.</TableCell>
+                  <TableCell colSpan={5} className="p-6">
+                    <AdminEmptyState
+                      title="No audit entries matched"
+                      description="Try removing the action or target filters to widen the timeline and inspect more events."
+                    />
+                  </TableCell>
                 </TableRow>
               ) : null}
               {filtered.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium text-slate-950">{log.admin_name || log.admin_id}</p>
-                      <p className="text-xs text-slate-500">{log.admin_id}</p>
+                      <p className="font-medium text-slate-950 dark:text-slate-100">{log.admin_name || log.admin_id}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">{log.admin_id}</p>
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-600">{titleize(log.action)}</TableCell>
-                  <TableCell className="text-slate-600">{titleize(log.target_type || "system")}</TableCell>
-                  <TableCell className="text-slate-600">{log.ip_address || "N/A"}</TableCell>
-                  <TableCell className="text-slate-600">{formatDateTime(log.created_at)}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{titleize(log.action)}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{titleize(log.target_type || "system")}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{log.ip_address || "N/A"}</TableCell>
+                  <TableCell className="text-slate-600 dark:text-slate-300">{formatDateTime(log.created_at)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>
           </Table>
-        </CardContent>
-      </Card>
+      </AdminSurface>
     </div>
   )
 }

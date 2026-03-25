@@ -4,8 +4,8 @@ import * as React from "react"
 import { useRouter } from "next/navigation"
 import { Loader2 } from "lucide-react"
 
-import { useAdminAuthStore } from "@/stores/admin-auth-store"
 import { AdminShell } from "@/components/admin/admin-shell"
+import { useAdminAuthStore } from "@/stores/admin-auth-store"
 
 export default function AdminPortalLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter()
@@ -23,7 +23,7 @@ export default function AdminPortalLayout({ children }: { children: React.ReactN
 
   if (isLoading || !isAuthenticated) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-950 text-white">
+      <div className="flex min-h-screen items-center justify-center bg-background text-foreground">
         <Loader2 className="h-8 w-8 animate-spin" />
       </div>
     )
