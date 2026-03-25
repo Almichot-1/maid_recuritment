@@ -6,6 +6,20 @@ export const loginSchema = z.object({
   password: z.string().min(1, 'Password is required.'),
 });
 
+export const forgotPasswordRequestSchema = z.object({
+  email: z.string().email('Please enter a valid email address.'),
+});
+
+export const forgotPasswordResetSchema = z.object({
+  email: z.string().email('Please enter a valid email address.'),
+  code: z.string().length(6, 'Enter the 6-digit code from your email.'),
+  new_password: z.string().min(8, 'Password must be at least 8 characters long.'),
+  confirmPassword: z.string(),
+}).refine((data) => data.new_password === data.confirmPassword, {
+  message: "Passwords don't match",
+  path: ["confirmPassword"],
+});
+
 export const registerSchema = z.object({
   email: z.string().email('Please enter a valid email address.'),
   password: z.string().min(8, 'Password must be at least 8 characters long.'),
@@ -35,6 +49,8 @@ export const candidateSchema = z.object({
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;
+export type ForgotPasswordRequestInput = z.infer<typeof forgotPasswordRequestSchema>;
+export type ForgotPasswordResetInput = z.infer<typeof forgotPasswordResetSchema>;
 export type RegisterFormInput = z.infer<typeof registerSchema>;
 export type CandidateInput = z.infer<typeof candidateSchema>;
 

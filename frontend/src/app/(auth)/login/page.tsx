@@ -142,6 +142,12 @@ export default function LoginPage() {
               </label>
             </div>
 
+            <div className="flex justify-end">
+              <Link href="/forgot-password" className="text-sm font-medium text-primary transition-colors hover:underline">
+                Forgot password?
+              </Link>
+            </div>
+
             {form.formState.errors.root?.message ? (
               <div className="rounded-2xl border border-destructive/30 bg-destructive/10 px-4 py-3 text-sm text-destructive shadow-sm" role="alert">
                 <div className="flex items-start gap-3">

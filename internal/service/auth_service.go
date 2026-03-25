@@ -1,9 +1,15 @@
 package service
 
 import (
+	"crypto/hmac"
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/mail"
+	"net/url"
 	"strings"
 	"time"
 
@@ -16,18 +22,32 @@ import (
 )
 
 var (
-	ErrInvalidCredentials     = errors.New("invalid credentials")
-	ErrUserExists             = errors.New("user already exists")
-	ErrInvalidToken           = errors.New("invalid token")
-	ErrAccountPendingApproval = errors.New("account pending approval")
-	ErrAccountRejected        = errors.New("account rejected")
-	ErrAccountSuspended       = errors.New("account suspended")
-	ErrAccountInactive        = errors.New("account inactive")
+	ErrInvalidCredentials          = errors.New("invalid credentials")
+	ErrUserExists                  = errors.New("user already exists")
+	ErrInvalidToken                = errors.New("invalid token")
+	ErrAccountPendingApproval      = errors.New("account pending approval")
+	ErrAccountRejected             = errors.New("account rejected")
+	ErrAccountSuspended            = errors.New("account suspended")
+	ErrAccountInactive             = errors.New("account inactive")
+	ErrPasswordResetCodeInvalid    = errors.New("invalid password reset code")
+	ErrPasswordResetCodeExpired    = errors.New("password reset code has expired")
+	ErrPasswordResetServiceMissing = errors.New("password reset service is not configured")
+)
+
+const (
+	passwordResetCodeLength    = 6
+	passwordResetExpiry        = 15 * time.Minute
+	passwordResetCooldown      = 60 * time.Second
+	passwordResetMaxAttempts   = 5
+	passwordResetGenericNotice = "If an active account exists for that email, we sent a reset code."
 )
 
 type AuthService struct {
-	userRepository domain.UserRepository
-	jwtSecret      []byte
+	userRepository          domain.UserRepository
+	passwordResetRepository domain.PasswordResetRequestRepository
+	emailService            EmailService
+	jwtSecret               []byte
+	appBaseURL              string
 }
 
 type authClaims struct {
@@ -51,7 +71,16 @@ func NewAuthService(userRepository domain.UserRepository, cfg *config.Config) (*
 	return &AuthService{
 		userRepository: userRepository,
 		jwtSecret:      []byte(cfg.JWTSecret),
+		appBaseURL:     strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/"),
 	}, nil
+}
+
+func (s *AuthService) SetEmailService(emailService EmailService) {
+	s.emailService = emailService
+}
+
+func (s *AuthService) SetPasswordResetRepository(passwordResetRepository domain.PasswordResetRequestRepository) {
+	s.passwordResetRepository = passwordResetRepository
 }
 
 func (s *AuthService) Register(email, password, fullName, role, companyName string) (string, error) {
@@ -129,6 +158,128 @@ func (s *AuthService) Login(email, password string) (string, error) {
 	}
 
 	return token, nil
+}
+
+func (s *AuthService) RequestPasswordReset(email string) (string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if err := validateAuthEmail(email); err != nil {
+		return "", err
+	}
+	if s.passwordResetRepository == nil || s.emailService == nil {
+		return "", ErrPasswordResetServiceMissing
+	}
+
+	user, err := s.userRepository.GetByEmail(email)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return passwordResetGenericNotice, nil
+		}
+		return "", fmt.Errorf("get user by email for password reset: %w", err)
+	}
+	if user.Role != domain.EthiopianAgent && user.Role != domain.ForeignAgent {
+		return passwordResetGenericNotice, nil
+	}
+	if err := validateUserAccess(user); err != nil {
+		return passwordResetGenericNotice, nil
+	}
+
+	latest, err := s.passwordResetRepository.GetLatestByUserID(user.ID)
+	if err != nil && !errors.Is(err, repository.ErrPasswordResetRequestNotFound) {
+		return "", fmt.Errorf("get latest password reset request: %w", err)
+	}
+	if latest != nil && time.Since(latest.CreatedAt.UTC()) < passwordResetCooldown {
+		return passwordResetGenericNotice, nil
+	}
+
+	if err := s.passwordResetRepository.InvalidateActiveByUserID(user.ID); err != nil {
+		return "", fmt.Errorf("invalidate active password reset requests: %w", err)
+	}
+
+	code, err := generateNumericResetCode(passwordResetCodeLength)
+	if err != nil {
+		return "", fmt.Errorf("generate password reset code: %w", err)
+	}
+
+	request := &domain.PasswordResetRequest{
+		UserID:    user.ID,
+		CodeHash:  s.hashPasswordResetCode(user.ID, code),
+		ExpiresAt: time.Now().UTC().Add(passwordResetExpiry),
+	}
+	if err := s.passwordResetRepository.Create(request); err != nil {
+		return "", fmt.Errorf("create password reset request: %w", err)
+	}
+
+	if err := s.emailService.Send(user.Email, "Your password reset code", s.buildPasswordResetEmailBody(user, code, request.ExpiresAt)); err != nil {
+		_ = s.passwordResetRepository.Delete(request.ID)
+		return "", fmt.Errorf("send password reset email: %w", err)
+	}
+
+	return passwordResetGenericNotice, nil
+}
+
+func (s *AuthService) ResetPassword(email, code, newPassword string) error {
+	email = strings.TrimSpace(strings.ToLower(email))
+	code = strings.TrimSpace(code)
+
+	if err := validateAuthEmail(email); err != nil {
+		return err
+	}
+	if len(code) != passwordResetCodeLength {
+		return ErrPasswordResetCodeInvalid
+	}
+	if len(strings.TrimSpace(newPassword)) < 8 {
+		return repository.ErrInvalidPassword
+	}
+	if s.passwordResetRepository == nil {
+		return ErrPasswordResetServiceMissing
+	}
+
+	user, err := s.userRepository.GetByEmail(email)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return ErrPasswordResetCodeInvalid
+		}
+		return fmt.Errorf("get user by email for password reset: %w", err)
+	}
+	if user.Role != domain.EthiopianAgent && user.Role != domain.ForeignAgent {
+		return ErrPasswordResetCodeInvalid
+	}
+	if err := validateUserAccess(user); err != nil {
+		return ErrPasswordResetCodeInvalid
+	}
+
+	request, err := s.passwordResetRepository.GetLatestActiveByUserID(user.ID)
+	if err != nil {
+		if errors.Is(err, repository.ErrPasswordResetRequestNotFound) {
+			return ErrPasswordResetCodeExpired
+		}
+		return fmt.Errorf("get active password reset request: %w", err)
+	}
+	if request.AttemptCount >= passwordResetMaxAttempts {
+		return ErrPasswordResetCodeInvalid
+	}
+	if time.Now().UTC().After(request.ExpiresAt.UTC()) {
+		return ErrPasswordResetCodeExpired
+	}
+
+	expectedHash := s.hashPasswordResetCode(user.ID, code)
+	if !hmac.Equal([]byte(request.CodeHash), []byte(expectedHash)) {
+		if err := s.passwordResetRepository.IncrementAttempts(request.ID); err != nil {
+			return fmt.Errorf("increment password reset attempts: %w", err)
+		}
+		return ErrPasswordResetCodeInvalid
+	}
+
+	user.PasswordHash = newPassword
+	if err := s.userRepository.Update(user); err != nil {
+		return err
+	}
+
+	if err := s.passwordResetRepository.MarkUsed(request.ID); err != nil {
+		return fmt.Errorf("mark password reset request used: %w", err)
+	}
+
+	return nil
 }
 
 func (s *AuthService) ValidateToken(tokenString string) (string, string, error) {
@@ -234,4 +385,61 @@ func validateUserAccess(user *domain.User) error {
 	default:
 		return ErrAccountInactive
 	}
+}
+
+func generateNumericResetCode(length int) (string, error) {
+	if length <= 0 {
+		return "", fmt.Errorf("invalid code length")
+	}
+
+	var builder strings.Builder
+	builder.Grow(length)
+	for i := 0; i < length; i++ {
+		value, err := rand.Int(rand.Reader, big.NewInt(10))
+		if err != nil {
+			return "", err
+		}
+		builder.WriteByte(byte('0' + value.Int64()))
+	}
+
+	return builder.String(), nil
+}
+
+func (s *AuthService) hashPasswordResetCode(userID, code string) string {
+	mac := hmac.New(sha256.New, s.jwtSecret)
+	_, _ = mac.Write([]byte(strings.TrimSpace(userID)))
+	_, _ = mac.Write([]byte(":"))
+	_, _ = mac.Write([]byte(strings.TrimSpace(code)))
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+func (s *AuthService) buildPasswordResetEmailBody(user *domain.User, code string, expiresAt time.Time) string {
+	var builder strings.Builder
+
+	builder.WriteString("Hello ")
+	if strings.TrimSpace(user.FullName) != "" {
+		builder.WriteString(strings.TrimSpace(user.FullName))
+	} else {
+		builder.WriteString("there")
+	}
+	builder.WriteString(",\n\n")
+	builder.WriteString("Use this one-time code to reset your password:\n\n")
+	builder.WriteString(code)
+	builder.WriteString("\n\n")
+	builder.WriteString("This code expires in 15 minutes.\n")
+	builder.WriteString("If you did not request a password reset, you can ignore this email.\n")
+
+	if s.appBaseURL != "" {
+		builder.WriteString("\nReset page: ")
+		builder.WriteString(s.appBaseURL)
+		builder.WriteString("/reset-password?email=")
+		builder.WriteString(url.QueryEscape(user.Email))
+		builder.WriteString("\n")
+	}
+
+	builder.WriteString("\nExpires at: ")
+	builder.WriteString(expiresAt.UTC().Format(time.RFC1123))
+	builder.WriteString("\n")
+
+	return builder.String()
 }

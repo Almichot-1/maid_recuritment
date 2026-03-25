@@ -28,6 +28,16 @@ type LoginRequest struct {
 	Password string `json:"password" validate:"required,min=8"`
 }
 
+type ForgotPasswordRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
+type ResetPasswordRequest struct {
+	Email       string `json:"email" validate:"required,email"`
+	Code        string `json:"code" validate:"required,len=6"`
+	NewPassword string `json:"new_password" validate:"required,min=8"`
+}
+
 type AuthResponse struct {
 	Token string       `json:"token"`
 	User  AuthUserView `json:"user"`
@@ -153,10 +163,71 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	middleware.SetSessionCookie(w, r, middleware.UserSessionCookieName, token, middleware.UserSessionMaxAgeSeconds)
 	_ = utils.WriteJSON(w, http.StatusOK, AuthResponse{
 		Token: token,
 		User:  mapUserToAuthUserView(user),
 	})
+}
+
+func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
+	var req ForgotPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	message, err := h.authService.RequestPasswordReset(req.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrPasswordResetServiceMissing):
+			_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "password reset is not available right now"})
+		default:
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": message})
+}
+
+func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
+	var req ResetPasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	if err := h.authService.ResetPassword(req.Email, req.Code, req.NewPassword); err != nil {
+		switch {
+		case errors.Is(err, service.ErrPasswordResetCodeInvalid), errors.Is(err, service.ErrPasswordResetCodeExpired):
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "The reset code is invalid or has expired. Please request a new code."})
+		case errors.Is(err, repository.ErrInvalidPassword):
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "Password must be at least 8 characters long."})
+		case errors.Is(err, service.ErrPasswordResetServiceMissing):
+			_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "password reset is not available right now"})
+		default:
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "Password reset successfully. You can now sign in."})
+}
+
+func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	middleware.ClearSessionCookie(w, r, middleware.UserSessionCookieName)
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
 
 func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {

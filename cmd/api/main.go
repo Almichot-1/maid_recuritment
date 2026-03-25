@@ -51,6 +51,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize candidate pair share repository: %v", err)
 	}
+	passwordResetRepository, err := repository.NewGormPasswordResetRequestRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize password reset repository: %v", err)
+	}
 
 	authService, err := service.NewAuthService(userRepository, cfg)
 	if err != nil {
@@ -105,6 +109,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize email service: %v", err)
 	}
+	authService.SetEmailService(emailService)
+	authService.SetPasswordResetRepository(passwordResetRepository)
 	agencyApprovalService, err := service.NewAgencyApprovalService(userRepository, adminRepository, agencyApprovalRepository, auditLogRepository, emailService)
 	if err != nil {
 		log.Fatalf("failed to initialize agency approval service: %v", err)
@@ -154,7 +160,7 @@ func main() {
 	statusHandler := handler.NewStatusHandler(statusStepService, candidateRepository, selectionRepository, userRepository, pairingService)
 	notificationHandler := handler.NewNotificationHandler(notificationRepository, cfg.CORSAllowedOrigins)
 	pairingHandler := handler.NewPairingHandler(pairingService, userRepository, candidateRepository)
-	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService)
+	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, adminRepository)
 	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
 	adminAgencyHandler := handler.NewAdminAgencyHandler(userRepository, agencyApprovalRepository, agencyApprovalService, candidateRepository, selectionRepository)
 	adminReadonlyHandler := handler.NewAdminReadonlyHandler(userRepository, adminRepository, candidateRepository, selectionRepository, auditLogRepository)
@@ -184,10 +190,13 @@ func main() {
 		r.Use(appmiddleware.PlatformMaintenance(platformSettingsService))
 		r.Post("/register", authHandler.Register)
 		r.Post("/login", authHandler.Login)
+		r.Post("/forgot-password/request", authHandler.RequestPasswordReset)
+		r.Post("/forgot-password/reset", authHandler.ResetPassword)
 
 		r.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.AuthMiddleware(authService))
 			protected.Get("/me", authHandler.Me)
+			protected.Post("/logout", authHandler.Logout)
 		})
 	})
 
@@ -197,6 +206,7 @@ func main() {
 		adminRouter.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.AdminAuthMiddleware(adminAuthService))
 
+			protected.Get("/me", adminAuthHandler.Me)
 			protected.Post("/logout", adminAuthHandler.Logout)
 			protected.Get("/analytics/dashboard", adminDashboardHandler.GetStats)
 			protected.Get("/audit-logs", adminReadonlyHandler.GetAuditLogs)
