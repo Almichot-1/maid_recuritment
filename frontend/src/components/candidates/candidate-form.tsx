@@ -4,6 +4,7 @@ import * as React from "react"
 import { useFieldArray, useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import {
+  AlertTriangle,
   BadgeCheck,
   BriefcaseBusiness,
   Building2,
@@ -17,8 +18,8 @@ import {
   Trash2,
   UserSquare2,
 } from "lucide-react"
-import { z } from "zod"
 
+import { useParsePassport, usePassportData } from "@/hooks/use-passport-ocr"
 import { CandidateInput, candidateSchema } from "@/lib/validations"
 import { useAgencyBranding } from "@/hooks/use-agency-branding"
 import { useCurrentUser } from "@/hooks/use-auth"
@@ -44,6 +45,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { DocumentUpload } from "./document-upload"
+import { PassportData } from "@/types"
 
 const SKILLS_OPTIONS = [
   "Cooking",
@@ -59,8 +61,12 @@ const SKILLS_OPTIONS = [
 
 const LANGUAGES_OPTIONS = ["Arabic", "English", "Amharic", "French", "Swahili"]
 const PROFICIENCY_OPTIONS = ["Basic", "Intermediate", "Fluent"]
+const RELIGION_OPTIONS = ["Muslim", "Christian", "Other"]
+const MARITAL_STATUS_OPTIONS = ["Single", "Married", "Divorced", "Widowed"]
+const EDUCATION_LEVEL_OPTIONS = ["Elementary", "Secondary", "High School", "Diploma", "Degree", "Other"]
 
 interface CandidateFormProps {
+  candidateId?: string
   initialData?: Partial<CandidateFormValues>
   onSubmit: (
     data: CandidateInput,
@@ -71,7 +77,20 @@ interface CandidateFormProps {
   showDocuments?: boolean
 }
 
-type CandidateFormValues = z.input<typeof candidateSchema>
+type CandidateFormValues = {
+  full_name: string
+  nationality?: string
+  date_of_birth?: string
+  age?: number | string
+  place_of_birth?: string
+  religion?: string
+  marital_status?: string
+  children_count?: number | string
+  education_level?: string
+  experience_years?: number | string
+  skills: string[]
+  languages: Array<{ language: string; proficiency: string }>
+}
 
 function SectionTitle({
   icon,
@@ -96,6 +115,7 @@ function SectionTitle({
 }
 
 export function CandidateForm({
+  candidateId,
   initialData,
   onSubmit,
   isLoading,
@@ -104,12 +124,24 @@ export function CandidateForm({
 }: CandidateFormProps) {
   const { user } = useCurrentUser()
   const { hasLogo, logoDataURL } = useAgencyBranding()
+  const { data: passportData } = usePassportData(candidateId, Boolean(candidateId))
+  const { mutateAsync: parsePassport, isPending: isParsingPassport } = useParsePassport(candidateId)
   const [documentResetKey, setDocumentResetKey] = React.useState(0)
+  const [selectedPassportFile, setSelectedPassportFile] = React.useState<File | null>(null)
+  const [passportPreview, setPassportPreview] = React.useState<PassportData | null>(null)
+  const [lastAutoParsedPassportKey, setLastAutoParsedPassportKey] = React.useState<string | null>(null)
 
   const blankFormValues = React.useMemo<CandidateFormValues>(
     () => ({
       full_name: "",
+      nationality: "",
+      date_of_birth: "",
       age: undefined,
+      place_of_birth: "",
+      religion: "",
+      marital_status: "",
+      children_count: undefined,
+      education_level: "",
       experience_years: undefined,
       skills: [],
       languages: [{ language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] }],
@@ -118,7 +150,7 @@ export function CandidateForm({
   )
 
   const form = useForm<CandidateFormValues, undefined, CandidateInput>({
-    resolver: zodResolver(candidateSchema),
+    resolver: zodResolver(candidateSchema) as never,
     defaultValues: initialData || blankFormValues,
   })
 
@@ -135,6 +167,7 @@ export function CandidateForm({
   const selectedSkills = form.watch("skills") || []
   const watchedLanguages = form.watch("languages") || []
   const fullName = form.watch("full_name")
+  const activePassportPreview = passportPreview || passportData || null
 
   const requiredDocumentChecklist = [
     { label: "Passport", done: documentPresence.passport || !showDocuments },
@@ -144,6 +177,14 @@ export function CandidateForm({
 
   const isEditing = !!initialData
   const addLanguageEntry = () => append({ language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] })
+
+  React.useEffect(() => {
+    if (!passportData) {
+      return
+    }
+    setPassportPreview(passportData)
+  }, [passportData])
+
   const resetForNextCandidate = React.useCallback(() => {
     form.reset(blankFormValues)
     setDocumentPresence({
@@ -151,6 +192,9 @@ export function CandidateForm({
       photo: false,
       video: false,
     })
+    setSelectedPassportFile(null)
+    setPassportPreview(null)
+    setLastAutoParsedPassportKey(null)
     setDocumentResetKey((current) => current + 1)
     onDocumentChange?.("passport", null)
     onDocumentChange?.("photo", null)
@@ -166,6 +210,35 @@ export function CandidateForm({
       resetForNextCandidate()
     }
   })
+
+  const handleExtractPassportData = React.useCallback(async () => {
+    if (!selectedPassportFile || !selectedPassportFile.type.startsWith("image/")) {
+      return
+    }
+
+    const parsed = await parsePassport(selectedPassportFile)
+    setPassportPreview(parsed)
+
+    if (parsed.holder_name?.trim()) {
+      form.setValue("full_name", parsed.holder_name.trim(), {
+        shouldDirty: true,
+        shouldValidate: true,
+      })
+    }
+  }, [form, parsePassport, selectedPassportFile])
+
+  React.useEffect(() => {
+    if (!selectedPassportFile || !selectedPassportFile.type.startsWith("image/")) {
+      return
+    }
+    const fileKey = `${selectedPassportFile.name}:${selectedPassportFile.size}:${selectedPassportFile.lastModified}`
+    if (lastAutoParsedPassportKey === fileKey || isParsingPassport) {
+      return
+    }
+
+    setLastAutoParsedPassportKey(fileKey)
+    void handleExtractPassportData()
+  }, [handleExtractPassportData, isParsingPassport, lastAutoParsedPassportKey, selectedPassportFile])
 
   return (
     <Form {...form}>
@@ -194,7 +267,7 @@ export function CandidateForm({
                       Passport and photo required for CV
                     </span>
                     <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
-                      Post-approval tracking starts automatically
+                      Passport details fill automatically from the image
                     </span>
                   </div>
                 </div>
@@ -226,6 +299,119 @@ export function CandidateForm({
               </CardContent>
             </Card>
 
+            {showDocuments ? (
+              <Card className="border-border/70 shadow-sm">
+                <CardHeader>
+                  <SectionTitle
+                    icon={<ShieldCheck className="h-5 w-5" />}
+                    title="Documents and media"
+                    description="Start with the passport and full-body photo so the profile is ready for OCR, CV generation, and faster employer review."
+                  />
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-5 xl:grid-cols-2">
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                      <DocumentUpload
+                        key={`passport-${documentResetKey}`}
+                        documentType="passport"
+                        title="Passport document"
+                        description="PDF, JPG, or PNG. This is required before CV download."
+                        accept={{
+                          "application/pdf": [".pdf"],
+                          "image/jpeg": [".jpg", ".jpeg"],
+                          "image/png": [".png"],
+                        }}
+                        maxSize={10485760}
+                        onUpload={(file) => {
+                          setDocumentPresence((current) => ({ ...current, passport: true }))
+                          setSelectedPassportFile(file)
+                          setLastAutoParsedPassportKey(null)
+                          onDocumentChange?.("passport", file)
+                        }}
+                        onRemove={() => {
+                          setDocumentPresence((current) => ({ ...current, passport: false }))
+                          setSelectedPassportFile(null)
+                          setLastAutoParsedPassportKey(null)
+                          onDocumentChange?.("passport", null)
+                        }}
+                      />
+                    </div>
+
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                      <DocumentUpload
+                        key={`photo-${documentResetKey}`}
+                        documentType="photo"
+                        title="Full body photo"
+                        description="Use a clean photo with good light and a clear full-body view."
+                        accept={{
+                          "image/jpeg": [".jpg", ".jpeg"],
+                          "image/png": [".png"],
+                        }}
+                        maxSize={10485760}
+                        onUpload={(file) => {
+                          setDocumentPresence((current) => ({ ...current, photo: true }))
+                          onDocumentChange?.("photo", file)
+                        }}
+                        onRemove={() => {
+                          setDocumentPresence((current) => ({ ...current, photo: false }))
+                          onDocumentChange?.("photo", null)
+                        }}
+                      />
+                    </div>
+
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 xl:col-span-2">
+                      <DocumentUpload
+                        key={`video-${documentResetKey}`}
+                        documentType="video"
+                        title="Video interview"
+                        description="Optional, but helpful for faster employer review."
+                        accept={{ "video/mp4": [".mp4"] }}
+                        maxSize={52428800}
+                        onUpload={(file) => {
+                          setDocumentPresence((current) => ({ ...current, video: true }))
+                          onDocumentChange?.("video", file)
+                        }}
+                        onRemove={() => {
+                          setDocumentPresence((current) => ({ ...current, video: false }))
+                          onDocumentChange?.("video", null)
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
+                      <div className="space-y-2">
+                        <p className="text-sm font-semibold text-foreground">Automatic passport extraction</p>
+                        <p className="text-sm text-muted-foreground">
+                          As soon as you upload a clear passport image, the system reads it automatically and shows the extracted passport details here. Use that preview as a guide, then fill the applicant detail fields manually below before generating the CV.
+                        </p>
+                      </div>
+
+                      {selectedPassportFile && !selectedPassportFile.type.startsWith("image/") ? (
+                        <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
+                          Upload a passport image in JPG or PNG format if you want OCR extraction. PDF passports can still be saved normally for the CV.
+                        </div>
+                      ) : null}
+
+                      {selectedPassportFile?.type.startsWith("image/") && isParsingPassport ? (
+                        <div className="mt-4 flex items-center gap-3 rounded-xl border border-border/70 bg-background/80 px-4 py-4 text-sm text-muted-foreground">
+                          <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                          Reading the passport image and filling the form now.
+                        </div>
+                      ) : null}
+
+                      {activePassportPreview ? (
+                        <PassportPreviewCard passport={activePassportPreview} />
+                      ) : (
+                        <div className="mt-4 rounded-xl border border-dashed border-border/70 bg-background/70 px-4 py-4 text-sm text-muted-foreground">
+                          Upload a passport image and the extracted passport fields will appear here automatically.
+                        </div>
+                      )}
+                    </div>
+                </CardContent>
+              </Card>
+            ) : null}
+
             <Card className="border-border/70 shadow-sm">
               <CardHeader>
                 <SectionTitle
@@ -234,16 +420,46 @@ export function CandidateForm({
                   description="Capture the core identity details that foreign employers will compare first."
                 />
               </CardHeader>
-              <CardContent className="grid gap-5 md:grid-cols-2">
+              <CardContent className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 <FormField
                   control={form.control}
                   name="full_name"
                   render={({ field }) => (
-                    <FormItem className="md:col-span-2">
+                    <FormItem className="md:col-span-2 xl:col-span-3">
                       <FormLabel>Full name</FormLabel>
                       <FormControl>
                         <Input placeholder="For example: Aster Demeke" {...field} />
                       </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="nationality"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Nationality</FormLabel>
+                      <FormControl>
+                        <Input placeholder="For example: Ethiopian" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormDescription>Enter the value that should appear in the CV applicant details.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="date_of_birth"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Date of birth</FormLabel>
+                      <FormControl>
+                        <Input type="date" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormDescription>Fill this manually for the CV details section.</FormDescription>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -267,7 +483,95 @@ export function CandidateForm({
                           ref={field.ref}
                         />
                       </FormControl>
-                      <FormDescription>Allowed range: 18 to 65</FormDescription>
+                      <FormDescription>Enter the age exactly as you want it shown in the CV.</FormDescription>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="place_of_birth"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Place of birth</FormLabel>
+                      <FormControl>
+                        <Input placeholder="For example: Legambo" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="religion"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Religion</FormLabel>
+                      <FormControl>
+                        <Input list="religion-options" placeholder="Select or type religion" {...field} value={field.value ?? ""} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="marital_status"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Marital status</FormLabel>
+                      <FormControl>
+                        <Input
+                          list="marital-status-options"
+                          placeholder="Select or type marital status"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="children_count"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Children</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          min={0}
+                          name={field.name}
+                          value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""}
+                          onBlur={field.onBlur}
+                          onChange={field.onChange}
+                          ref={field.ref}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="education_level"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Education level</FormLabel>
+                      <FormControl>
+                        <Input
+                          list="education-level-options"
+                          placeholder="Select or type education level"
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
@@ -296,6 +600,22 @@ export function CandidateForm({
                     </FormItem>
                   )}
                 />
+
+                <datalist id="religion-options">
+                  {RELIGION_OPTIONS.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
+                <datalist id="marital-status-options">
+                  {MARITAL_STATUS_OPTIONS.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
+                <datalist id="education-level-options">
+                  {EDUCATION_LEVEL_OPTIONS.map((option) => (
+                    <option key={option} value={option} />
+                  ))}
+                </datalist>
               </CardContent>
             </Card>
 
@@ -442,85 +762,6 @@ export function CandidateForm({
                 </Button>
               </CardContent>
             </Card>
-
-            {showDocuments ? (
-              <Card className="border-border/70 shadow-sm">
-                <CardHeader>
-                  <SectionTitle
-                    icon={<ShieldCheck className="h-5 w-5" />}
-                    title="Documents and media"
-                    description="Upload the key recruitment files now so the profile is immediately useful after creation."
-                  />
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid gap-5 xl:grid-cols-2">
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                      <DocumentUpload
-                        key={`passport-${documentResetKey}`}
-                        documentType="passport"
-                        title="Passport document"
-                        description="PDF, JPG, or PNG. This is required before CV download."
-                        accept={{
-                          "application/pdf": [".pdf"],
-                          "image/jpeg": [".jpg", ".jpeg"],
-                          "image/png": [".png"],
-                        }}
-                        maxSize={10485760}
-                        onUpload={(file) => {
-                          setDocumentPresence((current) => ({ ...current, passport: true }))
-                          onDocumentChange?.("passport", file)
-                        }}
-                        onRemove={() => {
-                          setDocumentPresence((current) => ({ ...current, passport: false }))
-                          onDocumentChange?.("passport", null)
-                        }}
-                      />
-                    </div>
-
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                      <DocumentUpload
-                        key={`photo-${documentResetKey}`}
-                        documentType="photo"
-                        title="Full body photo"
-                        description="Use a clean photo with good light and a clear full-body view."
-                        accept={{
-                          "image/jpeg": [".jpg", ".jpeg"],
-                          "image/png": [".png"],
-                        }}
-                        maxSize={10485760}
-                        onUpload={(file) => {
-                          setDocumentPresence((current) => ({ ...current, photo: true }))
-                          onDocumentChange?.("photo", file)
-                        }}
-                        onRemove={() => {
-                          setDocumentPresence((current) => ({ ...current, photo: false }))
-                          onDocumentChange?.("photo", null)
-                        }}
-                      />
-                    </div>
-
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 xl:col-span-2">
-                      <DocumentUpload
-                        key={`video-${documentResetKey}`}
-                        documentType="video"
-                        title="Video interview"
-                        description="Optional, but helpful for faster employer review."
-                        accept={{ "video/mp4": [".mp4"] }}
-                        maxSize={52428800}
-                        onUpload={(file) => {
-                          setDocumentPresence((current) => ({ ...current, video: true }))
-                          onDocumentChange?.("video", file)
-                        }}
-                        onRemove={() => {
-                          setDocumentPresence((current) => ({ ...current, video: false }))
-                          onDocumentChange?.("video", null)
-                        }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
           </div>
 
           <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
@@ -629,4 +870,109 @@ function SummaryItem({ label, value }: { label: string; value: string }) {
       <p className="text-sm font-semibold text-foreground">{value}</p>
     </div>
   )
+}
+
+function PassportPreviewCard({ passport }: { passport: PassportData }) {
+  const expiryDate = new Date(passport.expiry_date)
+  const expiryWarning = isDateWithinMonths(expiryDate, 6)
+  const calculatedAge = calculateAgeFromDate(passport.date_of_birth)
+
+  return (
+    <div className="mt-4 rounded-2xl border border-border/70 bg-background/85 p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Extracted passport details</p>
+          <p className="mt-1 text-sm font-semibold text-foreground">{passport.holder_name || "Unnamed passport holder"}</p>
+        </div>
+        <Badge variant="outline" className={expiryWarning ? "border-rose-300 bg-rose-50 text-rose-700" : ""}>
+          Confidence {Math.round(passport.confidence)}
+        </Badge>
+      </div>
+
+      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+        <PassportPreviewItem label="Passport No" value={passport.passport_number || "Not found"} />
+        <PassportPreviewItem label="Holder name" value={passport.holder_name || "Not found"} />
+        <PassportPreviewItem label="Nationality" value={passport.nationality || "Not found"} />
+        <PassportPreviewItem label="Gender" value={passport.gender || "Not found"} />
+        <PassportPreviewItem label="Date of birth" value={formatPassportValue(passport.date_of_birth)} />
+        <PassportPreviewItem label="Age" value={calculatedAge !== null ? `${calculatedAge} years` : "Not found"} />
+        <PassportPreviewItem label="Issue date" value={formatPassportValue(passport.issue_date)} />
+        <PassportPreviewItem
+          label="Expiry date"
+          value={formatPassportValue(passport.expiry_date)}
+          valueClassName={expiryWarning ? "text-rose-600 dark:text-rose-300" : undefined}
+        />
+        <PassportPreviewItem label="Country code" value={passport.country_code || "Not found"} />
+      </div>
+
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <PassportPreviewItem label="Place of birth" value={passport.place_of_birth || "Not found"} />
+        <PassportPreviewItem label="Issuing authority" value={passport.issuing_authority || "Not found"} />
+      </div>
+
+      {expiryWarning ? (
+        <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-300/40 bg-rose-50 px-3 py-3 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100">
+          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+          <span>This passport expires within 6 months, so the CV will highlight it as a warning.</span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
+function PassportPreviewItem({
+  label,
+  value,
+  valueClassName,
+}: {
+  label: string
+  value: string
+  valueClassName?: string
+}) {
+  return (
+    <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-3">
+      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
+      <p className={`mt-1 text-sm font-semibold text-foreground break-words ${valueClassName ?? ""}`}>{value}</p>
+    </div>
+  )
+}
+
+function calculateAgeFromDate(value?: string) {
+  if (!value) {
+    return null
+  }
+
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return null
+  }
+
+  const today = new Date()
+  let age = today.getFullYear() - date.getFullYear()
+  const monthDelta = today.getMonth() - date.getMonth()
+  if (monthDelta < 0 || (monthDelta === 0 && today.getDate() < date.getDate())) {
+    age -= 1
+  }
+  return age >= 0 ? age : null
+}
+
+function formatPassportValue(value?: string) {
+  if (!value) {
+    return "Not found"
+  }
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return value
+  }
+  return date.toLocaleDateString()
+}
+
+function isDateWithinMonths(date: Date, months: number) {
+  if (Number.isNaN(date.getTime())) {
+    return false
+  }
+
+  const threshold = new Date()
+  threshold.setMonth(threshold.getMonth() + months)
+  return date.getTime() <= threshold.getTime()
 }

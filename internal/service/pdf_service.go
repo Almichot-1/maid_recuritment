@@ -24,13 +24,17 @@ var (
 	ErrPDFGenerationFailed      = errors.New("pdf generation failed")
 )
 
+const maxRemoteAssetBytes int64 = 55 << 20
+
+var remoteAssetHTTPClient = &http.Client{Timeout: 15 * time.Second}
+
 type PDFService struct{}
 
 func NewPDFService() *PDFService {
 	return &PDFService{}
 }
 
-func (s *PDFService) GenerateCandidateCV(candidate *domain.Candidate, documents []*domain.Document, branding CandidateCVBranding) ([]byte, error) {
+func (s *PDFService) GenerateCandidateCV(candidate *domain.Candidate, documents []*domain.Document, branding CandidateCVBranding, passportData *domain.PassportData) ([]byte, error) {
 	if candidate == nil {
 		return nil, fmt.Errorf("candidate is nil")
 	}
@@ -48,13 +52,7 @@ func (s *PDFService) GenerateCandidateCV(candidate *domain.Candidate, documents 
 	pdf.SetAuthor("Maid Recruitment Platform", false)
 	pdf.SetMargins(15, 15, 15)
 	pdf.SetFont("Arial", "", 12)
-	pdf.SetAutoPageBreak(true, 15)
-	pdf.SetFooterFunc(func() {
-		pdf.SetY(-8.5)
-		pdf.SetFont("Arial", "", 8.5)
-		pdf.SetTextColor(100, 116, 139)
-		pdf.CellFormat(0, 4, fmt.Sprintf("Page %d", pdf.PageNo()), "", 0, "C", false, 0, "")
-	})
+	pdf.SetAutoPageBreak(false, 0)
 	pdf.AddPage()
 
 	s.drawBrandingHeader(pdf, branding)
@@ -64,7 +62,7 @@ func (s *PDFService) GenerateCandidateCV(candidate *domain.Candidate, documents 
 	if err != nil {
 		return nil, fmt.Errorf("fetch photo: %w", err)
 	}
-	s.drawApplicationProfileSheet(pdf, candidate, branding, photoBytes, photoContentType, languages, skills)
+	s.drawApplicationProfileSheet(pdf, candidate, branding, passportData, photoBytes, photoContentType, languages, skills)
 
 	appendPassportSection(pdf, passportDoc)
 	appendFullBodyPhotoSection(pdf, photoDoc, photoBytes, photoContentType)
@@ -77,134 +75,225 @@ func (s *PDFService) GenerateCandidateCV(candidate *domain.Candidate, documents 
 	return buffer.Bytes(), nil
 }
 
+func (s *PDFService) appendPassportDetailsSection(pdf *gofpdf.Fpdf, passportData *domain.PassportData) {
+	if passportData == nil {
+		return
+	}
+
+	pdf.AddPage()
+	drawAttachmentHeader(pdf, "Passport Details")
+
+	pdf.SetFillColor(248, 250, 252)
+	pdf.SetDrawColor(209, 213, 219)
+	pdf.RoundedRect(15, 36, 180, 96, 2.5, "1234", "DF")
+
+	fields := []struct {
+		label string
+		value string
+		alert bool
+	}{
+		{label: "Holder Name", value: compactValue(passportData.HolderName, "Not available")},
+		{label: "Passport No", value: compactValue(passportData.PassportNumber, "Not available")},
+		{label: "Nationality", value: compactValue(passportData.Nationality, "Not available")},
+		{label: "Date of Birth", value: formatPassportDate(passportData.DateOfBirth)},
+		{label: "Place of Birth", value: compactValue(passportData.PlaceOfBirth, "Not available")},
+		{label: "Gender", value: compactValue(passportData.Gender, "Not available")},
+		{label: "Issue Date", value: formatPassportDatePointer(passportData.IssueDate)},
+		{label: "Expiry Date", value: formatPassportDate(passportData.ExpiryDate), alert: isPassportExpiringSoon(passportData.ExpiryDate)},
+	}
+
+	startX := 22.0
+	startY := 45.0
+	columnGap := 86.0
+	rowGap := 18.0
+	for index, field := range fields {
+		x := startX
+		if index%2 == 1 {
+			x += columnGap
+		}
+		y := startY + (float64(index/2) * rowGap)
+
+		pdf.SetXY(x, y)
+		pdf.SetTextColor(107, 114, 128)
+		pdf.SetFont("Arial", "B", 8)
+		pdf.CellFormat(70, 4, field.label, "", 1, "L", false, 0, "")
+		pdf.SetXY(x, y+5)
+		if field.alert {
+			pdf.SetTextColor(220, 38, 38)
+		} else {
+			pdf.SetTextColor(31, 41, 55)
+		}
+		pdf.SetFont("Arial", "", 11)
+		pdf.MultiCell(72, 5, field.value, "", "L", false)
+	}
+
+	pdf.SetFillColor(255, 247, 237)
+	pdf.SetDrawColor(251, 191, 36)
+	pdf.RoundedRect(15, 138, 180, 46, 2.5, "1234", "DF")
+	pdf.SetXY(20, 145)
+	pdf.SetTextColor(55, 65, 81)
+	pdf.SetFont("Arial", "B", 10)
+	pdf.CellFormat(170, 5, "Machine Readable Zone", "", 1, "L", false, 0, "")
+	pdf.SetX(20)
+	pdf.SetTextColor(75, 85, 99)
+	pdf.SetFont("Courier", "", 11)
+	pdf.MultiCell(170, 6, compactValue(passportData.MRZLine1, "Not available"), "", "L", false)
+	pdf.SetX(20)
+	pdf.MultiCell(170, 6, compactValue(passportData.MRZLine2, "Not available"), "", "L", false)
+}
+
 func (s *PDFService) drawBrandingHeader(pdf *gofpdf.Fpdf, branding CandidateCVBranding) {
 	pdf.SetFillColor(255, 255, 255)
-	pdf.SetDrawColor(209, 213, 219)
-	pdf.RoundedRect(15, 12, 180, 18, 1.5, "1234", "DF")
-	pdf.SetXY(15, 18)
-	pdf.SetTextColor(101, 163, 13)
-	pdf.SetFont("Arial", "B", 20)
-	pdf.CellFormat(180, 6, "Application Form", "", 1, "C", false, 0, "")
-	pdf.SetY(35)
+	pdf.SetDrawColor(196, 196, 196)
+	pdf.Rect(12, 12, 186, 18, "D")
+	pdf.SetXY(12, 18)
+	pdf.SetTextColor(92, 130, 54)
+	pdf.SetFont("Arial", "B", 19)
+	pdf.CellFormat(186, 6, "Application Form", "", 1, "C", false, 0, "")
+	pdf.SetY(34)
 }
 
 func (s *PDFService) drawHeader(pdf *gofpdf.Fpdf, branding CandidateCVBranding) {
 	headerY := pdf.GetY()
-	pdf.SetFillColor(248, 250, 252)
-	pdf.SetDrawColor(209, 213, 219)
-	pdf.RoundedRect(15, headerY, 180, 34, 1.5, "1234", "DF")
+	pdf.SetFillColor(244, 244, 244)
+	pdf.SetDrawColor(196, 196, 196)
+	pdf.Rect(12, headerY, 186, 28, "DF")
 
-	pdf.SetXY(18, headerY+5)
-	pdf.SetTextColor(234, 88, 12)
-	pdf.SetFont("Arial", "B", 10)
-	pdf.CellFormat(48, 5, compactValue(strings.TrimSpace(branding.CompanyName), "Agency Profile"), "", 1, "L", false, 0, "")
-	pdf.SetX(18)
-	pdf.SetTextColor(75, 85, 99)
-	pdf.SetFont("Arial", "", 9)
-	companyName := strings.TrimSpace(branding.CompanyName)
-	if companyName == "" {
-		companyName = "Agency Recruitment Profile"
-	}
-	pdf.MultiCell(48, 4.5, fmt.Sprintf("%s\nPrepared candidate review package", companyName), "", "L", false)
+	companyName := compactValue(strings.TrimSpace(branding.CompanyName), "Maid Recruitment Agency")
 
-	logoX := 77.0
-	logoY := headerY + 1.5
+	pdf.SetXY(16, headerY+4)
+	pdf.SetTextColor(233, 122, 45)
+	pdf.SetFont("Arial", "B", 8.5)
+	pdf.CellFormat(50, 4.5, companyName, "", 1, "L", false, 0, "")
+	pdf.SetX(16)
+	pdf.SetTextColor(233, 122, 45)
+	pdf.SetFont("Arial", "", 7.2)
+	pdf.MultiCell(50, 3.7, "Ethiopia, Addis Ababa\nPrepared for employer review\nEmail delivery and CV package ready", "", "L", false)
+
+	logoX := 82.0
+	logoY := headerY + 2
 	pdf.SetFillColor(255, 255, 255)
-	pdf.SetDrawColor(229, 231, 235)
-	pdf.RoundedRect(77, headerY+1.5, 56, 31, 15, "1234", "DF")
+	pdf.SetDrawColor(214, 214, 214)
+	pdf.RoundedRect(82, logoY, 46, 24, 12, "1234", "DF")
 	if logoBytes, logoContentType, err := decodeLogoDataURL(branding.LogoDataURL); err == nil && len(logoBytes) > 0 {
-		_ = addImageFromBytesFit(pdf, logoBytes, logoContentType, "agency_logo_header", logoX+8, logoY+4, 40, 23)
+		_ = addImageFromBytesFit(pdf, logoBytes, logoContentType, "agency_logo_header", logoX+7, logoY+2.5, 32, 19)
 	} else {
-		pdf.SetFillColor(14, 165, 233)
-		pdf.RoundedRect(93, headerY+6, 24, 21, 4, "1234", "F")
-		pdf.SetTextColor(255, 255, 255)
-		pdf.SetFont("Arial", "B", 12)
-		pdf.SetXY(93, headerY+13)
-		pdf.CellFormat(24, 6, "AG", "", 0, "C", false, 0, "")
+		pdf.SetTextColor(230, 147, 19)
+		pdf.SetFont("Arial", "B", 22)
+		pdf.SetXY(82, headerY+8)
+		pdf.CellFormat(46, 7, "A", "", 1, "C", false, 0, "")
 	}
 
-	pdf.SetXY(143, headerY+5)
-	pdf.SetTextColor(234, 88, 12)
-	pdf.SetFont("Arial", "B", 10)
-	pdf.CellFormat(46, 5, "Placement Ready", "", 1, "R", false, 0, "")
-	pdf.SetX(143)
-	pdf.SetTextColor(75, 85, 99)
-	pdf.SetFont("Arial", "", 9)
-	pdf.MultiCell(46, 4.5, "Candidate review file with passport and full-body photo attached after page one.", "", "R", false)
-	pdf.SetY(headerY + 40)
+	pdf.SetXY(140, headerY+4)
+	pdf.SetTextColor(233, 122, 45)
+	pdf.SetFont("Arial", "B", 8.5)
+	pdf.CellFormat(50, 4.5, "Foreign Employment File", "", 1, "R", false, 0, "")
+	pdf.SetX(140)
+	pdf.SetTextColor(233, 122, 45)
+	pdf.SetFont("Arial", "", 7.2)
+	pdf.MultiCell(50, 3.7, "Housemaid placement profile\nPassport and body photo attached\nReady for review and approval", "", "R", false)
+	pdf.SetY(headerY + 31)
 }
 
 func (s *PDFService) drawApplicationProfileSheet(
 	pdf *gofpdf.Fpdf,
 	candidate *domain.Candidate,
 	branding CandidateCVBranding,
+	passportData *domain.PassportData,
 	photoBytes []byte,
 	photoContentType string,
 	languages []string,
 	skills []string,
 ) {
 	startY := pdf.GetY()
-	pdf.SetDrawColor(209, 213, 219)
-	pdf.RoundedRect(15, startY, 180, 182, 1.5, "1234", "D")
+	pdf.SetDrawColor(191, 191, 191)
+	pdf.Rect(12, startY, 186, 223, "D")
 
-	pdf.SetFillColor(243, 244, 246)
-	pdf.Rect(15, startY, 180, 10, "F")
-	pdf.SetXY(15, startY+3)
-	pdf.SetTextColor(75, 85, 99)
-	pdf.SetFont("Arial", "B", 10)
-	pdf.CellFormat(180, 4, "Registration Details", "", 1, "C", false, 0, "")
+	pdf.SetFillColor(230, 230, 230)
+	pdf.Rect(15, startY+3, 180, 7, "F")
+	pdf.SetXY(15, startY+4.4)
+	pdf.SetTextColor(92, 104, 77)
+	pdf.SetFont("Arial", "B", 8.5)
+	pdf.CellFormat(180, 3.5, "Registration Details", "", 1, "C", false, 0, "")
 
-	topGridY := startY + 14
-	s.drawCompactField(pdf, 18, topGridY, 54, 12, "Date", currentPDFDate())
-	s.drawCompactField(pdf, 78, topGridY, 54, 12, "Applied For", "HOUSEMAID")
-	s.drawCompactField(pdf, 138, topGridY, 54, 12, "Applied Country", "JORDAN")
-	s.drawCompactField(pdf, 18, topGridY+16, 54, 12, "Experience", formatExperienceLevel(candidate.ExperienceYears))
-	s.drawCompactField(pdf, 78, topGridY+16, 54, 12, "Languages", fmt.Sprintf("%d tracked", len(languages)))
-	s.drawCompactField(pdf, 138, topGridY+16, 54, 12, "Status", formatCandidateStatusForPDF(candidate.Status))
-
-	nameY := topGridY + 36
-	pdf.SetFillColor(255, 247, 237)
-	pdf.SetDrawColor(251, 191, 36)
-	pdf.RoundedRect(18, nameY, 174, 10, 1.5, "1234", "DF")
-	pdf.SetXY(20, nameY+2.5)
-	pdf.SetTextColor(55, 65, 81)
-	pdf.SetFont("Arial", "B", 16)
-	pdf.CellFormat(170, 5, strings.ToUpper(candidate.FullName), "", 1, "C", false, 0, "")
-
-	contentY := nameY + 14
-	s.drawWrappedField(pdf, 18, contentY, 50, 64, "Applicant Details", []string{
-		fmt.Sprintf("Age: %s", formatIntPointer(candidate.Age)),
-		fmt.Sprintf("Experience: %s years", formatIntPointer(candidate.ExperienceYears)),
-		fmt.Sprintf("Languages: %s", compactValue(formatListForPDF(languages), "Not provided")),
-		fmt.Sprintf("Agency: %s", compactValue(strings.TrimSpace(branding.CompanyName), "Agency profile")),
+	regY := startY + 13
+	s.drawFormInfoRow(pdf, 15, regY, 55, 22, 7, [][2]string{
+		{"Date", currentPDFDate()},
+		{"Contract Period", "2YRS"},
+		{"Bio. Met. ID", "-"},
 	})
+	s.drawFormInfoRow(pdf, 75, regY, 55, 22, 7, [][2]string{
+		{"Applied for", "HOUSEMAID"},
+		{"Monthly Sal", "1000"},
+		{"Ref. No", shortReference(candidate.ID)},
+	})
+	s.drawFormInfoRow(pdf, 135, regY, 60, 25, 7, [][2]string{
+		{"Applied Cont.", "K S A"},
+		{"B.Met Rg./s.", "-"},
+		{"Experience", formatExperienceLevel(candidate.ExperienceYears)},
+	})
+
+	nameY := regY + 24
+	s.drawNamedBand(pdf, 15, nameY, 180, strings.ToUpper(compactValue(candidateProfileName(candidate, passportData), "CANDIDATE PROFILE")))
+
+	leftX, leftW := 15.0, 60.0
+	midX, midW := 80.0, 46.0
+	rightX, rightW := 131.0, 64.0
+	detailY := nameY + 10
+
+	ageValue := manualCandidateAgeValue(candidate)
+	applicantRows := []pdfFormRow{
+		{Label: "Nationality", Value: manualCandidateUpper(candidate.Nationality, "N/A")},
+		{Label: "Date Of Birth", Value: manualCandidateDate(candidate.DateOfBirth)},
+		{Label: "Age", Value: ageValue},
+		{Label: "Place Of Birth", Value: manualCandidateUpper(candidate.PlaceOfBirth, "N/A")},
+		{Label: "Religion", Value: compactValue(strings.ToUpper(strings.TrimSpace(candidate.Religion)), "N/A")},
+		{Label: "Marital Status", Value: compactValue(strings.ToUpper(strings.TrimSpace(candidate.MaritalStatus)), "N/A")},
+		{Label: "Children", Value: formatChildrenCount(candidate.ChildrenCount)},
+		{Label: "Education Level", Value: compactValue(strings.ToUpper(strings.TrimSpace(candidate.EducationLevel)), "N/A")},
+	}
+	s.drawFormTable(pdf, leftX, detailY, leftW, "Applicants Detail", applicantRows, 26)
 
 	pdf.SetFillColor(255, 255, 255)
-	pdf.SetDrawColor(156, 163, 175)
-	pdf.Rect(72, contentY, 68, 92, "D")
-	_ = addImageFromBytesFit(pdf, photoBytes, photoContentType, "candidate_sheet_photo", 74, contentY+2, 64, 88)
+	pdf.SetDrawColor(191, 191, 191)
+	pdf.Rect(midX, detailY, midW, 82, "D")
+	_ = addImageFromBytesFit(pdf, photoBytes, photoContentType, "candidate_sheet_photo", midX+2, detailY+2, midW-4, 78)
 
-	s.drawWrappedField(pdf, 144, contentY, 48, 64, "Document Status", []string{
-		"Passport: Attached",
-		"Full body photo: Attached",
-		fmt.Sprintf("Skills: %s", compactValue(formatListForPDF(skills), "Not provided")),
-		fmt.Sprintf("Applied for: %s", "Housemaid"),
+	passportRows := []pdfFormRow{
+		{Label: "Passport No.", Value: compactValue(strings.ToUpper(passportValue(passportData, func(data *domain.PassportData) string { return data.PassportNumber })), "NOT SCANNED")},
+		{Label: "Issue Date", Value: passportDatePointerValue(passportData, func(data *domain.PassportData) *time.Time { return data.IssueDate })},
+		{Label: "Expiry Date", Value: passportDateValue(passportData, func(data *domain.PassportData) time.Time { return data.ExpiryDate })},
+		{Label: "Remaining Year", Value: passportRemainingYears(passportData)},
+	}
+	s.drawFormTable(pdf, rightX, detailY, rightW, "Passport Detail", passportRows, 27)
+
+	langRows := []pdfFormRow{
+		{Label: "Arabic", Value: boolText(listContainsFold(languages, "Arabic"))},
+		{Label: "English", Value: boolText(listContainsFold(languages, "English"))},
+		{Label: "French", Value: boolText(listContainsFold(languages, "French"))},
+	}
+	s.drawFormTable(pdf, rightX, detailY+40, rightW, "Language Known", langRows, 24)
+
+	experienceRows := []pdfFormRow{
+		{Label: "Baby Sitting", Value: boolText(listContainsAnyFold(skills, "Childcare"))},
+		{Label: "Cleaning", Value: boolText(listContainsAnyFold(skills, "Cleaning"))},
+		{Label: "Ironing", Value: boolText(listContainsAnyFold(skills, "Ironing", "Laundry"))},
+		{Label: "Cooking", Value: boolText(listContainsAnyFold(skills, "Cooking"))},
+		{Label: "Home Teaching", Value: boolText(listContainsAnyFold(skills, "Teaching"))},
+		{Label: "Personal Care", Value: boolText(listContainsAnyFold(skills, "Elderly Care", "First Aid", "Pet Care"))},
+	}
+	bottomY := detailY + 86
+	s.drawFormTable(pdf, rightX, bottomY, rightW, "Work Experience", experienceRows, 30)
+
+	expY := bottomY
+	s.drawExperiencedAbroadSection(pdf, 15, expY, 111, [][2]string{
+		{"NO", "-"},
+		{"NO", "-"},
+		{"NO", "-"},
 	})
 
-	s.drawWrappedField(pdf, 18, contentY+70, 50, 24, "Profile Notes", []string{
-		"Prepared for employer review.",
-		"Latest uploaded logo is used in this header.",
-	})
-
-	s.drawWrappedField(pdf, 144, contentY+70, 48, 24, "Quick Summary", []string{
-		fmt.Sprintf("Languages: %s", compactValue(formatListForPDF(languages), "Not provided")),
-		fmt.Sprintf("Skills: %s", compactValue(formatListForPDF(skills), "Not provided")),
-	})
-
-	bottomY := contentY + 100
-	s.drawWideField(pdf, 18, bottomY, 82, 30, "Language Known", compactValue(formatListForPDF(languages), "Not provided"))
-	s.drawWideField(pdf, 110, bottomY, 82, 30, "Work Experience", compactValue(formatListForPDF(skills), "Not provided"))
-	s.drawWideField(pdf, 18, bottomY+34, 174, 18, "Remark", "Candidate profile prepared for employer review.")
+	remarkY := expY + 46
+	s.drawRemarkSection(pdf, 15, remarkY, 111, "Remark", "")
 }
 
 func (s *PDFService) drawCompactField(pdf *gofpdf.Fpdf, x, y, width, height float64, label, value string) {
@@ -252,6 +341,137 @@ func (s *PDFService) drawWideField(pdf *gofpdf.Fpdf, x, y, width, height float64
 	pdf.MultiCell(width-6, 5, value, "", "L", false)
 }
 
+type pdfFormRow struct {
+	Label string
+	Value string
+}
+
+func (s *PDFService) drawFormInfoRow(pdf *gofpdf.Fpdf, x, y, width, labelWidth, rowHeight float64, rows [][2]string) {
+	for index, row := range rows {
+		rowY := y + (float64(index) * rowHeight)
+		s.drawFormKeyValueRow(pdf, x, rowY, width, labelWidth, rowHeight, row[0], row[1], false)
+	}
+}
+
+func (s *PDFService) drawNamedBand(pdf *gofpdf.Fpdf, x, y, width float64, value string) {
+	s.drawFormKeyValueRow(pdf, x, y, width, 35, 8.5, "Full Name", compactValue(value, "N/A"), true)
+}
+
+func (s *PDFService) drawFormTable(pdf *gofpdf.Fpdf, x, y, width float64, title string, rows []pdfFormRow, labelWidth float64) {
+	titleHeight := 8.0
+	rowHeight := 8.0
+
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetDrawColor(191, 191, 191)
+	pdf.Rect(x, y, width, titleHeight, "DF")
+	pdf.SetXY(x, y+2)
+	pdf.SetTextColor(233, 122, 45)
+	pdf.SetFont("Arial", "B", 8.2)
+	pdf.CellFormat(width, 4, title, "", 1, "C", false, 0, "")
+
+	currentY := y + titleHeight
+	for _, row := range rows {
+		s.drawFormKeyValueRow(pdf, x, currentY, width, labelWidth, rowHeight, row.Label, row.Value, false)
+		currentY += rowHeight
+	}
+}
+
+func (s *PDFService) drawFormKeyValueRow(pdf *gofpdf.Fpdf, x, y, width, labelWidth, height float64, label, value string, highlightValue bool) {
+	pdf.SetDrawColor(191, 191, 191)
+	pdf.SetFillColor(246, 246, 246)
+	pdf.Rect(x, y, labelWidth, height, "DF")
+	pdf.SetFillColor(255, 255, 255)
+	pdf.Rect(x+labelWidth, y, width-labelWidth, height, "DF")
+
+	pdf.SetTextColor(92, 104, 77)
+	drawFitPDFText(pdf, x+2, y, labelWidth-4, height, compactValue(label, "-"), "Arial", "B", 6.6, 4.8, "L")
+
+	if highlightValue {
+		pdf.SetTextColor(33, 33, 33)
+		drawFitPDFText(pdf, x+labelWidth+2, y, width-labelWidth-4, height, compactValue(value, "-"), "Arial", "B", 13, 8.6, "C")
+	} else {
+		pdf.SetTextColor(70, 70, 70)
+		drawFitPDFText(pdf, x+labelWidth+2, y, width-labelWidth-4, height, compactValue(value, "-"), "Arial", "B", 8, 5.3, "C")
+	}
+}
+
+func (s *PDFService) drawSplitHistorySection(pdf *gofpdf.Fpdf, x, y, width float64, title string, columns []string, rows [][2]string) {
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetDrawColor(191, 191, 191)
+	pdf.Rect(x, y, width, 8, "DF")
+	pdf.SetXY(x, y+2)
+	pdf.SetTextColor(233, 122, 45)
+	pdf.SetFont("Arial", "B", 8.2)
+	pdf.CellFormat(width, 4, title, "", 1, "C", false, 0, "")
+
+	columnWidth := width / 2
+	rowY := y + 8
+	s.drawFormKeyValueRow(pdf, x, rowY, columnWidth-1, 21, 7.2, columns[0], "", false)
+	s.drawFormKeyValueRow(pdf, x+columnWidth+1, rowY, columnWidth-1, 21, 7.2, columns[1], "", false)
+	rowY += 7.2
+	for _, row := range rows {
+		s.drawFormKeyValueRow(pdf, x, rowY, columnWidth-1, 21, 7.2, row[0], "", false)
+		s.drawFormKeyValueRow(pdf, x+columnWidth+1, rowY, columnWidth-1, 21, 7.2, row[1], "", false)
+		rowY += 7.2
+	}
+}
+
+func (s *PDFService) drawExperiencedAbroadSection(pdf *gofpdf.Fpdf, x, y, width float64, rows [][2]string) {
+	sectionGap := 10.0
+	sectionWidth := (width - sectionGap) / 2
+	leftX := x
+	rightX := x + sectionWidth + sectionGap
+
+	s.drawExperienceColumn(pdf, leftX, y, sectionWidth, "Experienced Abroad", "Country", extractExperienceColumn(rows, 0))
+	s.drawExperienceColumn(pdf, rightX, y, sectionWidth, "Experience Abroad Duration", "How Long", extractExperienceColumn(rows, 1))
+}
+
+func (s *PDFService) drawExperienceColumn(pdf *gofpdf.Fpdf, x, y, width float64, title, label string, values []string) {
+	titleHeight := 8.0
+	rowHeight := 12.0
+
+	pdf.SetFillColor(245, 245, 245)
+	pdf.SetDrawColor(191, 191, 191)
+	pdf.Rect(x, y, width, titleHeight, "DF")
+	pdf.SetXY(x, y+2)
+	pdf.SetTextColor(233, 122, 45)
+	pdf.SetFont("Arial", "B", 8.4)
+	pdf.CellFormat(width, 4, title, "", 1, "C", false, 0, "")
+
+	currentY := y + titleHeight + 4
+	for _, value := range values {
+		s.drawFormKeyValueRow(pdf, x, currentY, width, width*0.54, rowHeight, label, value, false)
+		currentY += rowHeight + 4
+	}
+}
+
+func extractExperienceColumn(rows [][2]string, index int) []string {
+	values := make([]string, 0, len(rows))
+	for _, row := range rows {
+		if index >= 0 && index < len(row) {
+			values = append(values, row[index])
+			continue
+		}
+		values = append(values, "-")
+	}
+	return values
+}
+
+func (s *PDFService) drawRemarkSection(pdf *gofpdf.Fpdf, x, y, width float64, title, remark string) {
+	s.drawFormKeyValueRow(pdf, x, y, width, 35, 7.2, title, "", false)
+	pdf.SetDrawColor(191, 191, 191)
+	pdf.SetFillColor(255, 255, 255)
+	pdf.Rect(x, y+7.2, width, 7.4, "DF")
+	pdf.Rect(x, y+14.6, width, 7.4, "DF")
+	pdf.Rect(x, y+22.0, width, 7.4, "DF")
+	if strings.TrimSpace(remark) != "" {
+		pdf.SetXY(x+2.5, y+9.1)
+		pdf.SetTextColor(85, 85, 85)
+		pdf.SetFont("Arial", "", 7.8)
+		pdf.MultiCell(width-5, 4, remark, "", "L", false)
+	}
+}
+
 func (s *PDFService) drawSectionHeading(pdf *gofpdf.Fpdf, title string) {
 	pdf.SetFillColor(3, 105, 161)
 	pdf.SetTextColor(255, 255, 255)
@@ -295,7 +515,7 @@ func (s *PDFService) drawHeroCard(
 	pdf.SetXY(20, cardY+20)
 	pdf.SetTextColor(15, 23, 42)
 	pdf.SetFont("Arial", "B", 19)
-	pdf.CellFormat(116, 8, candidate.FullName, "", 1, "L", false, 0, "")
+	pdf.CellFormat(116, 8, candidateProfileName(candidate, nil), "", 1, "L", false, 0, "")
 
 	pdf.SetX(20)
 	pdf.SetTextColor(71, 85, 105)
@@ -318,7 +538,7 @@ func (s *PDFService) drawHeroCard(
 		5.5,
 		fmt.Sprintf(
 			"%s brings %s years of domestic work experience, with strengths in %s and communication in %s.",
-			candidate.FullName,
+			candidateProfileName(candidate, nil),
 			formatIntPointer(candidate.ExperienceYears),
 			formatListForPDF(skills),
 			formatListForPDF(languages),
@@ -413,7 +633,7 @@ func (s *PDFService) drawSummaryBlock(pdf *gofpdf.Fpdf, candidate *domain.Candid
 		5.5,
 		fmt.Sprintf(
 			"%s is being presented by %s with %s years of experience, practical strengths in %s, and spoken languages including %s. The latest photo appears on this profile, and the passport copy is included at the end for final review.",
-			candidate.FullName,
+			candidateProfileName(candidate, nil),
 			agencyName,
 			formatIntPointer(candidate.ExperienceYears),
 			formatListForPDF(skills),
@@ -479,7 +699,6 @@ func formatIntPointer(value *int) string {
 
 func appendPassportSection(pdf *gofpdf.Fpdf, passportDoc *domain.Document) {
 	pdf.AddPage()
-	drawAttachmentHeader(pdf, "Passport Copy")
 	passportBytes, passportContentType, err := fetchRemoteAsset(passportDoc.FileURL)
 	if err != nil {
 		return
@@ -489,12 +708,7 @@ func appendPassportSection(pdf *gofpdf.Fpdf, passportDoc *domain.Document) {
 
 func appendFullBodyPhotoSection(pdf *gofpdf.Fpdf, photoDoc *domain.Document, photoBytes []byte, photoContentType string) {
 	pdf.AddPage()
-	title := "Full Body Photo"
-	if photoDoc != nil && strings.TrimSpace(photoDoc.FileName) != "" {
-		title = "Full Body Photo"
-	}
-	drawAttachmentHeader(pdf, title)
-	drawAttachmentImageFrame(pdf, photoBytes, photoContentType, compactValue(strings.TrimSpace(photoDoc.FileName), "photo"), "full_body_attachment")
+	drawFullBodyPhotoFrame(pdf, photoBytes, photoContentType, compactValue(strings.TrimSpace(photoDoc.FileName), "photo"), "full_body_attachment")
 }
 
 func drawAttachmentHeader(pdf *gofpdf.Fpdf, title string) {
@@ -509,21 +723,40 @@ func drawAttachmentHeader(pdf *gofpdf.Fpdf, title string) {
 
 func drawAttachmentImageFrame(pdf *gofpdf.Fpdf, fileBytes []byte, contentType, fileName, imageID string) {
 	pdf.SetDrawColor(107, 114, 128)
-	pdf.Rect(24, 40, 162, 235, "D")
+	pdf.Rect(16, 24, 178, 236, "D")
 
 	if normalized := normalizeImageContentType(contentType); normalized != "" {
-		_ = addImageFromBytesFit(pdf, fileBytes, normalized, imageID, 28, 44, 154, 227)
+		_ = addImageFromBytesFit(pdf, fileBytes, normalized, imageID, 20, 28, 170, 228)
 		return
 	}
 
-	pdf.SetXY(34, 132)
+	pdf.SetXY(32, 124)
 	pdf.SetTextColor(31, 41, 55)
 	pdf.SetFont("Arial", "B", 14)
-	pdf.CellFormat(142, 8, "Original document uploaded as PDF", "", 1, "C", false, 0, "")
-	pdf.SetX(38)
+	pdf.CellFormat(146, 8, "Original document uploaded as PDF", "", 1, "C", false, 0, "")
+	pdf.SetX(36)
 	pdf.SetFont("Arial", "", 10)
 	pdf.SetTextColor(75, 85, 99)
-	pdf.MultiCell(134, 6, fmt.Sprintf("The original file \"%s\" is stored in the platform. Open it from the candidate page when you need the exact scanned PDF pages.", compactValue(fileName, "document")), "", "C", false)
+	pdf.MultiCell(138, 6, fmt.Sprintf("The original file \"%s\" is stored in the platform. Open it from the candidate page when you need the exact scanned PDF pages.", compactValue(fileName, "document")), "", "C", false)
+}
+
+func drawFullBodyPhotoFrame(pdf *gofpdf.Fpdf, fileBytes []byte, contentType, fileName, imageID string) {
+	pdf.SetDrawColor(107, 114, 128)
+	pdf.Rect(34, 26, 132, 220, "D")
+
+	if normalized := normalizeImageContentType(contentType); normalized != "" {
+		_ = addImageFromBytesFit(pdf, fileBytes, normalized, imageID, 40, 30, 120, 212)
+		return
+	}
+
+	pdf.SetXY(46, 132)
+	pdf.SetTextColor(31, 41, 55)
+	pdf.SetFont("Arial", "B", 14)
+	pdf.CellFormat(108, 8, "Original photo stored in the platform", "", 1, "C", false, 0, "")
+	pdf.SetX(46)
+	pdf.SetFont("Arial", "", 10)
+	pdf.SetTextColor(75, 85, 99)
+	pdf.MultiCell(108, 6, fmt.Sprintf("Open \"%s\" from the candidate page when you need the exact uploaded file.", compactValue(fileName, "photo")), "", "C", false)
 }
 
 func compactValue(value, fallback string) string {
@@ -532,6 +765,180 @@ func compactValue(value, fallback string) string {
 		return fallback
 	}
 	return trimmed
+}
+
+func candidateProfileName(candidate *domain.Candidate, passportData *domain.PassportData) string {
+	if passportData != nil {
+		if holderName := strings.TrimSpace(passportData.HolderName); holderName != "" {
+			return holderName
+		}
+	}
+	if candidate == nil {
+		return ""
+	}
+	return strings.TrimSpace(candidate.FullName)
+}
+
+func manualCandidateUpper(value, fallback string) string {
+	return compactValue(strings.ToUpper(strings.TrimSpace(value)), fallback)
+}
+
+func manualCandidateDate(value *time.Time) string {
+	if value == nil || value.IsZero() {
+		return "N/A"
+	}
+	return value.UTC().Format("02-Jan-06")
+}
+
+func manualCandidateAgeValue(candidate *domain.Candidate) string {
+	if candidate == nil || candidate.Age == nil {
+		return "N/A"
+	}
+	return fmt.Sprintf("%d YRS", *candidate.Age)
+}
+
+func formatChildrenCount(value *int) string {
+	if value == nil {
+		return "N/A"
+	}
+	return fmt.Sprintf("%d", *value)
+}
+
+func drawFitPDFText(pdf *gofpdf.Fpdf, x, y, width, height float64, value, family, style string, baseSize, minSize float64, align string) {
+	display := compactValue(value, "-")
+	fontSize := baseSize
+	pdf.SetFont(family, style, fontSize)
+	for fontSize > minSize && pdf.GetStringWidth(display) > width {
+		fontSize -= 0.2
+		pdf.SetFont(family, style, fontSize)
+	}
+
+	if pdf.GetStringWidth(display) > width {
+		display = ellipsizePDFText(pdf, display, width)
+	}
+
+	lineHeight := fontSize * 0.42
+	if lineHeight < 3.2 {
+		lineHeight = 3.2
+	}
+	yOffset := y + ((height - lineHeight) / 2)
+	if yOffset < y {
+		yOffset = y
+	}
+
+	pdf.SetXY(x, yOffset)
+	pdf.CellFormat(width, lineHeight, display, "", 1, align, false, 0, "")
+}
+
+func ellipsizePDFText(pdf *gofpdf.Fpdf, value string, width float64) string {
+	if pdf.GetStringWidth(value) <= width {
+		return value
+	}
+
+	runes := []rune(value)
+	ellipsis := "..."
+	for len(runes) > 0 {
+		candidate := string(runes) + ellipsis
+		if pdf.GetStringWidth(candidate) <= width {
+			return candidate
+		}
+		runes = runes[:len(runes)-1]
+	}
+
+	return ellipsis
+}
+
+func passportValue(passportData *domain.PassportData, getter func(*domain.PassportData) string) string {
+	if passportData == nil || getter == nil {
+		return ""
+	}
+	return strings.TrimSpace(getter(passportData))
+}
+
+func passportDateValue(passportData *domain.PassportData, getter func(*domain.PassportData) time.Time) string {
+	if passportData == nil || getter == nil {
+		return "N/A"
+	}
+	value := getter(passportData)
+	if value.IsZero() {
+		return "N/A"
+	}
+	return value.UTC().Format("02-Jan-06")
+}
+
+func passportDatePointerValue(passportData *domain.PassportData, getter func(*domain.PassportData) *time.Time) string {
+	if passportData == nil || getter == nil {
+		return "N/A"
+	}
+	value := getter(passportData)
+	if value == nil || value.IsZero() {
+		return "N/A"
+	}
+	return value.UTC().Format("02-Jan-06")
+}
+
+func passportRemainingYears(passportData *domain.PassportData) string {
+	if passportData == nil || passportData.ExpiryDate.IsZero() {
+		return "N/A"
+	}
+	now := time.Now().UTC()
+	expiry := passportData.ExpiryDate.UTC()
+	if expiry.Before(now) {
+		return "EXPIRED"
+	}
+	years := expiry.Year() - now.Year()
+	anniversary := time.Date(now.Year(), expiry.Month(), expiry.Day(), 0, 0, 0, 0, time.UTC)
+	if now.After(anniversary) {
+		years--
+	}
+	if years < 0 {
+		years = 0
+	}
+	if years == 0 {
+		months := int(expiry.Sub(now).Hours() / 24 / 30)
+		if months < 1 {
+			return "<1 YR"
+		}
+		return fmt.Sprintf("%d MOS", months)
+	}
+	return fmt.Sprintf("%d YRS", years)
+}
+
+func shortReference(value string) string {
+	trimmed := strings.TrimSpace(value)
+	if len(trimmed) <= 8 {
+		return strings.ToUpper(trimmed)
+	}
+	return strings.ToUpper(trimmed[:8])
+}
+
+func boolText(value bool) string {
+	if value {
+		return "YES"
+	}
+	return "NO"
+}
+
+func listContainsFold(values []string, target string) bool {
+	target = strings.TrimSpace(strings.ToLower(target))
+	if target == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.TrimSpace(strings.ToLower(value)) == target {
+			return true
+		}
+	}
+	return false
+}
+
+func listContainsAnyFold(values []string, targets ...string) bool {
+	for _, target := range targets {
+		if listContainsFold(values, target) {
+			return true
+		}
+	}
+	return false
 }
 
 func formatCandidateStatusForPDF(status domain.CandidateStatus) string {
@@ -558,6 +965,27 @@ func formatExperienceLevel(value *int) string {
 		return "FIRST TIME"
 	}
 	return fmt.Sprintf("%d YEARS", *value)
+}
+
+func formatPassportDate(value time.Time) string {
+	if value.IsZero() {
+		return "Not available"
+	}
+	return value.UTC().Format("02 Jan 2006")
+}
+
+func formatPassportDatePointer(value *time.Time) string {
+	if value == nil || value.IsZero() {
+		return "Not available"
+	}
+	return value.UTC().Format("02 Jan 2006")
+}
+
+func isPassportExpiringSoon(expiryDate time.Time) bool {
+	if expiryDate.IsZero() {
+		return false
+	}
+	return time.Now().UTC().AddDate(0, 6, 0).After(expiryDate.UTC())
 }
 
 func decodeLogoDataURL(dataURL string) ([]byte, string, error) {
@@ -590,7 +1018,7 @@ func decodeLogoDataURL(dataURL string) ([]byte, string, error) {
 }
 
 func fetchRemoteAsset(fileURL string) ([]byte, string, error) {
-	response, err := http.Get(fileURL)
+	response, err := remoteAssetHTTPClient.Get(fileURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("download image: %w", err)
 	}
@@ -600,9 +1028,12 @@ func fetchRemoteAsset(fileURL string) ([]byte, string, error) {
 		return nil, "", fmt.Errorf("download image: unexpected status code %d", response.StatusCode)
 	}
 
-	body, err := io.ReadAll(response.Body)
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxRemoteAssetBytes+1))
 	if err != nil {
 		return nil, "", fmt.Errorf("read image body: %w", err)
+	}
+	if int64(len(body)) > maxRemoteAssetBytes {
+		return nil, "", fmt.Errorf("download image: file too large")
 	}
 
 	contentType := strings.ToLower(strings.TrimSpace(strings.SplitN(response.Header.Get("Content-Type"), ";", 2)[0]))
