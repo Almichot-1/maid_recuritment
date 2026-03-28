@@ -1,11 +1,11 @@
-import { AxiosError } from 'axios';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import { useRouter } from 'next/navigation';
-import { toast } from 'sonner';
-import api from '@/lib/api';
-import { useCurrentUser } from '@/hooks/use-auth';
-import { usePairingStore } from '@/stores/pairing-store';
-import { Candidate, PaginatedResponse, UserRole } from '@/types';
+import { AxiosError } from "axios";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useRouter } from "next/navigation";
+import { toast } from "sonner";
+import api from "@/lib/api";
+import { useCurrentUser } from "@/hooks/use-auth";
+import { usePairingStore } from "@/stores/pairing-store";
+import { Candidate, PaginatedResponse, UserRole } from "@/types";
 
 export interface CandidateFilters {
   status?: string;
@@ -43,11 +43,18 @@ export interface CandidateDocumentApiResponse {
 export interface CandidateApiResponse {
   id: string;
   full_name: string;
+  nationality?: string;
+  date_of_birth?: string;
   age?: number;
+  place_of_birth?: string;
+  religion?: string;
+  marital_status?: string;
+  children_count?: number;
+  education_level?: string;
   experience_years?: number;
   languages?: string[];
   skills?: string[];
-  status: Candidate['status'];
+  status: Candidate["status"];
   created_by?: string | { id: string };
   cv_pdf_url?: string;
   locked_by?: string;
@@ -68,14 +75,22 @@ interface CandidateListApiResponse {
 }
 
 export function normalizeCandidate(candidate: CandidateApiResponse): Candidate {
-  const createdBy = typeof candidate.created_by === 'string'
-    ? candidate.created_by
-    : candidate.created_by?.id || '';
+  const createdBy =
+    typeof candidate.created_by === "string"
+      ? candidate.created_by
+      : candidate.created_by?.id || "";
 
   return {
     id: candidate.id,
     full_name: candidate.full_name,
+    nationality: candidate.nationality,
+    date_of_birth: candidate.date_of_birth,
     age: candidate.age,
+    place_of_birth: candidate.place_of_birth,
+    religion: candidate.religion,
+    marital_status: candidate.marital_status,
+    children_count: candidate.children_count,
+    education_level: candidate.education_level,
     experience_years: candidate.experience_years,
     languages: candidate.languages || [],
     skills: candidate.skills || [],
@@ -106,9 +121,11 @@ export function useCandidates(filters: CandidateFilters = {}) {
   const requiresWorkspace = user?.role === UserRole.FOREIGN_AGENT;
 
   return useQuery({
-    queryKey: ['candidates', activePairingId, filters],
+    queryKey: ["candidates", activePairingId, filters],
     queryFn: async () => {
-      const response = await api.get<CandidateListApiResponse>('/candidates', { params: filters });
+      const response = await api.get<CandidateListApiResponse>("/candidates", {
+        params: filters,
+      });
       return {
         data: response.data.candidates.map(normalizeCandidate),
         meta: {
@@ -118,7 +135,8 @@ export function useCandidates(filters: CandidateFilters = {}) {
         },
       } satisfies PaginatedResponse<Candidate>;
     },
-    enabled: !!user && (!requiresWorkspace || (isPairingReady && !!activePairingId)),
+    enabled:
+      !!user && (!requiresWorkspace || (isPairingReady && !!activePairingId)),
     staleTime: 30000,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
@@ -139,12 +157,17 @@ export function useCandidate(id?: string) {
   const requiresWorkspace = user?.role === UserRole.FOREIGN_AGENT;
 
   return useQuery({
-    queryKey: ['candidate', id, activePairingId],
+    queryKey: ["candidate", id, activePairingId],
     queryFn: async () => {
-      const response = await api.get<{ candidate: CandidateApiResponse }>(`/candidates/${id}`);
+      const response = await api.get<{ candidate: CandidateApiResponse }>(
+        `/candidates/${id}`,
+      );
       return normalizeCandidate(response.data.candidate);
     },
-    enabled: !!id && !!user && (!requiresWorkspace || (isPairingReady && !!activePairingId)),
+    enabled:
+      !!id &&
+      !!user &&
+      (!requiresWorkspace || (isPairingReady && !!activePairingId)),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
@@ -161,14 +184,17 @@ export function useCandidate(id?: string) {
 export function useCreateCandidate() {
   return useMutation({
     mutationFn: async (data: Partial<Candidate>) => {
-      const response = await api.post<{ candidate: { id: string } }>('/candidates', data);
+      const response = await api.post<{ candidate: { id: string } }>(
+        "/candidates",
+        data,
+      );
       return response.data;
     },
     onSuccess: () => {
-      toast.success('Candidate created successfully');
+      toast.success("Candidate created successfully");
     },
     onError: () => {
-      toast.error('Failed to create candidate');
+      toast.error("Failed to create candidate");
     },
   });
 }
@@ -178,16 +204,19 @@ export function useUpdateCandidate(id: string) {
 
   return useMutation({
     mutationFn: async (data: Partial<Candidate>) => {
-      const response = await api.put<{ candidate: Candidate }>(`/candidates/${id}`, data);
+      const response = await api.put<{ candidate: Candidate }>(
+        `/candidates/${id}`,
+        data,
+      );
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['candidate', id] });
-      queryClient.invalidateQueries({ queryKey: ['candidates'] });
-      toast.success('Candidate updated successfully');
+      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Candidate updated successfully");
     },
     onError: () => {
-      toast.error('Failed to update candidate');
+      toast.error("Failed to update candidate");
     },
   });
 }
@@ -201,43 +230,63 @@ export function usePublishCandidate(id: string) {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['candidate', id] });
-      queryClient.invalidateQueries({ queryKey: ['candidates'] });
-      toast.success('Candidate published successfully');
+      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Candidate published successfully");
     },
     onError: () => {
-      toast.error('Failed to publish candidate');
+      toast.error("Failed to publish candidate");
     },
   });
 }
 
 export function useUploadDocument(id: string) {
   const queryClient = useQueryClient();
+  const activePairingId = usePairingStore((state) => state.activePairingId);
 
   return useMutation({
-    mutationFn: async (args: UploadCandidateDocumentArgs) => uploadCandidateDocumentFile(id, args),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['candidate', id] });
-      toast.success('Document uploaded successfully');
+    mutationFn: async (args: UploadCandidateDocumentArgs) =>
+      uploadCandidateDocumentFile(id, args),
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({
+        queryKey: ["candidate", id, activePairingId],
+        refetchType: "active",
+      });
+      queryClient.invalidateQueries({
+        queryKey: ["candidate-progress", id, activePairingId],
+        refetchType: "active",
+      });
+      if (variables.type === "passport") {
+        queryClient.invalidateQueries({
+          queryKey: ["passport-data", id],
+          refetchType: "active",
+        });
+      }
+      toast.success("Document uploaded successfully");
     },
     onError: () => {
-      toast.error('Failed to upload document');
+      toast.error("Failed to upload document");
     },
   });
 }
 
-export async function uploadCandidateDocumentFile(id: string, { file, type, onProgress }: UploadCandidateDocumentArgs) {
+export async function uploadCandidateDocumentFile(
+  id: string,
+  { file, type, onProgress }: UploadCandidateDocumentArgs,
+) {
   const formData = new FormData();
-  formData.append('file', file);
-  formData.append('document_type', type);
+  formData.append("file", file);
+  formData.append("document_type", type);
 
   const response = await api.post(`/candidates/${id}/documents`, formData, {
     headers: {
-      'Content-Type': 'multipart/form-data',
+      "Content-Type": "multipart/form-data",
     },
     onUploadProgress: (progressEvent) => {
       if (progressEvent.total && onProgress) {
-        const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+        const percentCompleted = Math.round(
+          (progressEvent.loaded * 100) / progressEvent.total,
+        );
         onProgress(percentCompleted);
       }
     },
@@ -255,15 +304,18 @@ export function useGenerateCV(id: string) {
 
   return useMutation({
     mutationFn: async (payload?: GenerateCVRequest) => {
-      const response = await api.post(`/candidates/${id}/generate-cv`, payload || {});
+      const response = await api.post(
+        `/candidates/${id}/generate-cv`,
+        payload || {},
+      );
       return response.data;
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['candidate', id] });
-      toast.success('CV generated successfully');
+      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+      toast.success("CV generated successfully");
     },
     onError: () => {
-      toast.error('Failed to generate CV');
+      toast.error("Failed to generate CV");
     },
   });
 }
@@ -278,20 +330,20 @@ export function useDeleteCandidate(id: string) {
       return response.data;
     },
     onSuccess: () => {
-      queryClient.cancelQueries({ queryKey: ['candidate', id] });
-      queryClient.cancelQueries({ queryKey: ['candidate-progress', id] });
-      queryClient.cancelQueries({ queryKey: ['candidate-shares', id] });
-      queryClient.removeQueries({ queryKey: ['candidate', id] });
-      queryClient.removeQueries({ queryKey: ['candidate-progress', id] });
-      queryClient.removeQueries({ queryKey: ['candidate-shares', id] });
-      queryClient.invalidateQueries({ queryKey: ['candidates'] });
-      toast.success('Candidate deleted successfully');
-      router.push('/candidates');
+      queryClient.cancelQueries({ queryKey: ["candidate", id] });
+      queryClient.cancelQueries({ queryKey: ["candidate-progress", id] });
+      queryClient.cancelQueries({ queryKey: ["candidate-shares", id] });
+      queryClient.removeQueries({ queryKey: ["candidate", id] });
+      queryClient.removeQueries({ queryKey: ["candidate-progress", id] });
+      queryClient.removeQueries({ queryKey: ["candidate-shares", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Candidate deleted successfully");
+      router.push("/candidates");
     },
     onError: (error) => {
       const responseError = error as AxiosError<{ error?: string }>;
       const message = responseError.response?.data?.error;
-      toast.error(message || 'Failed to delete candidate');
+      toast.error(message || "Failed to delete candidate");
     },
   });
 }

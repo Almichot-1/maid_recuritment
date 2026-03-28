@@ -17,11 +17,13 @@ import (
 var ErrStepNotFound = errors.New("step not found")
 var ErrInvalidStepTransition = errors.New("invalid step transition")
 var ErrStepFailureReasonRequired = errors.New("add a short reason before marking this step as failed")
+var ErrMedicalDocumentRequired = errors.New("upload a medical document before completing the Medical step")
 
 type StatusStepService struct {
 	statusStepRepository domain.StatusStepRepository
 	candidateRepository  domain.CandidateRepository
 	selectionRepository  domain.SelectionRepository
+	documentRepository   domain.DocumentRepository
 	notificationService  NotificationSender
 	db                   *gorm.DB
 }
@@ -57,6 +59,10 @@ func NewStatusStepService(
 		notificationService:  notificationService,
 		db:                   dbSource.DB(),
 	}, nil
+}
+
+func (s *StatusStepService) SetDocumentRepository(documentRepository domain.DocumentRepository) {
+	s.documentRepository = documentRepository
 }
 
 func (s *StatusStepService) InitializeSteps(candidateID string) error {
@@ -115,7 +121,10 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(updatedBy) {
 		return ErrNotAuthorized
 	}
-	if candidate.Status != "" && candidate.Status != domain.CandidateStatusInProgress && candidate.Status != domain.CandidateStatusCompleted {
+	if candidate.Status != "" &&
+		candidate.Status != domain.CandidateStatusApproved &&
+		candidate.Status != domain.CandidateStatusInProgress &&
+		candidate.Status != domain.CandidateStatusCompleted {
 		return ErrInvalidStepTransition
 	}
 	if s.db != nil {
@@ -132,14 +141,12 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	}
 
 	var target *domain.StatusStep
-	targetIndex := -1
-	for idx, step := range steps {
+	for _, step := range steps {
 		if step == nil {
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(step.StepName), strings.TrimSpace(stepName)) {
 			target = step
-			targetIndex = idx
 			break
 		}
 	}
@@ -151,17 +158,13 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 		return ErrInvalidStepTransition
 	}
 
-	if status == domain.Completed {
-		for idx := 0; idx < targetIndex; idx++ {
-			if steps[idx] == nil {
-				continue
-			}
-			if steps[idx].StepStatus != domain.Completed {
-				return ErrInvalidStepTransition
-			}
+	if strings.EqualFold(strings.TrimSpace(target.StepName), strings.TrimSpace(domain.Medical)) && status == domain.Completed {
+		if err := s.ensureMedicalDocument(candidateID); err != nil {
+			return err
 		}
 	}
 
+	previousStatus := target.StepStatus
 	target.StepStatus = status
 	target.UpdatedBy = strings.TrimSpace(updatedBy)
 	target.Notes = strings.TrimSpace(notes)
@@ -204,6 +207,9 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 
 	selection, err := s.selectionRepository.GetByCandidateID(candidateID)
 	if err == nil && selection != nil {
+		if previousStatus == status {
+			return nil
+		}
 		if allCompleted {
 			_ = s.notificationService.Send(
 				candidate.CreatedBy,
@@ -240,6 +246,45 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 			return nil
 		}
 
+		if previousStatus != domain.Completed && status == domain.Completed {
+			switch strings.TrimSpace(target.StepName) {
+			case domain.TicketBooked:
+				_ = s.notificationService.Send(
+					candidate.CreatedBy,
+					"Flight booked",
+					"The flight has been booked for this candidate.",
+					string(domain.NotificationFlightBooked),
+					"candidate",
+					candidateID,
+				)
+				_ = s.notificationService.Send(
+					selection.SelectedBy,
+					"Flight booked",
+					"The flight has been booked for this candidate.",
+					string(domain.NotificationFlightBooked),
+					"candidate",
+					candidateID,
+				)
+			case domain.Arrived:
+				_ = s.notificationService.Send(
+					candidate.CreatedBy,
+					"Candidate arrived",
+					"The candidate has arrived and the final travel milestone is complete.",
+					string(domain.NotificationArrived),
+					"candidate",
+					candidateID,
+				)
+				_ = s.notificationService.Send(
+					selection.SelectedBy,
+					"Candidate arrived",
+					"The candidate has arrived and the final travel milestone is complete.",
+					string(domain.NotificationArrived),
+					"candidate",
+					candidateID,
+				)
+			}
+		}
+
 		_ = s.notificationService.Send(
 			selection.SelectedBy,
 			"Recruitment progress updated",
@@ -251,6 +296,22 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	}
 
 	return nil
+}
+
+func (s *StatusStepService) ensureMedicalDocument(candidateID string) error {
+	if s.documentRepository == nil {
+		return ErrMedicalDocumentRequired
+	}
+	documents, err := s.documentRepository.GetByCandidateID(candidateID)
+	if err != nil {
+		return err
+	}
+	for _, document := range documents {
+		if document != nil && document.DocumentType == domain.MedicalDocument && strings.TrimSpace(document.FileURL) != "" {
+			return nil
+		}
+	}
+	return ErrMedicalDocumentRequired
 }
 
 func (s *StatusStepService) GetCandidateProgress(candidateID string) ([]*domain.StatusStep, error) {
@@ -265,7 +326,10 @@ func (s *StatusStepService) GetCandidateProgress(candidateID string) ([]*domain.
 	if err != nil {
 		return nil, err
 	}
-	if candidate.Status != "" && candidate.Status != domain.CandidateStatusInProgress && candidate.Status != domain.CandidateStatusCompleted {
+	if candidate.Status != "" &&
+		candidate.Status != domain.CandidateStatusApproved &&
+		candidate.Status != domain.CandidateStatusInProgress &&
+		candidate.Status != domain.CandidateStatusCompleted {
 		return s.statusStepRepository.GetByCandidateID(candidateID)
 	}
 	if s.db != nil {
@@ -413,17 +477,9 @@ func isValidStepStatus(status domain.StepStatus) bool {
 }
 
 func canTransitionStep(current, next domain.StepStatus) bool {
-	if current == domain.Completed {
-		return next == domain.Completed
-	}
-
-	switch current {
-	case domain.Pending:
-		return next == domain.InProgress
-	case domain.InProgress:
-		return next == domain.Completed || next == domain.Failed
-	case domain.Failed:
-		return next == domain.InProgress || next == domain.Failed
+	switch next {
+	case domain.Pending, domain.InProgress, domain.Completed, domain.Failed:
+		return true
 	default:
 		return false
 	}

@@ -24,14 +24,15 @@ type UpdatedByResponse struct {
 }
 
 type StatusStepResponse struct {
-	ID          string            `json:"id"`
-	CandidateID string            `json:"candidate_id"`
-	StepName    string            `json:"step_name"`
-	StepStatus  string            `json:"step_status"`
-	CompletedAt *string           `json:"completed_at,omitempty"`
-	Notes       string            `json:"notes,omitempty"`
-	UpdatedBy   UpdatedByResponse `json:"updated_by"`
-	UpdatedAt   string            `json:"updated_at"`
+	ID                 string            `json:"id"`
+	CandidateID        string            `json:"candidate_id"`
+	StepName           string            `json:"step_name"`
+	StepStatus         string            `json:"step_status"`
+	CompletedAt        *string           `json:"completed_at,omitempty"`
+	Notes              string            `json:"notes,omitempty"`
+	MedicalDocumentURL *string           `json:"medical_document_url,omitempty"`
+	UpdatedBy          UpdatedByResponse `json:"updated_by"`
+	UpdatedAt          string            `json:"updated_at"`
 }
 
 type ProgressResponse struct {
@@ -51,15 +52,17 @@ type StatusHandler struct {
 	statusStepService *service.StatusStepService
 	candidateRepo     domain.CandidateRepository
 	selectionRepo     domain.SelectionRepository
+	documentRepo      domain.DocumentRepository
 	userRepo          domain.UserRepository
 	pairingService    *service.PairingService
 }
 
-func NewStatusHandler(statusStepService *service.StatusStepService, candidateRepo domain.CandidateRepository, selectionRepo domain.SelectionRepository, userRepo domain.UserRepository, pairingService *service.PairingService) *StatusHandler {
+func NewStatusHandler(statusStepService *service.StatusStepService, candidateRepo domain.CandidateRepository, selectionRepo domain.SelectionRepository, documentRepo domain.DocumentRepository, userRepo domain.UserRepository, pairingService *service.PairingService) *StatusHandler {
 	return &StatusHandler{
 		statusStepService: statusStepService,
 		candidateRepo:     candidateRepo,
 		selectionRepo:     selectionRepo,
+		documentRepo:      documentRepo,
 		userRepo:          userRepo,
 		pairingService:    pairingService,
 	}
@@ -139,8 +142,8 @@ func (h *StatusHandler) UpdateStatusStep(w http.ResponseWriter, r *http.Request)
 	}
 
 	status := domain.StepStatus(strings.TrimSpace(req.Status))
-	if status != domain.InProgress && status != domain.Completed && status != domain.Failed {
-		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be in_progress, completed, or failed"})
+	if status != domain.Pending && status != domain.InProgress && status != domain.Completed && status != domain.Failed {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be pending, in_progress, completed, or failed"})
 		return
 	}
 
@@ -163,10 +166,15 @@ func (h *StatusHandler) buildProgressResponse(candidate *domain.Candidate) (*Pro
 	if err != nil {
 		return nil, err
 	}
+	medicalDocumentURL, err := h.resolveMedicalDocumentURL(candidate.ID)
+	if err != nil {
+		return nil, err
+	}
 
 	responses := make([]StatusStepResponse, 0, len(steps))
 	completedCount := 0
 	lastUpdatedAt := candidate.UpdatedAt.UTC()
+	userNameCache := make(map[string]string)
 
 	for _, step := range steps {
 		if step == nil {
@@ -180,10 +188,13 @@ func (h *StatusHandler) buildProgressResponse(candidate *domain.Candidate) (*Pro
 			lastUpdatedAt = step.UpdatedAt
 		}
 
-		userName := ""
-		user, err := h.userRepo.GetByID(step.UpdatedBy)
-		if err == nil && user != nil {
-			userName = user.FullName
+		userName := userNameCache[step.UpdatedBy]
+		if userName == "" && strings.TrimSpace(step.UpdatedBy) != "" {
+			user, err := h.userRepo.GetByID(step.UpdatedBy)
+			if err == nil && user != nil {
+				userName = user.FullName
+				userNameCache[step.UpdatedBy] = userName
+			}
 		}
 
 		var completedAt *string
@@ -191,14 +202,19 @@ func (h *StatusHandler) buildProgressResponse(candidate *domain.Candidate) (*Pro
 			formatted := step.CompletedAt.UTC().Format(time.RFC3339)
 			completedAt = &formatted
 		}
+		var stepMedicalDocumentURL *string
+		if strings.EqualFold(strings.TrimSpace(step.StepName), strings.TrimSpace(domain.Medical)) && medicalDocumentURL != nil {
+			stepMedicalDocumentURL = medicalDocumentURL
+		}
 
 		responses = append(responses, StatusStepResponse{
-			ID:          step.ID,
-			CandidateID: step.CandidateID,
-			StepName:    step.StepName,
-			StepStatus:  string(step.StepStatus),
-			CompletedAt: completedAt,
-			Notes:       step.Notes,
+			ID:                 step.ID,
+			CandidateID:        step.CandidateID,
+			StepName:           step.StepName,
+			StepStatus:         string(step.StepStatus),
+			CompletedAt:        completedAt,
+			Notes:              step.Notes,
+			MedicalDocumentURL: stepMedicalDocumentURL,
 			UpdatedBy: UpdatedByResponse{
 				ID:   step.UpdatedBy,
 				Name: userName,
@@ -219,6 +235,30 @@ func (h *StatusHandler) buildProgressResponse(candidate *domain.Candidate) (*Pro
 		ProgressPercentage: progressPercentage,
 		LastUpdatedAt:      lastUpdatedAt.Format(time.RFC3339),
 	}, nil
+}
+
+func (h *StatusHandler) resolveMedicalDocumentURL(candidateID string) (*string, error) {
+	if h.documentRepo == nil {
+		return nil, nil
+	}
+
+	documents, err := h.documentRepo.GetByCandidateID(candidateID)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, document := range documents {
+		if document == nil || document.DocumentType != domain.MedicalDocument {
+			continue
+		}
+		if strings.TrimSpace(document.FileURL) == "" {
+			continue
+		}
+		value := document.FileURL
+		return &value, nil
+	}
+
+	return nil, nil
 }
 
 func (h *StatusHandler) isInvolved(candidate *domain.Candidate, userID, role, pairingID string) (bool, error) {
@@ -259,7 +299,7 @@ func (h *StatusHandler) writeStatusError(w http.ResponseWriter, err error) {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "select a partner workspace to continue"})
 	case errors.Is(err, service.ErrNoActivePairings), errors.Is(err, service.ErrPairingAccessDenied):
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-	case errors.Is(err, service.ErrInvalidStepTransition), errors.Is(err, service.ErrStepFailureReasonRequired):
+	case errors.Is(err, service.ErrInvalidStepTransition), errors.Is(err, service.ErrStepFailureReasonRequired), errors.Is(err, service.ErrMedicalDocumentRequired):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	default:
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})

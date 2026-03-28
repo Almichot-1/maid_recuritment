@@ -31,13 +31,14 @@ type statusStepTestCandidate struct {
 func (statusStepTestCandidate) TableName() string { return "candidates" }
 
 type statusStepTestSelection struct {
-	ID          string    `gorm:"primaryKey;column:id"`
-	CandidateID string    `gorm:"column:candidate_id"`
-	SelectedBy  string    `gorm:"column:selected_by"`
-	Status      string    `gorm:"column:status"`
-	ExpiresAt   time.Time `gorm:"column:expires_at"`
-	CreatedAt   time.Time `gorm:"column:created_at"`
-	UpdatedAt   time.Time `gorm:"column:updated_at"`
+	ID               string    `gorm:"primaryKey;column:id"`
+	CandidateID      string    `gorm:"column:candidate_id"`
+	SelectedBy       string    `gorm:"column:selected_by"`
+	Status           string    `gorm:"column:status"`
+	WarningSentFlags int       `gorm:"column:warning_sent_flags"`
+	ExpiresAt        time.Time `gorm:"column:expires_at"`
+	CreatedAt        time.Time `gorm:"column:created_at"`
+	UpdatedAt        time.Time `gorm:"column:updated_at"`
 }
 
 func (statusStepTestSelection) TableName() string { return "selections" }
@@ -296,6 +297,20 @@ func (m *statusStepSelectionRepoMock) GetExpiredSelections() ([]*domain.Selectio
 	return nil, nil
 }
 
+type statusStepDocumentRepoMock struct {
+	documents []*domain.Document
+	err       error
+}
+
+func (m *statusStepDocumentRepoMock) Create(document *domain.Document) error { return nil }
+func (m *statusStepDocumentRepoMock) GetByCandidateID(candidateID string) ([]*domain.Document, error) {
+	if m.err != nil {
+		return nil, m.err
+	}
+	return m.documents, nil
+}
+func (m *statusStepDocumentRepoMock) Delete(id string) error { return nil }
+
 func TestStatusStepService_UpdateStepRules(t *testing.T) {
 	updated := false
 	statusRepo := &statusStepRepoBehaviorMock{
@@ -319,6 +334,9 @@ func TestStatusStepService_UpdateStepRules(t *testing.T) {
 			},
 		},
 		selectionRepository: &statusStepSelectionRepoMock{},
+		documentRepository: &statusStepDocumentRepoMock{
+			documents: []*domain.Document{{CandidateID: "cand-1", DocumentType: domain.MedicalDocument, FileURL: "https://files.example/medical.pdf"}},
+		},
 		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
 	}
 
@@ -341,6 +359,9 @@ func TestStatusStepService_UpdateStepAuthorizationAndTransitions(t *testing.T) {
 			},
 		},
 		selectionRepository: &statusStepSelectionRepoMock{},
+		documentRepository: &statusStepDocumentRepoMock{
+			documents: []*domain.Document{{CandidateID: "cand-1", DocumentType: domain.MedicalDocument, FileURL: "https://files.example/medical.pdf"}},
+		},
 		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
 	}
 
@@ -348,7 +369,7 @@ func TestStatusStepService_UpdateStepAuthorizationAndTransitions(t *testing.T) {
 	require.ErrorIs(t, err, ErrNotAuthorized)
 
 	err = service.UpdateStep("cand-1", domain.MedicalTest, "owner-1", domain.Completed, "")
-	require.ErrorIs(t, err, ErrInvalidStepTransition)
+	require.NoError(t, err)
 }
 
 func TestStatusStepHelpers(t *testing.T) {
@@ -360,9 +381,9 @@ func TestStatusStepHelpers(t *testing.T) {
 	assert.True(t, canTransitionStep(domain.InProgress, domain.Completed))
 	assert.True(t, canTransitionStep(domain.InProgress, domain.Failed))
 	assert.True(t, canTransitionStep(domain.Failed, domain.InProgress))
-	assert.False(t, canTransitionStep(domain.Pending, domain.Completed))
+	assert.True(t, canTransitionStep(domain.Pending, domain.Completed))
 	assert.True(t, canTransitionStep(domain.Completed, domain.Completed))
-	assert.False(t, canTransitionStep(domain.Completed, domain.InProgress))
+	assert.True(t, canTransitionStep(domain.Completed, domain.Pending))
 
 	steps := predefinedStepNames()
 	assert.Len(t, steps, len(predefinedStepNames()))
@@ -434,4 +455,50 @@ func TestStatusStepService_UpdateStepMarksCandidateCompletedWhenFinalStepFinishe
 	var candidate statusStepTestCandidate
 	require.NoError(t, db.Where("id = ?", "cand-1").First(&candidate).Error)
 	assert.Equal(t, string(domain.CandidateStatusCompleted), candidate.Status)
+}
+
+func TestStatusStepService_UpdateStepAllowsApprovedCandidateToEnterProgress(t *testing.T) {
+	service, db := setupStatusStepServiceWithSQLite(t)
+
+	require.NoError(t, db.Create(&statusStepTestCandidate{
+		ID:        "cand-approved",
+		CreatedBy: "owner-1",
+		FullName:  "Candidate",
+		Status:    string(domain.CandidateStatusApproved),
+		Languages: []byte("[]"),
+		Skills:    []byte("[]"),
+	}).Error)
+
+	now := time.Now().UTC()
+	require.NoError(t, db.Create(&statusStepTestStep{
+		ID:          "step-medical",
+		CandidateID: "cand-approved",
+		StepName:    domain.Medical,
+		StepStatus:  string(domain.Pending),
+		UpdatedBy:   "owner-1",
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}).Error)
+
+	require.NoError(t, db.Create(&statusStepTestSelection{
+		ID:          "sel-approved",
+		CandidateID: "cand-approved",
+		SelectedBy:  "foreign-1",
+		Status:      string(domain.SelectionApproved),
+		ExpiresAt:   now.Add(24 * time.Hour),
+		CreatedAt:   now,
+		UpdatedAt:   now,
+	}).Error)
+
+	err := service.UpdateStep("cand-approved", domain.Medical, "owner-1", domain.InProgress, "Started medical processing")
+	require.NoError(t, err)
+
+	var candidate statusStepTestCandidate
+	require.NoError(t, db.Where("id = ?", "cand-approved").First(&candidate).Error)
+	assert.Equal(t, string(domain.CandidateStatusInProgress), candidate.Status)
+
+	var step statusStepTestStep
+	require.NoError(t, db.Where("candidate_id = ? AND step_name = ?", "cand-approved", domain.Medical).First(&step).Error)
+	assert.Equal(t, string(domain.InProgress), step.StepStatus)
+	assert.Equal(t, "Started medical processing", step.Notes)
 }
