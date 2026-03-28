@@ -20,6 +20,7 @@ export interface DocumentUploadProps {
 }
 
 export function DocumentUpload({
+  documentType,
   accept,
   maxSize,
   onUpload,
@@ -35,6 +36,16 @@ export function DocumentUpload({
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [isDragActive, setIsDragActive] = React.useState(false)
   const inputRef = React.useRef<HTMLInputElement | null>(null)
+  const shouldRenderPreview = React.useCallback(
+    (selectedFile: File) => {
+      if (selectedFile.type.startsWith("video/")) {
+        return true
+      }
+
+      return documentType === "photo" && selectedFile.type.startsWith("image/")
+    },
+    [documentType]
+  )
 
   const acceptValue = React.useMemo(
     () => {
@@ -104,7 +115,7 @@ export function DocumentUpload({
       setStatus(mode === "instant" ? "uploading" : "selected")
       setErrorMessage(null)
 
-      if (selectedFile.type.startsWith("image/") || selectedFile.type.startsWith("video/")) {
+      if (shouldRenderPreview(selectedFile)) {
         objectURL = URL.createObjectURL(selectedFile)
         setPreview(objectURL)
       } else {
@@ -133,7 +144,7 @@ export function DocumentUpload({
         }
       }
     },
-    [isAcceptedFile, maxSize, mode, onUpload]
+    [isAcceptedFile, maxSize, mode, onUpload, shouldRenderPreview]
   )
 
   const handleInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {

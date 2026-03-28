@@ -344,7 +344,38 @@ export function CandidateForm({
     }
 
     setLastAutoParsedPassportKey(fileKey);
-    void handleExtractPassportData();
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: () => void,
+        options?: { timeout: number },
+      ) => number;
+      cancelIdleCallback?: (handle: number) => void;
+    };
+    let timer: number | null = null;
+    let idleHandle: number | null = null;
+    const runExtraction = () => {
+      void handleExtractPassportData();
+    };
+
+    if (typeof idleWindow.requestIdleCallback === "function") {
+      idleHandle = idleWindow.requestIdleCallback(runExtraction, {
+        timeout: 500,
+      });
+    } else {
+      timer = window.setTimeout(runExtraction, 120);
+    }
+
+    return () => {
+      if (
+        idleHandle !== null &&
+        typeof idleWindow.cancelIdleCallback === "function"
+      ) {
+        idleWindow.cancelIdleCallback(idleHandle);
+      }
+      if (timer !== null) {
+        window.clearTimeout(timer);
+      }
+    };
   }, [
     handleExtractPassportData,
     isParsingPassport,
@@ -604,62 +635,17 @@ export function CandidateForm({
                   )}
                 />
 
-                <div className="rounded-3xl border border-amber-200/70 bg-[linear-gradient(135deg,rgba(255,247,237,0.98),rgba(255,255,255,0.96))] p-5 shadow-sm">
-                  <div className="space-y-4">
-                    <div className="space-y-3">
-                      <Badge className="w-fit rounded-full border-0 bg-amber-100 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-amber-800 hover:bg-amber-100">
-                        Applicants detail
-                      </Badge>
-                      <div className="space-y-2">
-                        <h4 className="text-lg font-semibold text-slate-950">
-                          These values feed the CV directly
-                        </h4>
-                        <p className="max-w-2xl text-sm text-slate-600">
-                          Fill these details here before creating the candidate
-                          so the Ethiopian agency can review, edit, and control
-                          exactly what appears in the generated CV. Passport
-                          upload will auto-fill the fields it can read, and you
-                          can correct anything before save instead of seeing{" "}
-                          <span className="font-semibold text-slate-900">
-                            N/A
-                          </span>
-                          .
-                        </p>
-                      </div>
-                      <div className="flex flex-wrap gap-3 text-xs text-slate-700">
-                        <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
-                          {applicantDetailCompletion}/8 applicant rows filled
-                        </span>
-                        <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
-                          Passport image fills DOB, age, nationality, and place
-                          of birth
-                        </span>
-                        <span className="rounded-full border border-amber-200 bg-white px-3 py-1.5">
-                          Every field stays editable before save
-                        </span>
-                      </div>
-                    </div>
-
-                    <div className="rounded-2xl border border-slate-200 bg-white p-4 shadow-sm">
-                      <p className="text-xs font-semibold uppercase tracking-[0.18em] text-slate-500">
-                        Live CV snapshot
-                      </p>
-                      <div className="mt-4 space-y-2.5">
-                        {applicantDetailPreview.map((item) => (
-                          <div
-                            key={item.label}
-                            className="grid grid-cols-[120px_minmax(0,1fr)] items-center gap-3 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2"
-                          >
-                            <p className="text-xs font-semibold uppercase tracking-[0.08em] text-slate-500">
-                              {item.label}
-                            </p>
-                            <p className="truncate text-sm font-semibold text-slate-900">
-                              {item.value}
-                            </p>
-                          </div>
-                        ))}
-                      </div>
-                    </div>
+                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+                    <span className="rounded-full border border-border bg-background px-3 py-1.5">
+                      {applicantDetailCompletion}/8 applicant rows filled
+                    </span>
+                    <span className="rounded-full border border-border bg-background px-3 py-1.5">
+                      Passport image fills DOB, age, nationality, and place of birth
+                    </span>
+                    <span className="rounded-full border border-border bg-background px-3 py-1.5">
+                      Every field stays editable before save
+                    </span>
                   </div>
                 </div>
 
