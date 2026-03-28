@@ -46,6 +46,7 @@ type approvalTestSelection struct {
 	EmployerIDURL              string     `gorm:"column:employer_id_url"`
 	EmployerIDFileName         string     `gorm:"column:employer_id_file_name"`
 	EmployerIDUploadedAt       *time.Time `gorm:"column:employer_id_uploaded_at"`
+	WarningSentFlags           int        `gorm:"column:warning_sent_flags"`
 	ExpiresAt                  time.Time  `gorm:"column:expires_at"`
 	CreatedAt                  time.Time  `gorm:"column:created_at"`
 	UpdatedAt                  time.Time  `gorm:"column:updated_at"`

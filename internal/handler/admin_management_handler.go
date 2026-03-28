@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -110,7 +112,11 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	tempPassword := generateTemporaryAdminPassword()
+	tempPassword, err := generateTemporaryAdminPassword()
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate temporary password"})
+		return
+	}
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      "Maid Recruitment Platform",
 		AccountName: strings.TrimSpace(strings.ToLower(req.Email)),
@@ -141,17 +147,15 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	invitationWarning := ""
+	invitationWarning := "For security, the temporary password and MFA secret were not emailed. Share them with the new admin using a secure out-of-band channel."
 	if h.emailService != nil {
 		body := fmt.Sprintf(
-			"Hello %s,\n\nYou have been added as an admin on the Maid Recruitment Platform.\n\nTemporary password: %s\nMFA secret: %s\nSetup URL: %s\n\nYou will be asked to change your password after your first login.",
+			"Hello %s,\n\nYou have been added as an admin on the Maid Recruitment Platform.\n\nFor security reasons, your one-time password and MFA secret were not sent by email. Please contact the platform super admin who created your account to receive your onboarding credentials through a secure channel.\n\nOnce you receive them, use this setup URL to add MFA to your authenticator app:\n%s",
 			admin.FullName,
-			tempPassword,
-			key.Secret(),
 			key.URL(),
 		)
 		if err := h.emailService.Send(admin.Email, "Your admin portal invitation", body); err != nil {
-			invitationWarning = err.Error()
+			invitationWarning = invitationWarning + " Email delivery also failed: " + err.Error()
 		}
 	}
 
@@ -264,6 +268,57 @@ func mapAdminManagementView(admin *domain.Admin) AdminManagementView {
 	return view
 }
 
-func generateTemporaryAdminPassword() string {
-	return "Admin!" + strings.ToUpper(time.Now().UTC().Format("020106")) + "a9"
+func generateTemporaryAdminPassword() (string, error) {
+	const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+	const lower = "abcdefghijkmnopqrstuvwxyz"
+	const digits = "23456789"
+	const special = "!@#$%^&*()-_=+"
+	all := upper + lower + digits + special
+
+	password := make([]byte, 0, 20)
+	requiredSets := []string{upper, lower, digits, special}
+	for _, charset := range requiredSets {
+		value, err := randomPasswordChar(charset)
+		if err != nil {
+			return "", err
+		}
+		password = append(password, value)
+	}
+
+	for len(password) < 20 {
+		value, err := randomPasswordChar(all)
+		if err != nil {
+			return "", err
+		}
+		password = append(password, value)
+	}
+
+	for index := len(password) - 1; index > 0; index-- {
+		swapIndex, err := randomInt(index + 1)
+		if err != nil {
+			return "", err
+		}
+		password[index], password[swapIndex] = password[swapIndex], password[index]
+	}
+
+	return string(password), nil
+}
+
+func randomPasswordChar(charset string) (byte, error) {
+	index, err := randomInt(len(charset))
+	if err != nil {
+		return 0, err
+	}
+	return charset[index], nil
+}
+
+func randomInt(max int) (int, error) {
+	if max <= 0 {
+		return 0, fmt.Errorf("invalid random bound")
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0, err
+	}
+	return int(value.Int64()), nil
 }

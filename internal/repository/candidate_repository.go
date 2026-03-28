@@ -132,7 +132,14 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 
 	updates := map[string]any{
 		"full_name":        candidate.FullName,
+		"nationality":      candidate.Nationality,
+		"date_of_birth":    candidate.DateOfBirth,
 		"age":              candidate.Age,
+		"place_of_birth":   candidate.PlaceOfBirth,
+		"religion":         candidate.Religion,
+		"marital_status":   candidate.MaritalStatus,
+		"children_count":   candidate.ChildrenCount,
+		"education_level":  candidate.EducationLevel,
 		"experience_years": candidate.ExperienceYears,
 		"languages":        candidate.Languages,
 		"skills":           candidate.Skills,

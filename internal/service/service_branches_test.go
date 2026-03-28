@@ -205,6 +205,6 @@ func TestPDFService_GenerateCV_ImageDecodeFailure(t *testing.T) {
 		{DocumentType: domain.Photo, FileURL: server.URL},
 		{DocumentType: domain.Passport, FileURL: server.URL},
 		{DocumentType: domain.Video, FileURL: "https://example.com/video.mp4"},
-	}, CandidateCVBranding{})
+	}, CandidateCVBranding{}, nil)
 	require.Error(t, err)
 }

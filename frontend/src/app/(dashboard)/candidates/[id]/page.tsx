@@ -63,7 +63,7 @@ export default function CandidateDetailPage() {
   
   const { mutate: deleteCandidate, isPending: isDeleting } = useDeleteCandidate(candidateId)
   const { mutate: publishCandidate, isPending: isPublishing } = usePublishCandidate(candidateId)
-  const { mutate: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
+  const { mutateAsync: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId)
   const { mutate: unshareFromWorkspace, isPending: isRemovingFromWorkspace } = useUnshareCandidateFromWorkspace()
 
@@ -290,6 +290,34 @@ export default function CandidateDetailPage() {
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Age</p>
                   <p className="text-base font-semibold">{candidate.age} years</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Nationality</p>
+                  <p className="text-base font-semibold">{candidate.nationality || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Date of birth</p>
+                  <p className="text-base font-semibold">{candidate.date_of_birth || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Place of birth</p>
+                  <p className="text-base font-semibold">{candidate.place_of_birth || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Religion</p>
+                  <p className="text-base font-semibold">{candidate.religion || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Marital status</p>
+                  <p className="text-base font-semibold">{candidate.marital_status || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Children</p>
+                  <p className="text-base font-semibold">{candidate.children_count ?? "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Education level</p>
+                  <p className="text-base font-semibold">{candidate.education_level || "N/A"}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Experience</p>
@@ -527,15 +555,17 @@ export default function CandidateDetailPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <StatusTimeline
-                  steps={progressData.steps}
-                  canUpdate={isOwner}
-                  onUpdateStep={handleUpdateStep}
-                  isUpdating={isUpdatingStep}
-                />
-              </CardContent>
-            </Card>
-          )}
+              <StatusTimeline
+                steps={progressData.steps}
+                canUpdate={isOwner}
+                onUpdateStep={handleUpdateStep}
+                isUpdating={isUpdatingStep}
+                onUploadMedicalDocument={(file) => uploadDocument({ file, type: "medical" })}
+                isUploadingMedicalDocument={isUploadingDocument}
+              />
+            </CardContent>
+          </Card>
+        )}
         </div>
 
         {/* Right Column - Actions & Info */}

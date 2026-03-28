@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Users, CheckCircle, Lock, Loader, CircleAlert, ArrowRight, UserPlus, FileCheck, CheckSquare, Sparkles } from "lucide-react"
+import { formatDistanceToNowStrict } from "date-fns"
+import { Users, CheckCircle, Lock, Loader, CircleAlert, ArrowRight, UserPlus, FileCheck, CheckSquare, Sparkles, AlertTriangle, ShieldAlert, PlaneTakeoff, PlaneLanding, HeartPulse } from "lucide-react"
 
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
@@ -15,7 +16,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
-import { useDashboardHome } from "@/hooks/use-dashboard"
+import { useDashboardHome, useSmartAlerts } from "@/hooks/use-dashboard"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -25,6 +26,7 @@ export function EthiopianDashboard() {
   const { user } = useCurrentUser()
   const { activeWorkspace } = usePairingContext()
   const { data: home, isLoading } = useDashboardHome()
+  const { data: smartAlerts, isLoading: isSmartAlertsLoading } = useSmartAlerts()
 
   if (!user) return null
 
@@ -195,6 +197,93 @@ export function EthiopianDashboard() {
           </Card>
         </div>
       </div>
+
+      <Card className="shadow-sm">
+        <CardHeader className="pb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div>
+              <CardTitle>Smart Alerts</CardTitle>
+              <CardDescription>
+                Watch expiring selections, passport deadlines, and flight-stage candidates in the active workspace.
+              </CardDescription>
+            </div>
+            {activeWorkspace ? (
+              <Badge variant="outline" className="rounded-full px-3 py-1">
+                {activeWorkspace.partner_agency.company_name || activeWorkspace.partner_agency.full_name}
+              </Badge>
+            ) : null}
+          </div>
+        </CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-4">
+          <SmartAlertColumn
+            title="Passport Expiry"
+            icon={<ShieldAlert className="h-4 w-4 text-amber-600" />}
+            emptyText="No passports are near expiry in this workspace."
+            loading={isSmartAlertsLoading}
+            items={(smartAlerts?.expiring_passports ?? []).map((passport) => ({
+              id: passport.candidate_id,
+              href: `/candidates/${passport.candidate_id}`,
+              title: passport.candidate_name,
+              meta: `Passport ${passport.passport_number || "not stored"}`,
+              detail: `Expires ${formatRelativeDate(passport.expiry_date)}`,
+              tone: passport.warning_level,
+            }))}
+          />
+          <SmartAlertColumn
+            title="Medical Expiry"
+            icon={<HeartPulse className="h-4 w-4 text-rose-600" />}
+            emptyText="No medical files are near expiry in this workspace."
+            loading={isSmartAlertsLoading}
+            items={(smartAlerts?.expiring_medicals ?? []).map((medical) => ({
+              id: `${medical.candidate_id}-medical`,
+              href: `/candidates/${medical.candidate_id}/tracking`,
+              title: medical.candidate_name,
+              meta: "Medical document",
+              detail: `Expires ${formatRelativeDate(medical.expiry_date)}`,
+              tone: medical.warning_level,
+            }))}
+          />
+          <SmartAlertColumn
+            title="Selection Expiry"
+            icon={<AlertTriangle className="h-4 w-4 text-rose-600" />}
+            emptyText="No selections are nearing expiry right now."
+            loading={isSmartAlertsLoading}
+            items={(smartAlerts?.expiring_selections ?? []).map((selection) => ({
+              id: selection.selection_id,
+              href: `/selections/${selection.selection_id}`,
+              title: selection.candidate_name,
+              meta: selection.remaining_label,
+              detail: `Lock expires ${formatRelativeDate(selection.expires_at)}`,
+              tone: selection.warning_level,
+            }))}
+          />
+          <SmartAlertColumn
+            title="Flight Updates"
+            icon={<PlaneTakeoff className="h-4 w-4 text-sky-600" />}
+            emptyText="No candidates are in the flight stages yet."
+            loading={isSmartAlertsLoading}
+            items={[
+              ...(smartAlerts?.flight_updates ?? []).map((item) => ({
+                id: `${item.candidate_id}-${item.stage}`,
+                href: `/candidates/${item.candidate_id}/tracking`,
+                title: item.candidate_name,
+                meta: item.stage,
+                detail: `Updated ${formatRelativeDate(item.updated_at)}`,
+                tone: "medium",
+              })),
+              ...(smartAlerts?.recently_arrived ?? []).map((item) => ({
+                id: `${item.candidate_id}-${item.stage}-arrived`,
+                href: `/candidates/${item.candidate_id}/tracking`,
+                title: item.candidate_name,
+                meta: "Arrived",
+                detail: `Arrived ${formatRelativeDate(item.updated_at)}`,
+                tone: "low",
+                arrived: true,
+              })),
+            ]}
+          />
+        </CardContent>
+      </Card>
     </div>
   )
 }
@@ -264,4 +353,95 @@ function PendingActionLink({
       <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5" />
     </Link>
   )
+}
+
+function SmartAlertColumn({
+  title,
+  icon,
+  loading,
+  emptyText,
+  items,
+}: {
+  title: string
+  icon: React.ReactNode
+  loading: boolean
+  emptyText: string
+  items: Array<{
+    id: string
+    href: string
+    title: string
+    meta: string
+    detail: string
+    tone: string
+    arrived?: boolean
+  }>
+}) {
+  return (
+    <div className="rounded-3xl border border-border/70 bg-muted/15 p-4">
+      <div className="flex items-center gap-2">
+        {icon}
+        <p className="text-sm font-semibold">{title}</p>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        {loading ? (
+          <>
+            <Skeleton className="h-20 w-full rounded-2xl" />
+            <Skeleton className="h-20 w-full rounded-2xl" />
+          </>
+        ) : items.length > 0 ? (
+          items.map((item) => (
+            <Link
+              key={item.id}
+              href={item.href}
+              className="group block rounded-2xl border border-border/60 bg-background/85 p-4 transition-all duration-200 hover:-translate-y-0.5 hover:border-primary/35 hover:shadow-sm"
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-semibold text-foreground">{item.title}</p>
+                  <p className="mt-1 text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
+                    {item.meta}
+                  </p>
+                </div>
+                <Badge variant="outline" className={cn("shrink-0", alertTone(item.tone), item.arrived ? "border-emerald-300 bg-emerald-50 text-emerald-700" : "")}>
+                  {item.arrived ? <PlaneLanding className="mr-1 h-3.5 w-3.5" /> : null}
+                  {item.arrived ? "Arrived" : item.tone}
+                </Badge>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">{item.detail}</p>
+              <div className="mt-3 flex items-center gap-2 text-xs font-semibold uppercase tracking-[0.18em] text-primary">
+                Open workspace item
+                <ArrowRight className="h-3.5 w-3.5 transition-transform duration-200 group-hover:translate-x-0.5" />
+              </div>
+            </Link>
+          ))
+        ) : (
+          <div className="rounded-2xl border border-dashed border-border/70 bg-background/70 px-4 py-6 text-sm text-muted-foreground">
+            {emptyText}
+          </div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function alertTone(level: string) {
+  switch (level) {
+    case "critical":
+      return "border-rose-300 bg-rose-50 text-rose-700"
+    case "high":
+      return "border-amber-300 bg-amber-50 text-amber-700"
+    case "medium":
+      return "border-sky-300 bg-sky-50 text-sky-700"
+    default:
+      return "border-emerald-300 bg-emerald-50 text-emerald-700"
+  }
+}
+
+function formatRelativeDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return "soon"
+  }
+  return formatDistanceToNowStrict(date, { addSuffix: true })
 }

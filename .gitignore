@@ -50,3 +50,15 @@ frontend/.vercel/
 frontend/coverage/
 frontend/*.tsbuildinfo
 .lh/
+
+.vercel
+
+# Local release/debug artifacts
+.deploy-clean/
+.launch-local-backend.cmd
+.local-backend.err
+.local-prod-8092.err
+.tmp-*
+.tmp_*
+bin/
+tmp_debug_upload.go

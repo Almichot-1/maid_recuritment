@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"maid-recruitment-tracking/internal/domain"
 	"maid-recruitment-tracking/internal/middleware"
@@ -35,6 +36,46 @@ type DashboardSelectionPreviewResponse struct {
 	CreatedAt     string `json:"created_at"`
 }
 
+type SmartAlertSelectionResponse struct {
+	SelectionID    string `json:"selection_id"`
+	CandidateID    string `json:"candidate_id"`
+	CandidateName  string `json:"candidate_name"`
+	ExpiresAt      string `json:"expires_at"`
+	WarningLevel   string `json:"warning_level"`
+	RemainingLabel string `json:"remaining_label"`
+}
+
+type SmartAlertPassportResponse struct {
+	CandidateID    string `json:"candidate_id"`
+	CandidateName  string `json:"candidate_name"`
+	PassportNumber string `json:"passport_number"`
+	ExpiryDate     string `json:"expiry_date"`
+	WarningLevel   string `json:"warning_level"`
+}
+
+type SmartAlertMedicalResponse struct {
+	CandidateID   string `json:"candidate_id"`
+	CandidateName string `json:"candidate_name"`
+	ExpiryDate    string `json:"expiry_date"`
+	WarningLevel  string `json:"warning_level"`
+}
+
+type SmartAlertFlightResponse struct {
+	CandidateID   string `json:"candidate_id"`
+	CandidateName string `json:"candidate_name"`
+	Stage         string `json:"stage"`
+	UpdatedAt     string `json:"updated_at"`
+	Status        string `json:"status"`
+}
+
+type DashboardSmartAlertsResponse struct {
+	ExpiringSelections []SmartAlertSelectionResponse `json:"expiring_selections"`
+	ExpiringPassports  []SmartAlertPassportResponse  `json:"expiring_passports"`
+	ExpiringMedicals   []SmartAlertMedicalResponse   `json:"expiring_medicals"`
+	FlightUpdates      []SmartAlertFlightResponse    `json:"flight_updates"`
+	RecentlyArrived    []SmartAlertFlightResponse    `json:"recently_arrived"`
+}
+
 type DashboardHomeResponse struct {
 	Stats               DashboardStatsResponse              `json:"stats"`
 	PendingActions      DashboardPendingActionsResponse     `json:"pending_actions"`
@@ -49,6 +90,9 @@ type DashboardHandler struct {
 	selectionRepository    *repository.GormSelectionRepository
 	notificationRepository *repository.GormNotificationRepository
 	pairingService         *service.PairingService
+	passportRepository     *repository.GormPassportDataRepository
+	medicalRepository      *repository.GormMedicalDataRepository
+	statusStepRepository   domain.StatusStepRepository
 }
 
 type dashboardStatsRow struct {
@@ -60,12 +104,15 @@ type dashboardStatsRow struct {
 	ActiveSelections    int64 `gorm:"column:active_selections"`
 }
 
-func NewDashboardHandler(candidateRepository *repository.GormCandidateRepository, selectionRepository *repository.GormSelectionRepository, notificationRepository *repository.GormNotificationRepository, pairingService *service.PairingService) *DashboardHandler {
+func NewDashboardHandler(candidateRepository *repository.GormCandidateRepository, selectionRepository *repository.GormSelectionRepository, notificationRepository *repository.GormNotificationRepository, pairingService *service.PairingService, passportRepository *repository.GormPassportDataRepository, medicalRepository *repository.GormMedicalDataRepository, statusStepRepository domain.StatusStepRepository) *DashboardHandler {
 	return &DashboardHandler{
 		candidateRepository:    candidateRepository,
 		selectionRepository:    selectionRepository,
 		notificationRepository: notificationRepository,
 		pairingService:         pairingService,
+		passportRepository:     passportRepository,
+		medicalRepository:      medicalRepository,
+		statusStepRepository:   statusStepRepository,
 	}
 }
 
@@ -137,6 +184,25 @@ func (h *DashboardHandler) GetHome(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, home)
+}
+
+func (h *DashboardHandler) GetSmartAlerts(w http.ResponseWriter, r *http.Request) {
+	userID, role, pairing, ok := h.resolveDashboardContext(w, r)
+	if !ok {
+		return
+	}
+	if strings.TrimSpace(role) != string(domain.EthiopianAgent) {
+		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	response, err := h.loadSmartAlerts(userID, pairing.ID)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, response)
 }
 
 func (h *DashboardHandler) resolveDashboardContext(w http.ResponseWriter, r *http.Request) (string, string, *domain.AgencyPairing, bool) {
@@ -360,4 +426,219 @@ func (h *DashboardHandler) loadSelectionPreviews(userID, pairingID string, statu
 	}
 
 	return previews, nil
+}
+
+func (h *DashboardHandler) loadSmartAlerts(userID, pairingID string) (*DashboardSmartAlertsResponse, error) {
+	response := &DashboardSmartAlertsResponse{
+		ExpiringSelections: make([]SmartAlertSelectionResponse, 0),
+		ExpiringPassports:  make([]SmartAlertPassportResponse, 0),
+		ExpiringMedicals:   make([]SmartAlertMedicalResponse, 0),
+		FlightUpdates:      make([]SmartAlertFlightResponse, 0),
+		RecentlyArrived:    make([]SmartAlertFlightResponse, 0),
+	}
+
+	type expiringSelectionRow struct {
+		SelectionID   string    `gorm:"column:selection_id"`
+		CandidateID   string    `gorm:"column:candidate_id"`
+		CandidateName string    `gorm:"column:candidate_name"`
+		ExpiresAt     time.Time `gorm:"column:expires_at"`
+	}
+
+	var expiringSelections []expiringSelectionRow
+	if err := h.selectionRepository.DB().Raw(`
+		SELECT
+			s.id AS selection_id,
+			s.candidate_id,
+			c.full_name AS candidate_name,
+			s.expires_at
+		FROM selections s
+		JOIN candidates c ON c.id = s.candidate_id
+		WHERE c.created_by = ?
+			AND s.pairing_id = ?
+			AND s.status = ?
+			AND s.expires_at > NOW()
+			AND s.expires_at <= NOW() + INTERVAL '24 hours'
+		ORDER BY s.expires_at ASC
+		LIMIT 6
+	`, userID, pairingID, domain.SelectionPending).Scan(&expiringSelections).Error; err != nil {
+		return nil, err
+	}
+	for _, selection := range expiringSelections {
+		level, remainingLabel := selectionWarningLabel(selection.ExpiresAt)
+		response.ExpiringSelections = append(response.ExpiringSelections, SmartAlertSelectionResponse{
+			SelectionID:    selection.SelectionID,
+			CandidateID:    selection.CandidateID,
+			CandidateName:  selection.CandidateName,
+			ExpiresAt:      selection.ExpiresAt.UTC().Format(time.RFC3339),
+			WarningLevel:   level,
+			RemainingLabel: remainingLabel,
+		})
+	}
+
+	if h.passportRepository != nil {
+		type expiringPassportRow struct {
+			CandidateID    string    `gorm:"column:candidate_id"`
+			CandidateName  string    `gorm:"column:candidate_name"`
+			PassportNumber string    `gorm:"column:passport_number"`
+			ExpiryDate     time.Time `gorm:"column:expiry_date"`
+		}
+		var expiringPassports []expiringPassportRow
+		if err := h.passportRepository.DB().Raw(`
+			SELECT
+				pd.candidate_id,
+				c.full_name AS candidate_name,
+				pd.passport_number,
+				pd.expiry_date
+			FROM passport_data pd
+			JOIN candidates c ON c.id = pd.candidate_id
+			JOIN candidate_pair_shares cps
+				ON cps.candidate_id = c.id
+				AND cps.pairing_id = ?
+				AND cps.is_active = TRUE
+			WHERE c.created_by = ?
+				AND pd.expiry_date >= NOW()
+				AND pd.expiry_date <= NOW() + INTERVAL '6 months'
+			ORDER BY pd.expiry_date ASC
+			LIMIT 6
+		`, pairingID, userID).Scan(&expiringPassports).Error; err != nil {
+			return nil, err
+		}
+		for _, passport := range expiringPassports {
+			response.ExpiringPassports = append(response.ExpiringPassports, SmartAlertPassportResponse{
+				CandidateID:    passport.CandidateID,
+				CandidateName:  passport.CandidateName,
+				PassportNumber: passport.PassportNumber,
+				ExpiryDate:     passport.ExpiryDate.UTC().Format(time.RFC3339),
+				WarningLevel:   passportWarningLabel(passport.ExpiryDate),
+			})
+		}
+	}
+
+	if h.medicalRepository != nil {
+		type expiringMedicalRow struct {
+			CandidateID   string    `gorm:"column:candidate_id"`
+			CandidateName string    `gorm:"column:candidate_name"`
+			ExpiryDate    time.Time `gorm:"column:expiry_date"`
+		}
+		var expiringMedicals []expiringMedicalRow
+		if err := h.medicalRepository.DB().Raw(`
+			SELECT
+				md.candidate_id,
+				c.full_name AS candidate_name,
+				md.expiry_date
+			FROM medical_data md
+			JOIN candidates c ON c.id = md.candidate_id
+			JOIN candidate_pair_shares cps
+				ON cps.candidate_id = c.id
+				AND cps.pairing_id = ?
+				AND cps.is_active = TRUE
+			WHERE c.created_by = ?
+				AND md.expiry_date >= NOW()
+				AND md.expiry_date <= NOW() + INTERVAL '30 days'
+			ORDER BY md.expiry_date ASC
+			LIMIT 6
+		`, pairingID, userID).Scan(&expiringMedicals).Error; err != nil {
+			return nil, err
+		}
+		for _, medical := range expiringMedicals {
+			response.ExpiringMedicals = append(response.ExpiringMedicals, SmartAlertMedicalResponse{
+				CandidateID:   medical.CandidateID,
+				CandidateName: medical.CandidateName,
+				ExpiryDate:    medical.ExpiryDate.UTC().Format(time.RFC3339),
+				WarningLevel:  medicalWarningLabel(medical.ExpiryDate),
+			})
+		}
+	}
+
+	candidates, err := h.candidateRepository.List(domain.CandidateFilters{
+		CreatedBy:  userID,
+		PairingID:  pairingID,
+		SharedOnly: true,
+		Statuses:   []domain.CandidateStatus{domain.CandidateStatusInProgress, domain.CandidateStatusCompleted},
+		Page:       1,
+		PageSize:   12,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	for _, candidate := range candidates {
+		if candidate == nil || h.statusStepRepository == nil {
+			continue
+		}
+		steps, err := h.statusStepRepository.GetByCandidateID(candidate.ID)
+		if err != nil {
+			return nil, err
+		}
+		stage, updatedAt, arrived := deriveFlightStage(steps)
+		if stage == "" {
+			continue
+		}
+		record := SmartAlertFlightResponse{
+			CandidateID:   candidate.ID,
+			CandidateName: candidate.FullName,
+			Stage:         stage,
+			UpdatedAt:     updatedAt.UTC().Format(time.RFC3339),
+			Status:        string(candidate.Status),
+		}
+		if arrived {
+			response.RecentlyArrived = append(response.RecentlyArrived, record)
+		} else {
+			response.FlightUpdates = append(response.FlightUpdates, record)
+		}
+	}
+
+	return response, nil
+}
+
+func selectionWarningLabel(expiresAt time.Time) (string, string) {
+	remaining := time.Until(expiresAt.UTC())
+	switch {
+	case remaining <= time.Hour:
+		return "critical", "Less than 1 hour"
+	case remaining <= 6*time.Hour:
+		return "high", "Less than 6 hours"
+	default:
+		return "medium", "Less than 24 hours"
+	}
+}
+
+func passportWarningLabel(expiryDate time.Time) string {
+	remaining := time.Until(expiryDate.UTC())
+	switch {
+	case remaining <= 30*24*time.Hour:
+		return "critical"
+	case remaining <= 90*24*time.Hour:
+		return "high"
+	default:
+		return "medium"
+	}
+}
+
+func medicalWarningLabel(expiryDate time.Time) string {
+	remaining := time.Until(expiryDate.UTC())
+	switch {
+	case remaining <= 7*24*time.Hour:
+		return "critical"
+	case remaining <= 14*24*time.Hour:
+		return "high"
+	default:
+		return "medium"
+	}
+}
+
+func deriveFlightStage(steps []*domain.StatusStep) (string, time.Time, bool) {
+	order := []string{domain.TicketPending, domain.TicketBooked, domain.TicketConfirmed, domain.Arrived}
+	for index := len(order) - 1; index >= 0; index-- {
+		name := order[index]
+		for _, step := range steps {
+			if step == nil || strings.TrimSpace(step.StepName) != name {
+				continue
+			}
+			if step.StepStatus == domain.Completed || step.StepStatus == domain.InProgress {
+				return name, step.UpdatedAt, name == domain.Arrived
+			}
+		}
+	}
+	return "", time.Time{}, false
 }

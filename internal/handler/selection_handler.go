@@ -201,7 +201,13 @@ func (h *SelectionHandler) UploadSelectionDocument(w http.ResponseWriter, r *htt
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 52<<20)
 	if err := r.ParseMultipartForm(25 << 20); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			_ = utils.WriteJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file is too large"})
+			return
+		}
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form"})
 		return
 	}

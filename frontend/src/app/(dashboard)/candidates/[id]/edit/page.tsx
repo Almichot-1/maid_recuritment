@@ -3,18 +3,23 @@
 import * as React from "react"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
-import { ChevronRight, Eye, FileText, Home, ImagePlus, Loader2, PencilLine, UploadCloud, Video, XCircle } from "lucide-react"
+import { ChevronRight, Eye, FileText, Home, ImagePlus, Loader2, PencilLine, Video, XCircle } from "lucide-react"
 import { toast } from "sonner"
 
 import { CandidateForm } from "@/components/candidates/candidate-form"
-import { DocumentUpload } from "@/components/candidates/document-upload"
 import { PageHeader } from "@/components/layout/page-header"
 import { useCurrentUser } from "@/hooks/use-auth"
-import { useCandidate, useUpdateCandidate, useUploadDocument } from "@/hooks/use-candidates"
+import { uploadCandidateDocumentFile, useCandidate, useUpdateCandidate } from "@/hooks/use-candidates"
 import { CandidateStatus, Document } from "@/types"
 import { CandidateInput } from "@/lib/validations"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+
+type PendingDocuments = {
+  passport: File | null
+  photo: File | null
+  video: File | null
+}
 
 export default function EditCandidatePage() {
   const params = useParams()
@@ -23,7 +28,12 @@ export default function EditCandidatePage() {
   const { user, isEthiopianAgent, isLoading: isRoleLoading } = useCurrentUser()
   const { data: candidate, isLoading: isCandidateLoading, error } = useCandidate(candidateID)
   const { mutateAsync: updateCandidate, isPending } = useUpdateCandidate(candidateID)
-  const { mutate: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateID)
+  const [pendingDocuments, setPendingDocuments] = React.useState<PendingDocuments>({
+    passport: null,
+    photo: null,
+    video: null,
+  })
+  const [isUploadingDocuments, setIsUploadingDocuments] = React.useState(false)
 
   const isOwner = !!candidate && !!user && candidate.created_by === user.id
   const canEdit = !!candidate && (candidate.status === CandidateStatus.DRAFT || candidate.status === CandidateStatus.AVAILABLE)
@@ -90,7 +100,14 @@ export default function EditCandidatePage() {
 
   const initialData = {
     full_name: candidate.full_name,
+    nationality: candidate.nationality || "",
+    date_of_birth: candidate.date_of_birth || "",
     age: candidate.age,
+    place_of_birth: candidate.place_of_birth || "",
+    religion: candidate.religion || "",
+    marital_status: candidate.marital_status || "",
+    children_count: candidate.children_count,
+    education_level: candidate.education_level || "",
     experience_years: candidate.experience_years,
     skills: candidate.skills,
     languages: candidate.languages.length
@@ -102,13 +119,41 @@ export default function EditCandidatePage() {
     try {
       await updateCandidate({
         full_name: data.full_name,
+        nationality: data.nationality,
+        date_of_birth: data.date_of_birth || undefined,
         age: data.age,
+        place_of_birth: data.place_of_birth,
+        religion: data.religion,
+        marital_status: data.marital_status,
+        children_count: data.children_count,
+        education_level: data.education_level,
         experience_years: data.experience_years,
         skills: data.skills,
         languages: data.languages.map((item) => item.language),
       })
+
+      const queuedDocuments = Object.entries(pendingDocuments).filter(([, file]) => !!file) as Array<
+        [keyof PendingDocuments, File]
+      >
+
+      if (queuedDocuments.length > 0) {
+        setIsUploadingDocuments(true)
+        for (const [documentType, file] of queuedDocuments) {
+          await uploadCandidateDocumentFile(candidateID, {
+            file,
+            type: documentType,
+          })
+        }
+        toast.success("Candidate details and replacement files saved successfully.")
+      }
+
       router.push(`/candidates/${candidateID}`)
-    } catch {}
+    } catch {
+      setIsUploadingDocuments(false)
+      return
+    } finally {
+      setIsUploadingDocuments(false)
+    }
   }
 
   const getDocument = (documentType: string) => candidate.documents.find((document) => document.document_type === documentType)
@@ -119,7 +164,7 @@ export default function EditCandidatePage() {
 
       <PageHeader
         heading="Edit Candidate"
-        text="Update the candidate profile while it is still in a draft or available state, then replace any passport, photo, or video files from the same page."
+        text="Update the candidate profile, replace any passport, photo, or video files in the same workflow, and let a new passport image refresh the key fields automatically."
       />
 
       <div className="rounded-2xl border border-border/70 bg-card p-3 shadow-sm md:p-6">
@@ -133,91 +178,57 @@ export default function EditCandidatePage() {
           </div>
         </div>
 
+        <div className="mb-8 grid gap-5 xl:grid-cols-3">
+          <CurrentDocumentCard
+            title="Current passport"
+            icon={<FileText className="h-5 w-5" />}
+            document={getDocument("passport")}
+            emptyLabel="No passport uploaded yet"
+          />
+          <CurrentDocumentCard
+            title="Current full-body photo"
+            icon={<ImagePlus className="h-5 w-5" />}
+            document={getDocument("photo")}
+            emptyLabel="No photo uploaded yet"
+          />
+          <CurrentDocumentCard
+            title="Current video interview"
+            icon={<Video className="h-5 w-5" />}
+            document={getDocument("video")}
+            emptyLabel="No video interview uploaded yet"
+          />
+        </div>
+
         <CandidateForm
+          candidateId={candidateID}
           initialData={initialData}
           onSubmit={handleSubmit}
-          isLoading={isPending}
-          showDocuments={false}
+          isLoading={isPending || isUploadingDocuments}
+          showDocuments
+          onDocumentChange={(documentType, file) => {
+            setPendingDocuments((current) => ({
+              ...current,
+              [documentType]: file,
+            }))
+          }}
         />
-
-        <div className="mt-8 border-t border-border/70 pt-8">
-          <div className="mb-5 space-y-2">
-            <h2 className="text-xl font-semibold tracking-tight">Replace documents</h2>
-            <p className="text-sm text-muted-foreground">
-              Uploading a new passport, photo, or video here makes that newest file the active one used by the profile and CV.
-            </p>
-          </div>
-
-          <div className="grid gap-5 xl:grid-cols-3">
-            <EditableDocumentCard
-              key={getDocument("passport")?.id || "passport-empty"}
-              title="Passport document"
-              icon={<FileText className="h-5 w-5" />}
-              currentDocument={getDocument("passport")}
-              emptyLabel="No passport uploaded yet"
-              description="Upload a new PDF, JPG, or PNG passport file to replace the current one."
-              accept={{
-                "application/pdf": [".pdf"],
-                "image/jpeg": [".jpg", ".jpeg"],
-                "image/png": [".png"],
-              }}
-              disabled={isUploadingDocument}
-              onUpload={(file) => uploadDocument({ file, type: "passport" })}
-            />
-
-            <EditableDocumentCard
-              key={getDocument("photo")?.id || "photo-empty"}
-              title="Full body photo"
-              icon={<ImagePlus className="h-5 w-5" />}
-              currentDocument={getDocument("photo")}
-              emptyLabel="No full-body photo uploaded yet"
-              description="Upload a cleaner or newer full-body photo whenever you want to refresh the profile or CV."
-              accept={{
-                "image/jpeg": [".jpg", ".jpeg"],
-                "image/png": [".png"],
-              }}
-              disabled={isUploadingDocument}
-              onUpload={(file) => uploadDocument({ file, type: "photo" })}
-            />
-
-            <EditableDocumentCard
-              key={getDocument("video")?.id || "video-empty"}
-              title="Video interview"
-              icon={<Video className="h-5 w-5" />}
-              currentDocument={getDocument("video")}
-              emptyLabel="No video interview uploaded yet"
-              description="Optional, but you can replace it here if you recorded a better introduction."
-              accept={{ "video/mp4": [".mp4"] }}
-              disabled={isUploadingDocument}
-              onUpload={(file) => uploadDocument({ file, type: "video" })}
-            />
-          </div>
-        </div>
       </div>
     </div>
   )
 }
 
-function EditableDocumentCard({
+function CurrentDocumentCard({
   title,
   icon,
-  currentDocument,
+  document,
   emptyLabel,
-  description,
-  accept,
-  disabled,
-  onUpload,
 }: {
   title: string
   icon: React.ReactNode
-  currentDocument?: Document
+  document?: Document
   emptyLabel: string
-  description: string
-  accept: Record<string, string[]>
-  disabled?: boolean
-  onUpload: (file: File) => void
 }) {
-  const isImage = !!currentDocument?.file_url && /\.(png|jpe?g)$/i.test(currentDocument.file_url)
+  const isImage = !!document?.file_url && /\.(png|jpe?g)$/i.test(document.file_url)
 
   return (
     <Card className="border-border/70 shadow-sm">
@@ -228,30 +239,30 @@ function EditableDocumentCard({
         </CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        {currentDocument ? (
+        {document ? (
           <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
             {isImage ? (
               <img
-                src={currentDocument.file_url}
-                alt={currentDocument.file_name}
+                src={document.file_url}
+                alt={document.file_name}
                 className="h-40 w-full rounded-xl object-cover border border-border/60 bg-background"
               />
             ) : (
               <div className="flex h-40 w-full items-center justify-center rounded-xl border border-dashed border-border/70 bg-background text-muted-foreground">
                 <div className="flex flex-col items-center gap-2 text-center">
                   <FileText className="h-8 w-8" />
-                  <span className="text-sm font-medium">{currentDocument.file_name}</span>
+                  <span className="text-sm font-medium">{document.file_name}</span>
                 </div>
               </div>
             )}
 
             <div className="flex items-center justify-between gap-3">
               <div className="min-w-0">
-                <p className="truncate text-sm font-semibold">{currentDocument.file_name}</p>
+                <p className="truncate text-sm font-semibold">{document.file_name}</p>
                 <p className="text-xs text-muted-foreground">Newest upload is active now</p>
               </div>
               <Button size="sm" variant="outline" asChild>
-                <a href={currentDocument.file_url} target="_blank" rel="noopener noreferrer">
+                <a href={document.file_url} target="_blank" rel="noopener noreferrer">
                   <Eye className="mr-2 h-4 w-4" />
                   View
                 </a>
@@ -263,23 +274,6 @@ function EditableDocumentCard({
             {emptyLabel}
           </div>
         )}
-
-        <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
-          <div className="mb-3 flex items-center gap-2 text-sm font-semibold text-primary">
-            <UploadCloud className="h-4 w-4" />
-            Upload a replacement
-          </div>
-          <DocumentUpload
-            documentType={title}
-            title={`Replace ${title.toLowerCase()}`}
-            description={description}
-            accept={accept}
-            maxSize={title === "Video interview" ? 52428800 : 10485760}
-            mode="instant"
-            disabled={disabled}
-            onUpload={onUpload}
-          />
-        </div>
       </CardContent>
     </Card>
   )

@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useCurrentUser } from "@/hooks/use-auth"
-import { useCandidate } from "@/hooks/use-candidates"
+import { useCandidate, useUploadDocument } from "@/hooks/use-candidates"
 import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
 import { CandidateStatus } from "@/types"
 
@@ -32,6 +32,7 @@ export default function CandidateTrackingPage() {
   const { data: candidate, isLoading: isCandidateLoading, error } = useCandidate(candidateId)
   const { data: progressData, isLoading: isProgressLoading } = useCandidateProgress(candidateId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId)
+  const { mutateAsync: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
   const canUpdateProgress = isEthiopianAgent && candidate?.created_by === user?.id
 
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
@@ -203,6 +204,8 @@ export default function CandidateTrackingPage() {
                 canUpdate={canUpdateProgress}
                 onUpdateStep={handleUpdateStep}
                 isUpdating={isUpdatingStep}
+                onUploadMedicalDocument={canUpdateProgress ? (file) => uploadDocument({ file, type: "medical" }) : undefined}
+                isUploadingMedicalDocument={isUploadingDocument}
               />
             </CardContent>
           </Card>

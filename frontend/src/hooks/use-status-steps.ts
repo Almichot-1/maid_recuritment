@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { toast } from "sonner";
 import api from "@/lib/api";
 import { useCurrentUser } from "@/hooks/use-auth";
+import { Candidate, PaginatedResponse } from "@/types";
 import { usePairingStore } from "@/stores/pairing-store";
 import { CandidateProgress, CandidateStatus, UserRole } from "@/types";
 
@@ -124,7 +125,9 @@ export function useUpdateStatusStep(candidateId: string) {
     },
     onSuccess: (progress) => {
       queryClient.setQueryData(progressQueryKey, progress);
-      queryClient.setQueryData(candidateQueryKey, (previousCandidate: any) =>
+      queryClient.setQueryData<Candidate | undefined>(
+        candidateQueryKey,
+        (previousCandidate) =>
         previousCandidate
           ? {
               ...previousCandidate,
@@ -132,16 +135,16 @@ export function useUpdateStatusStep(candidateId: string) {
             }
           : previousCandidate,
       );
-      queryClient.setQueriesData(
+      queryClient.setQueriesData<PaginatedResponse<Candidate> | undefined>(
         { queryKey: ["candidates"] },
-        (previous: any) => {
+        (previous) => {
           if (!previous?.data || !Array.isArray(previous.data)) {
             return previous;
           }
 
           return {
             ...previous,
-            data: previous.data.map((candidate: any) =>
+            data: previous.data.map((candidate) =>
               candidate?.id === candidateId
                 ? {
                     ...candidate,

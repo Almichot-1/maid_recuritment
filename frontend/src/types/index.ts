@@ -46,7 +46,14 @@ export enum CandidateStatus {
 export interface Candidate {
   id: string;
   full_name: string;
+  nationality?: string;
+  date_of_birth?: string;
   age?: number;
+  place_of_birth?: string;
+  religion?: string;
+  marital_status?: string;
+  children_count?: number;
+  education_level?: string;
   experience_years?: number;
   languages: string[];
   skills: string[];
@@ -127,6 +134,7 @@ export interface StatusStep {
   step_status: 'pending' | 'in_progress' | 'completed' | 'failed';
   completed_at?: string;
   notes?: string;
+  medical_document_url?: string;
   updated_at: string;
   updated_by: {
     id: string;
@@ -140,6 +148,25 @@ export interface CandidateProgress {
   steps: StatusStep[];
   progress_percentage: number;
   last_updated_at: string;
+}
+
+export interface PassportData {
+  id: string;
+  candidate_id: string;
+  holder_name: string;
+  passport_number: string;
+  country_code?: string;
+  nationality: string;
+  date_of_birth: string;
+  place_of_birth?: string;
+  gender: string;
+  issue_date?: string;
+  expiry_date: string;
+  issuing_authority?: string;
+  mrz_line_1: string;
+  mrz_line_2: string;
+  confidence: number;
+  extracted_at: string;
 }
 
 export interface Notification {
@@ -321,4 +348,44 @@ export interface AdminPairing {
   foreign_agency: PairingAgencySummary;
   approved_at?: string;
   notes?: string;
+}
+
+export interface SmartAlertSelection {
+  selection_id: string;
+  candidate_id: string;
+  candidate_name: string;
+  expires_at: string;
+  warning_level: string;
+  remaining_label: string;
+}
+
+export interface SmartAlertPassport {
+  candidate_id: string;
+  candidate_name: string;
+  passport_number: string;
+  expiry_date: string;
+  warning_level: string;
+}
+
+export interface SmartAlertMedical {
+  candidate_id: string;
+  candidate_name: string;
+  expiry_date: string;
+  warning_level: string;
+}
+
+export interface SmartAlertFlightUpdate {
+  candidate_id: string;
+  candidate_name: string;
+  stage: string;
+  updated_at: string;
+  status: string;
+}
+
+export interface DashboardSmartAlerts {
+  expiring_selections: SmartAlertSelection[];
+  expiring_passports: SmartAlertPassport[];
+  expiring_medicals: SmartAlertMedical[];
+  flight_updates: SmartAlertFlightUpdate[];
+  recently_arrived: SmartAlertFlightUpdate[];
 }

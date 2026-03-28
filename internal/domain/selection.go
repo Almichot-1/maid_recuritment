@@ -23,6 +23,7 @@ type Selection struct {
 	EmployerIDURL              string
 	EmployerIDFileName         string
 	EmployerIDUploadedAt       *time.Time
+	WarningSentFlags           int
 	ExpiresAt                  time.Time `gorm:"not null"`
 	CreatedAt                  time.Time `gorm:"not null;default:now()"`
 	UpdatedAt                  time.Time `gorm:"not null;default:now()"`

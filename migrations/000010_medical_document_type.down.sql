@@ -1,0 +1,2 @@
+-- PostgreSQL enums cannot safely drop a single value in place.
+-- This migration is intentionally irreversible.

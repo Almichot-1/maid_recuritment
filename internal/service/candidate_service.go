@@ -24,7 +24,14 @@ var (
 
 type CandidateInput struct {
 	FullName        string
+	Nationality     string
+	DateOfBirth     *time.Time
 	Age             *int
+	PlaceOfBirth    string
+	Religion        string
+	MaritalStatus   string
+	ChildrenCount   *int
+	EducationLevel  string
 	ExperienceYears *int
 	Languages       []string
 	Skills          []string
@@ -45,9 +52,13 @@ type CandidateCVBranding struct {
 type CandidateService struct {
 	candidateRepository domain.CandidateRepository
 	documentRepository  domain.DocumentRepository
+	passportRepository  domain.PassportDataRepository
+	medicalRepository   domain.MedicalDataRepository
 	storageService      StorageService
 	pdfService          *PDFService
 	pairingService      *PairingService
+	medicalService      *MedicalDocumentService
+	passportOCRService  *PassportOCRService
 }
 
 func NewCandidateService(
@@ -81,6 +92,22 @@ func (s *CandidateService) SetPairingService(pairingService *PairingService) {
 	s.pairingService = pairingService
 }
 
+func (s *CandidateService) SetPassportRepository(passportRepository domain.PassportDataRepository) {
+	s.passportRepository = passportRepository
+}
+
+func (s *CandidateService) SetMedicalDataRepository(medicalRepository domain.MedicalDataRepository) {
+	s.medicalRepository = medicalRepository
+}
+
+func (s *CandidateService) SetMedicalDocumentService(medicalService *MedicalDocumentService) {
+	s.medicalService = medicalService
+}
+
+func (s *CandidateService) SetPassportOCRService(passportOCRService *PassportOCRService) {
+	s.passportOCRService = passportOCRService
+}
+
 func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput) (*domain.Candidate, error) {
 	if strings.TrimSpace(createdBy) == "" {
 		return nil, ErrForbidden
@@ -101,11 +128,21 @@ func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput
 	candidate := &domain.Candidate{
 		CreatedBy:       strings.TrimSpace(createdBy),
 		FullName:        strings.TrimSpace(data.FullName),
+		Nationality:     strings.TrimSpace(data.Nationality),
+		DateOfBirth:     normalizeCandidateDate(data.DateOfBirth),
 		Age:             data.Age,
+		PlaceOfBirth:    strings.TrimSpace(data.PlaceOfBirth),
+		Religion:        strings.TrimSpace(data.Religion),
+		MaritalStatus:   strings.TrimSpace(data.MaritalStatus),
+		ChildrenCount:   data.ChildrenCount,
+		EducationLevel:  strings.TrimSpace(data.EducationLevel),
 		ExperienceYears: data.ExperienceYears,
 		Languages:       languages,
 		Skills:          skills,
 		Status:          domain.CandidateStatusDraft,
+	}
+	if candidate.Age == nil {
+		candidate.Age = deriveAgePointer(candidate.DateOfBirth)
 	}
 
 	if err := s.candidateRepository.Create(candidate); err != nil {
@@ -153,7 +190,17 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 	}
 
 	candidate.FullName = strings.TrimSpace(data.FullName)
+	candidate.Nationality = strings.TrimSpace(data.Nationality)
+	candidate.DateOfBirth = normalizeCandidateDate(data.DateOfBirth)
 	candidate.Age = data.Age
+	if candidate.Age == nil {
+		candidate.Age = deriveAgePointer(candidate.DateOfBirth)
+	}
+	candidate.PlaceOfBirth = strings.TrimSpace(data.PlaceOfBirth)
+	candidate.Religion = strings.TrimSpace(data.Religion)
+	candidate.MaritalStatus = strings.TrimSpace(data.MaritalStatus)
+	candidate.ChildrenCount = data.ChildrenCount
+	candidate.EducationLevel = strings.TrimSpace(data.EducationLevel)
 	candidate.ExperienceYears = data.ExperienceYears
 	candidate.Languages = languages
 	candidate.Skills = skills
@@ -281,7 +328,7 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 		return nil, err
 	}
 
-	contentType, err := detectContentTypeFromFileName(input.FileName)
+	bufferedFile, contentType, err := validateAndBufferUpload(input.File, input.FileName)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +345,12 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 		return nil, ErrForbidden
 	}
 
-	fileURL, err := s.storageService.Upload(input.File, input.FileName, contentType)
+	bufferedBytes, err := io.ReadAll(bufferedFile)
+	if err != nil {
+		return nil, fmt.Errorf("buffer validated upload: %w", err)
+	}
+
+	fileURL, err := s.storageService.Upload(bytes.NewReader(bufferedBytes), input.FileName, contentType)
 	if err != nil {
 		return nil, fmt.Errorf("upload file: %w", err)
 	}
@@ -315,6 +367,18 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 	if err := s.documentRepository.Create(document); err != nil {
 		_ = s.storageService.Delete(fileURL)
 		return nil, err
+	}
+
+	if documentType == domain.Passport && s.passportOCRService != nil && (contentType == "image/jpeg" || contentType == "image/png") {
+		if passportData, err := s.passportOCRService.ParseAndStore(candidateID, uploadedBy, bytes.NewReader(bufferedBytes), input.FileName); err == nil {
+			_ = s.applyPassportAutofill(candidateID, uploadedBy, passportData)
+		}
+	}
+
+	if documentType == domain.MedicalDocument && s.medicalService != nil {
+		if _, err := s.medicalService.ParseAndStore(candidateID, document, input.FileName, contentType, bufferedBytes); err != nil {
+			return document, nil
+		}
 	}
 
 	return document, nil
@@ -342,7 +406,14 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy string, branding 
 		return err
 	}
 
-	pdfBytes, err := s.pdfService.GenerateCandidateCV(candidate, documents, branding)
+	var passportData *domain.PassportData
+	if s.passportRepository != nil {
+		if storedPassportData, err := s.passportRepository.GetByCandidateID(candidateID); err == nil {
+			passportData = storedPassportData
+		}
+	}
+
+	pdfBytes, err := s.pdfService.GenerateCandidateCV(candidate, documents, branding, passportData)
 	if err != nil {
 		return err
 	}
@@ -385,12 +456,63 @@ func (s *CandidateService) DeleteCandidate(candidateID, deletedBy string) error 
 	return s.candidateRepository.Delete(candidateID)
 }
 
+func (s *CandidateService) ApplyPassportAutofill(candidateID, updatedBy string, passportData *domain.PassportData) error {
+	return s.applyPassportAutofill(candidateID, updatedBy, passportData)
+}
+
+func (s *CandidateService) applyPassportAutofill(candidateID, updatedBy string, passportData *domain.PassportData) error {
+	if passportData == nil {
+		return nil
+	}
+	if strings.TrimSpace(candidateID) == "" || strings.TrimSpace(updatedBy) == "" {
+		return nil
+	}
+
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(updatedBy) {
+		return ErrForbidden
+	}
+
+	if holderName := strings.TrimSpace(passportData.HolderName); holderName != "" {
+		candidate.FullName = holderName
+	}
+	if nationality := strings.TrimSpace(passportData.Nationality); nationality != "" {
+		candidate.Nationality = nationality
+	}
+	if !passportData.DateOfBirth.IsZero() {
+		dateOfBirth := passportData.DateOfBirth.UTC()
+		candidate.DateOfBirth = &dateOfBirth
+	}
+	if derivedAge := passportData.Age(time.Now().UTC()); derivedAge > 0 {
+		candidate.Age = &derivedAge
+	}
+	if placeOfBirth := strings.TrimSpace(passportData.PlaceOfBirth); placeOfBirth != "" {
+		candidate.PlaceOfBirth = placeOfBirth
+	}
+
+	return s.candidateRepository.Update(candidate)
+}
+
 func validateCandidateInput(data CandidateInput) error {
 	if strings.TrimSpace(data.FullName) == "" {
 		return ErrInvalidCandidateInput
 	}
 
 	if data.Age != nil && (*data.Age < 18 || *data.Age > 65) {
+		return ErrInvalidCandidateInput
+	}
+	if data.DateOfBirth != nil && data.DateOfBirth.UTC().After(time.Now().UTC()) {
+		return ErrInvalidCandidateInput
+	}
+	if data.DateOfBirth != nil {
+		if derivedAge := (&domain.PassportData{DateOfBirth: data.DateOfBirth.UTC()}).Age(time.Now().UTC()); derivedAge > 0 && (derivedAge < 18 || derivedAge > 65) {
+			return ErrInvalidCandidateInput
+		}
+	}
+	if data.ChildrenCount != nil && *data.ChildrenCount < 0 {
 		return ErrInvalidCandidateInput
 	}
 	if data.ExperienceYears != nil && (*data.ExperienceYears < 0 || *data.ExperienceYears > 30) {
@@ -431,6 +553,25 @@ func marshalStringSlice(values []string) (json.RawMessage, error) {
 	return json.RawMessage(data), nil
 }
 
+func normalizeCandidateDate(value *time.Time) *time.Time {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	normalized := time.Date(value.UTC().Year(), value.UTC().Month(), value.UTC().Day(), 0, 0, 0, 0, time.UTC)
+	return &normalized
+}
+
+func deriveAgePointer(dateOfBirth *time.Time) *int {
+	if dateOfBirth == nil || dateOfBirth.IsZero() {
+		return nil
+	}
+	years := (&domain.PassportData{DateOfBirth: dateOfBirth.UTC()}).Age(time.Now().UTC())
+	if years <= 0 {
+		return nil
+	}
+	return &years
+}
+
 func parseCandidateDocumentType(value string) (domain.DocumentType, error) {
 	switch strings.TrimSpace(value) {
 	case string(domain.Passport):
@@ -439,6 +580,8 @@ func parseCandidateDocumentType(value string) (domain.DocumentType, error) {
 		return domain.Photo, nil
 	case string(domain.Video):
 		return domain.Video, nil
+	case string(domain.MedicalDocument):
+		return domain.MedicalDocument, nil
 	default:
 		return "", ErrInvalidCandidateDocumentType
 	}

@@ -5,6 +5,7 @@ import (
 
 	"maid-recruitment-tracking/internal/config"
 	"maid-recruitment-tracking/internal/domain"
+	"maid-recruitment-tracking/internal/jobs"
 	"maid-recruitment-tracking/internal/repository"
 	"maid-recruitment-tracking/internal/service"
 )
@@ -41,6 +42,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize notification repository: %v", err)
 	}
+	passportRepository, err := repository.NewGormPassportDataRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize passport repository: %v", err)
+	}
+	medicalRepository, err := repository.NewGormMedicalDataRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize medical repository: %v", err)
+	}
 
 	platformSettingsRepository, err := repository.NewGormPlatformSettingsRepository(cfg)
 	if err != nil {
@@ -70,9 +79,15 @@ func main() {
 	selectionService.SetPlatformSettingsReader(platformSettingsService)
 	notificationService.SetPlatformSettingsReader(platformSettingsService)
 
+	expiryWarningJob, err := jobs.NewExpiryWarningJob(selectionRepository, candidateRepository, passportRepository, medicalRepository, notificationService)
+	if err != nil {
+		log.Fatalf("failed to initialize expiry warning job: %v", err)
+	}
+
 	if err := selectionService.ProcessExpiredSelections(); err != nil {
 		log.Fatalf("expiry worker failed: %v", err)
 	}
+	expiryWarningJob.Run()
 
 	log.Println("expiry worker completed successfully")
 }

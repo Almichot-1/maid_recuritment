@@ -1,10 +1,13 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
 	images: {
+		domains: [
+			"pub-ebaf17804d5146cd98dcfec2fae780af.r2.dev",
+		],
 		remotePatterns: [
 			{
 				protocol: "https",
-				hostname: "**.r2.dev",
+				hostname: "pub-ebaf17804d5146cd98dcfec2fae780af.r2.dev",
 			},
 			{
 				protocol: "https",

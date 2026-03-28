@@ -4,7 +4,7 @@ import api from "@/lib/api";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { CandidateApiResponse, normalizeCandidate } from "@/hooks/use-candidates";
 import { usePairingStore } from "@/stores/pairing-store";
-import { Candidate, UserRole } from "@/types";
+import { Candidate, DashboardSmartAlerts, UserRole } from "@/types";
 
 export interface DashboardStats {
   totalCandidates: number;
@@ -87,4 +87,26 @@ export function useDashboardSelections() {
     active: data.active_selections ?? [],
     approved: data.approved_selections ?? [],
   }));
+}
+
+export function useSmartAlerts() {
+  const { user } = useCurrentUser();
+  const activePairingId = usePairingStore((state) => state.activePairingId);
+  const isPairingReady = usePairingStore((state) => state.isReady);
+  const canQuery =
+    user?.role === UserRole.ETHIOPIAN_AGENT &&
+    isPairingReady &&
+    Boolean(activePairingId);
+
+  return useQuery({
+    queryKey: ["dashboard-smart-alerts", activePairingId],
+    queryFn: async () => {
+      const response = await api.get<DashboardSmartAlerts>("/dashboard/smart-alerts");
+      return response.data;
+    },
+    enabled: canQuery,
+    staleTime: 60_000,
+    refetchInterval: 300_000,
+    refetchOnWindowFocus: false,
+  });
 }

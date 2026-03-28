@@ -1,7 +1,6 @@
 "use client"
 
 import * as React from "react"
-import Image from "next/image"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
@@ -69,12 +68,11 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
           {/* Photo */}
           <div className="relative w-full aspect-square bg-muted overflow-hidden">
             {photoUrl ? (
-              <Image
+              <img
                 src={photoUrl}
                 alt={candidate.full_name}
-                fill
-                sizes="(max-width: 768px) 100vw, (max-width: 1280px) 50vw, 25vw"
-                className="object-cover transition-transform duration-300 group-hover:scale-105"
+                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                loading="lazy"
               />
             ) : (
               <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">

@@ -98,6 +98,8 @@ func parseDocumentType(value string) (domain.DocumentType, error) {
 		return domain.Photo, nil
 	case string(domain.Video):
 		return domain.Video, nil
+	case string(domain.MedicalDocument):
+		return domain.MedicalDocument, nil
 	default:
 		return "", ErrInvalidDocumentType
 	}
@@ -131,6 +133,10 @@ func validateDocumentTypeContentType(documentType domain.DocumentType, contentTy
 		}
 	case domain.Video:
 		if contentType != "video/mp4" {
+			return ErrInvalidFileType
+		}
+	case domain.MedicalDocument:
+		if contentType != "application/pdf" && contentType != "image/jpeg" && contentType != "image/png" {
 			return ErrInvalidFileType
 		}
 	default:

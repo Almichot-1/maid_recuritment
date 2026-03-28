@@ -98,6 +98,7 @@ export default function NewCandidatePage() {
   ) => {
     const candidateData = {
       ...data,
+      date_of_birth: data.date_of_birth || undefined,
       languages: data.languages.map((language) => language.language),
     }
     const queuedDocuments = (Object.entries(pendingDocuments).filter(([, file]) => !!file) as Array<[keyof PendingDocuments, File]>)

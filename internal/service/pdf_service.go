@@ -286,14 +286,14 @@ func (s *PDFService) drawApplicationProfileSheet(
 	s.drawFormTable(pdf, rightX, bottomY, rightW, "Work Experience", experienceRows, 30)
 
 	expY := bottomY
-	s.drawExperiencedAbroadSection(pdf, 15, expY, 111, [][2]string{
+	s.drawExperiencedAbroadSection(pdf, 15, expY, 103, [][2]string{
 		{"NO", "-"},
 		{"NO", "-"},
 		{"NO", "-"},
 	})
 
 	remarkY := expY + 46
-	s.drawRemarkSection(pdf, 15, remarkY, 111, "Remark", "")
+	s.drawRemarkSection(pdf, 15, remarkY, 103, "Remark", "")
 }
 
 func (s *PDFService) drawCompactField(pdf *gofpdf.Fpdf, x, y, width, height float64, label, value string) {
@@ -417,7 +417,7 @@ func (s *PDFService) drawSplitHistorySection(pdf *gofpdf.Fpdf, x, y, width float
 }
 
 func (s *PDFService) drawExperiencedAbroadSection(pdf *gofpdf.Fpdf, x, y, width float64, rows [][2]string) {
-	sectionGap := 10.0
+	sectionGap := 6.0
 	sectionWidth := (width - sectionGap) / 2
 	leftX := x
 	rightX := x + sectionWidth + sectionGap
@@ -427,21 +427,21 @@ func (s *PDFService) drawExperiencedAbroadSection(pdf *gofpdf.Fpdf, x, y, width 
 }
 
 func (s *PDFService) drawExperienceColumn(pdf *gofpdf.Fpdf, x, y, width float64, title, label string, values []string) {
-	titleHeight := 8.0
-	rowHeight := 12.0
+	titleHeight := 6.8
+	rowHeight := 9.6
 
 	pdf.SetFillColor(245, 245, 245)
 	pdf.SetDrawColor(191, 191, 191)
 	pdf.Rect(x, y, width, titleHeight, "DF")
-	pdf.SetXY(x, y+2)
+	pdf.SetXY(x, y+1.6)
 	pdf.SetTextColor(233, 122, 45)
-	pdf.SetFont("Arial", "B", 8.4)
+	pdf.SetFont("Arial", "B", 7.4)
 	pdf.CellFormat(width, 4, title, "", 1, "C", false, 0, "")
 
-	currentY := y + titleHeight + 4
+	currentY := y + titleHeight + 2.8
 	for _, value := range values {
-		s.drawFormKeyValueRow(pdf, x, currentY, width, width*0.54, rowHeight, label, value, false)
-		currentY += rowHeight + 4
+		s.drawFormKeyValueRow(pdf, x, currentY, width, width*0.56, rowHeight, label, value, false)
+		currentY += rowHeight + 2.6
 	}
 }
 

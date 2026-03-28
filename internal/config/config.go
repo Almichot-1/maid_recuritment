@@ -29,6 +29,8 @@ type Config struct {
 	AppBaseURL         string
 	CORSAllowedOrigins []string
 	RunExpiryScheduler bool
+	TesseractPath      string
+	OCRLanguage        string
 }
 
 func Load() (*Config, error) {
@@ -54,6 +56,8 @@ func Load() (*Config, error) {
 		AppBaseURL:         os.Getenv("APP_BASE_URL"),
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001")),
 		RunExpiryScheduler: getEnvAsBool("RUN_EXPIRY_SCHEDULER", true),
+		TesseractPath:      os.Getenv("TESSERACT_PATH"),
+		OCRLanguage:        getEnv("OCR_LANGUAGE", "eng"),
 	}
 
 	missing := make([]string, 0)

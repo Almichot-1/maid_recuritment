@@ -1,6 +1,11 @@
 import { create } from 'zustand';
 import { User } from '@/types';
 import { usePairingStore } from '@/stores/pairing-store';
+import { getApiBaseUrl } from '@/lib/api-base-url';
+
+interface AuthMeResponse {
+  user: User;
+}
 
 interface AuthState {
   user: User | null;
@@ -10,7 +15,7 @@ interface AuthState {
   setAuth: (user: User, token: string) => void;
   updateUser: (updates: Partial<User>) => void;
   logout: () => void;
-  loadFromStorage: () => void;
+  loadFromStorage: () => Promise<void>;
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
@@ -20,8 +25,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   isLoading: true, // Start true until hydrated
   
   setAuth: (user: User, token: string) => {
-    localStorage.setItem('auth_token', token);
     localStorage.setItem('auth_user', JSON.stringify(user));
+    localStorage.removeItem('auth_token');
     usePairingStore.getState().clear();
     set({ user, token, isAuthenticated: true, isLoading: false });
   },
@@ -44,21 +49,30 @@ export const useAuthStore = create<AuthState>((set) => ({
     set({ user: null, token: null, isAuthenticated: false, isLoading: false });
   },
   
-  loadFromStorage: () => {
+  loadFromStorage: async () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    set({ isLoading: true });
+
     try {
-      if (typeof window !== 'undefined') {
-        const token = localStorage.getItem('auth_token');
-        const userStr = localStorage.getItem('auth_user');
-        
-        if (token && userStr) {
-          const user = JSON.parse(userStr) as User;
-          set({ user, token, isAuthenticated: true, isLoading: false });
-        } else {
-          set({ user: null, token: null, isAuthenticated: false, isLoading: false });
-        }
+      const response = await fetch(`${getApiBaseUrl()}/auth/me`, {
+        credentials: 'include',
+      });
+
+      if (!response.ok) {
+        throw new Error(`session check failed with status ${response.status}`);
       }
+
+      const data = (await response.json()) as AuthMeResponse;
+      localStorage.setItem('auth_user', JSON.stringify(data.user));
+      localStorage.removeItem('auth_token');
+      set({ user: data.user, token: null, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.error('Failed to load auth state from storage', error);
+      localStorage.removeItem('auth_token');
+      localStorage.removeItem('auth_user');
       set({ user: null, token: null, isAuthenticated: false, isLoading: false });
     }
   }

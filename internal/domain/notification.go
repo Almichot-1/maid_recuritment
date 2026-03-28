@@ -5,11 +5,15 @@ import "time"
 type NotificationType string
 
 const (
-	NotificationSelection    NotificationType = "selection"
-	NotificationApproval     NotificationType = "approval"
-	NotificationRejection    NotificationType = "rejection"
-	NotificationStatusUpdate NotificationType = "status_update"
-	NotificationExpiry       NotificationType = "expiry"
+	NotificationSelection             NotificationType = "selection"
+	NotificationApproval              NotificationType = "approval"
+	NotificationRejection             NotificationType = "rejection"
+	NotificationStatusUpdate          NotificationType = "status_update"
+	NotificationExpiry                NotificationType = "expiry"
+	NotificationExpiryWarning         NotificationType = "expiry_warning"
+	NotificationPassportExpiryWarning NotificationType = "passport_expiry_warning"
+	NotificationFlightBooked          NotificationType = "flight_booked"
+	NotificationArrived               NotificationType = "arrived"
 )
 
 type Notification struct {

@@ -85,6 +85,7 @@ func (r *GormStatusStepRepository) Update(step *domain.StatusStep) error {
 		"completed_at": step.CompletedAt,
 		"notes":        step.Notes,
 		"updated_by":   step.UpdatedBy,
+		"updated_at":   time.Now().UTC(),
 	}
 
 	result := r.db.Model(&domain.StatusStep{}).Where("id = ?", step.ID).Updates(updates)

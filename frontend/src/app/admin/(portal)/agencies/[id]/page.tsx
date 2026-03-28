@@ -17,10 +17,19 @@ import { useAgencyPairings } from "@/hooks/use-pairings"
 import { AccountStatus } from "@/types"
 import { formatDateTime, titleize } from "@/lib/admin-utils"
 
-export default function AdminAgencyDetailPage({ params }: { params: { id: string } }) {
+interface AgencyDetailPageParams {
+  id: string
+}
+
+interface AgencyDetailPageProps {
+  params: Promise<AgencyDetailPageParams>
+}
+
+export default function AdminAgencyDetailPage({ params }: AgencyDetailPageProps) {
+  const { id } = React.use(params)
   const router = useRouter()
-  const { data, isLoading } = useAgency(params.id)
-  const { data: pairings = [], isLoading: pairingsLoading } = useAgencyPairings(params.id)
+  const { data, isLoading } = useAgency(id)
+  const { data: pairings = [], isLoading: pairingsLoading } = useAgencyPairings(id)
   const { mutateAsync: approveAgency, isPending: approving } = useApproveAgency()
   const { mutateAsync: rejectAgency, isPending: rejecting } = useRejectAgency()
   const { mutateAsync: updateStatus, isPending: updatingStatus } = useUpdateAgencyStatus()

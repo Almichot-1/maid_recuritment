@@ -3,19 +3,22 @@ import { Clock3, ShieldCheck, Mail } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 
-interface PendingPageProps {
-  searchParams: {
-    email?: string
-    company_name?: string
-    role?: string
-  }
+interface PendingSearchParams {
+  email?: string
+  company_name?: string
+  role?: string
 }
 
-export default function RegistrationPendingPage({ searchParams }: PendingPageProps) {
-  const companyName = searchParams.company_name || "Your agency"
-  const email = searchParams.email || "the email you registered with"
+interface PendingPageProps {
+  searchParams?: Promise<PendingSearchParams>
+}
+
+export default async function RegistrationPendingPage({ searchParams }: PendingPageProps) {
+  const resolvedSearchParams = await Promise.resolve(searchParams)
+  const companyName = resolvedSearchParams?.company_name || "Your agency"
+  const email = resolvedSearchParams?.email || "the email you registered with"
   const roleLabel =
-    searchParams.role === "foreign_agent" ? "Foreign agency" : "Ethiopian agency"
+    resolvedSearchParams?.role === "foreign_agent" ? "Foreign agency" : "Ethiopian agency"
 
   return (
     <Card className="w-full max-w-2xl border-slate-200 shadow-xl">

@@ -1,0 +1,8 @@
+ALTER TABLE candidates
+	ADD COLUMN IF NOT EXISTS nationality TEXT,
+	ADD COLUMN IF NOT EXISTS date_of_birth DATE,
+	ADD COLUMN IF NOT EXISTS place_of_birth TEXT,
+	ADD COLUMN IF NOT EXISTS religion TEXT,
+	ADD COLUMN IF NOT EXISTS marital_status TEXT,
+	ADD COLUMN IF NOT EXISTS children_count INTEGER,
+	ADD COLUMN IF NOT EXISTS education_level TEXT;

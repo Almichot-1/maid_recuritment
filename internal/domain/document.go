@@ -5,9 +5,10 @@ import "time"
 type DocumentType string
 
 const (
-	Passport DocumentType = "passport"
-	Photo    DocumentType = "photo"
-	Video    DocumentType = "video"
+	Passport        DocumentType = "passport"
+	Photo           DocumentType = "photo"
+	Video           DocumentType = "video"
+	MedicalDocument DocumentType = "medical"
 )
 
 type Document struct {

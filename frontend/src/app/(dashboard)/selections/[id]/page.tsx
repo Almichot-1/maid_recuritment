@@ -21,6 +21,7 @@ import {
 } from "lucide-react"
 
 import { useCurrentUser } from "@/hooks/use-auth"
+import { useUploadDocument } from "@/hooks/use-candidates"
 import {
   useApproveSelection,
   useRejectSelection,
@@ -52,6 +53,7 @@ export default function SelectionDetailPage() {
   const { mutate: rejectSelection, isPending: isRejecting } = useRejectSelection(selectionId, candidateId)
   const { mutateAsync: uploadSelectionDocument, isPending: isUploadingSelectionDocument } = useUploadSelectionDocument(selectionId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId || "")
+  const { mutateAsync: uploadCandidateDocument, isPending: isUploadingMedicalDocument } = useUploadDocument(candidateId || "")
 
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
@@ -404,6 +406,8 @@ export default function SelectionDetailPage() {
                     canUpdate={canUpdateProgress}
                     onUpdateStep={handleUpdateStep}
                     isUpdating={isUpdatingStep}
+                    onUploadMedicalDocument={canUpdateProgress ? (file) => uploadCandidateDocument({ file, type: "medical" }) : undefined}
+                    isUploadingMedicalDocument={isUploadingMedicalDocument}
                   />
                 </>
               ) : (
