@@ -36,15 +36,27 @@ func mergeOCRTextLines(texts ...string) string {
 }
 
 func (p *OCRProcessor) runTesseractText(imagePath, lang string, extraArgs []string) (string, error) {
+	return p.runTesseractTextWithTimeout(imagePath, lang, extraArgs, 20*time.Second)
+}
+
+func (p *OCRProcessor) runTesseractTextWithTimeout(imagePath, lang string, extraArgs []string, timeout time.Duration) (string, error) {
 	args := []string{imagePath, "stdout"}
 	args = append(args, extraArgs...)
 	args = append(args, "-l", lang)
 
-	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	if timeout <= 0 {
+		timeout = 20 * time.Second
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 
 	cmd := exec.CommandContext(ctx, p.tesseractExe(), args...)
 	cmd.Env = append([]string{}, os.Environ()...)
+	cmd.Env = append(cmd.Env,
+		"OMP_THREAD_LIMIT=1",
+		"OMP_NUM_THREADS=1",
+	)
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer
@@ -52,7 +64,7 @@ func (p *OCRProcessor) runTesseractText(imagePath, lang string, extraArgs []stri
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
 		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
-			return "", fmt.Errorf("tesseract CLI timed out after 20s for language %s", lang)
+			return "", fmt.Errorf("tesseract CLI timed out after %s for language %s", timeout.Round(time.Second), lang)
 		}
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {

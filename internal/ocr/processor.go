@@ -73,14 +73,18 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 	defer mrzCleanup()
 
 	mrzArgs := []string{
+		"--oem", "1",
 		"--psm", "6",
+		"-c", "load_system_dawg=0",
+		"-c", "load_freq_dawg=0",
+		"-c", "user_defined_dpi=300",
 		"-c", "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
 	}
-	languages := uniqueOCRLanguages("ocrb", "eng", p.lang)
+	languages := uniqueOCRLanguages("eng", p.lang, "ocrb")
 	attemptErrors := make([]string, 0, len(languages))
 
 	for _, language := range languages {
-		text, err := p.runTesseractText(mrzImagePath, language, mrzArgs)
+		text, err := p.runTesseractTextWithTimeout(mrzImagePath, language, mrzArgs, 8*time.Second)
 		if err != nil {
 			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", language, err))
 			continue
@@ -110,18 +114,25 @@ func (p *OCRProcessor) ExtractVisualZone(imagePath string) (*VisualZoneData, err
 		return nil, err
 	}
 
+	visualImagePath := imagePath
+	visualCleanup := func() {}
+	if processedPath, cleanup, err := prepareVisualZoneImage(imagePath); err == nil {
+		visualImagePath = processedPath
+		visualCleanup = cleanup
+	}
+	defer visualCleanup()
+
 	common := []string{
 		"--oem", "1",
+		"--psm", "6",
 		"-c", "preserve_interword_spaces=1",
 		"-c", "user_defined_dpi=300",
 	}
 
-	textPSM6, err6 := p.runTesseractText(imagePath, p.lang, append([]string{"--psm", "6"}, common...))
-	textPSM11, err11 := p.runTesseractText(imagePath, p.lang, append([]string{"--psm", "11"}, common...))
-	if err6 != nil && err11 != nil {
-		return nil, err6
+	text, err := p.runTesseractTextWithTimeout(visualImagePath, p.lang, common, 6*time.Second)
+	if err != nil {
+		return nil, err
 	}
-	text := mergeOCRTextLines(textPSM6, textPSM11)
 
 	vz := extractVisualZoneFields(text, 0)
 	vz.RawText = text
