@@ -3,6 +3,7 @@ package handler
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -510,6 +511,75 @@ func (h *CandidateHandler) GenerateCV(w http.ResponseWriter, r *http.Request) {
 	_ = utils.WriteJSON(w, http.StatusOK, GenerateCVResponse{CVPDFURL: candidate.CVPDFURL})
 }
 
+func (h *CandidateHandler) DownloadCV(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate id is required"})
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	role, ok := middleware.RoleFromContext(r.Context())
+	if !ok || strings.TrimSpace(role) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	pairingID, _ := middleware.PairingIDFromContext(r.Context())
+
+	candidate, _, err := h.candidateService.GetCandidate(id)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	canView, err := h.canViewCandidate(candidate, userID, role, pairingID)
+	if err != nil {
+		h.writePairingAccessError(w, err)
+		return
+	}
+	if !canView {
+		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "candidate not found"})
+		return
+	}
+	if strings.TrimSpace(candidate.CVPDFURL) == "" {
+		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "cv not found"})
+		return
+	}
+
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, candidate.CVPDFURL, nil)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	response, err := (&http.Client{Timeout: 45 * time.Second}).Do(request)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "cv download failed"})
+		return
+	}
+	defer response.Body.Close()
+
+	if response.StatusCode >= http.StatusBadRequest {
+		_ = utils.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "cv download failed"})
+		return
+	}
+
+	fileName := buildCandidateCVFileName(candidate.FullName)
+	contentType := strings.TrimSpace(response.Header.Get("Content-Type"))
+	if contentType == "" {
+		contentType = "application/pdf"
+	}
+
+	w.Header().Set("Content-Type", contentType)
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.Copy(w, response.Body)
+}
+
 func (h *CandidateHandler) ParsePassport(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if strings.TrimSpace(id) == "" {
@@ -951,6 +1021,38 @@ func dereferenceInt64(value *int64) int64 {
 		return 0
 	}
 	return *value
+}
+
+func buildCandidateCVFileName(fullName string) string {
+	trimmed := strings.TrimSpace(strings.ToLower(fullName))
+	if trimmed == "" {
+		return "candidate-cv.pdf"
+	}
+
+	var builder strings.Builder
+	previousHyphen := false
+	for _, character := range trimmed {
+		switch {
+		case character >= 'a' && character <= 'z':
+			builder.WriteRune(character)
+			previousHyphen = false
+		case character >= '0' && character <= '9':
+			builder.WriteRune(character)
+			previousHyphen = false
+		default:
+			if !previousHyphen {
+				builder.WriteRune('-')
+				previousHyphen = true
+			}
+		}
+	}
+
+	name := strings.Trim(builder.String(), "-")
+	if name == "" {
+		name = "candidate"
+	}
+
+	return fmt.Sprintf("%s-cv.pdf", name)
 }
 
 func mapPassportDataResponse(passportData *domain.PassportData) PassportDataResponse {

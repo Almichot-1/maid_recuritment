@@ -4,32 +4,22 @@ import * as React from "react";
 import { useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  AlertTriangle,
-  BadgeCheck,
   BriefcaseBusiness,
-  Globe2,
   Languages,
   Loader2,
   Plus,
   ShieldCheck,
-  Sparkles,
   Trash2,
   UserSquare2,
 } from "lucide-react";
 
-import { useParsePassport, usePassportData } from "@/hooks/use-passport-ocr";
+import { useParsePassport } from "@/hooks/use-passport-ocr";
 import { CandidateInput, candidateSchema } from "@/lib/validations";
 import { useAgencyBranding } from "@/hooks/use-agency-branding";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
 import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
@@ -79,6 +69,7 @@ const EDUCATION_LEVEL_OPTIONS = [
 interface CandidateFormProps {
   candidateId?: string;
   initialData?: Partial<CandidateFormValues>;
+  initialDocuments?: Partial<Record<"passport" | "photo" | "video", File | null>>;
   onSubmit: (
     data: CandidateInput,
     context?: { submitter: "default" | "create_another" },
@@ -88,10 +79,12 @@ interface CandidateFormProps {
     documentType: "passport" | "photo" | "video",
     file: File | null,
   ) => void;
+  onDraftChange?: (draft: CandidateFormValues) => void;
+  onClearDraft?: () => void;
   showDocuments?: boolean;
 }
 
-type CandidateFormValues = {
+export type CandidateFormValues = {
   full_name: string;
   nationality?: string;
   date_of_birth?: string;
@@ -133,26 +126,19 @@ function SectionTitle({
 export function CandidateForm({
   candidateId,
   initialData,
+  initialDocuments,
   onSubmit,
   isLoading,
   onDocumentChange,
+  onDraftChange,
+  onClearDraft,
   showDocuments = true,
 }: CandidateFormProps) {
   const { user } = useCurrentUser();
   const { hasLogo } = useAgencyBranding();
-  const { data: passportData } = usePassportData(
-    candidateId,
-    Boolean(candidateId),
-  );
   const { mutateAsync: parsePassport, isPending: isParsingPassport } =
     useParsePassport(candidateId);
   const [documentResetKey, setDocumentResetKey] = React.useState(0);
-  const [passportPreview, setPassportPreview] =
-    React.useState<PassportData | null>(null);
-  const [passportDocumentSelected, setPassportDocumentSelected] =
-    React.useState(false);
-  const [passportDocumentIsImage, setPassportDocumentIsImage] =
-    React.useState(false);
   const [ageAutoSyncEnabled, setAgeAutoSyncEnabled] = React.useState(true);
 
   const blankFormValues = React.useMemo<CandidateFormValues>(
@@ -184,36 +170,8 @@ export function CandidateForm({
     control: form.control,
     name: "languages",
   });
-  const [documentPresence, setDocumentPresence] = React.useState({
-    passport: false,
-    photo: false,
-    video: false,
-  });
-
-  const selectedSkills = form.watch("skills") || [];
-  const watchedLanguages = form.watch("languages") || [];
-  const fullName = form.watch("full_name");
-  const watchedNationality = form.watch("nationality");
   const watchedDateOfBirth = form.watch("date_of_birth");
   const watchedAge = form.watch("age");
-  const watchedPlaceOfBirth = form.watch("place_of_birth");
-  const watchedReligion = form.watch("religion");
-  const watchedMaritalStatus = form.watch("marital_status");
-  const watchedChildrenCount = form.watch("children_count");
-  const watchedEducationLevel = form.watch("education_level");
-  const activePassportPreview = passportPreview || passportData || null;
-
-  const requiredDocumentChecklist = [
-    { label: "Passport", done: documentPresence.passport || !showDocuments },
-    {
-      label: "Full body photo",
-      done: documentPresence.photo || !showDocuments,
-    },
-    {
-      label: "Video interview (optional)",
-      done: documentPresence.video || !showDocuments,
-    },
-  ];
 
   const isEditing = !!initialData;
   const addLanguageEntry = () =>
@@ -223,11 +181,27 @@ export function CandidateForm({
     });
 
   React.useEffect(() => {
-    if (!passportData) {
+    if (!onDraftChange) {
       return;
     }
-    setPassportPreview(passportData);
-  }, [passportData]);
+
+    const subscription = form.watch((values) => {
+      onDraftChange({
+        ...blankFormValues,
+        ...values,
+        skills: values.skills || [],
+        languages:
+          values.languages && values.languages.length > 0
+            ? values.languages.map((language) => ({
+                language: language.language || LANGUAGES_OPTIONS[0],
+                proficiency: language.proficiency || PROFICIENCY_OPTIONS[0],
+              }))
+            : blankFormValues.languages,
+      });
+    });
+
+    return () => subscription.unsubscribe();
+  }, [blankFormValues, form, onDraftChange]);
 
   React.useEffect(() => {
     const derivedAge = calculateAgeFromDate(watchedDateOfBirth);
@@ -253,19 +227,12 @@ export function CandidateForm({
   const resetForNextCandidate = React.useCallback(() => {
     form.reset(blankFormValues);
     setAgeAutoSyncEnabled(true);
-    setDocumentPresence({
-      passport: false,
-      photo: false,
-      video: false,
-    });
-    setPassportDocumentSelected(false);
-    setPassportDocumentIsImage(false);
-    setPassportPreview(null);
     setDocumentResetKey((current) => current + 1);
     onDocumentChange?.("passport", null);
     onDocumentChange?.("photo", null);
     onDocumentChange?.("video", null);
-  }, [blankFormValues, form, onDocumentChange]);
+    onClearDraft?.();
+  }, [blankFormValues, form, onClearDraft, onDocumentChange]);
 
   const handleFormSubmit = form.handleSubmit(async (data, event) => {
     const submitter = (event?.nativeEvent as SubmitEvent | undefined)
@@ -282,8 +249,6 @@ export function CandidateForm({
   });
 
   const applyPassportAutofill = React.useCallback((parsed: PassportData) => {
-    setPassportPreview(parsed);
-
     if (parsed.holder_name?.trim()) {
       form.setValue("full_name", parsed.holder_name.trim(), {
         shouldDirty: true,
@@ -358,51 +323,18 @@ export function CandidateForm({
     }, 180);
   }, [applyPassportAutofill, parsePassport]);
 
-  const applicantDetailPreview = [
-    {
-      label: "Nationality",
-      value: compactFormPreviewValue(watchedNationality),
-    },
-    {
-      label: "Date Of Birth",
-      value: formatApplicantPreviewDate(watchedDateOfBirth),
-    },
-    { label: "Age", value: formatApplicantPreviewAge(watchedAge) },
-    {
-      label: "Place Of Birth",
-      value: compactFormPreviewValue(watchedPlaceOfBirth),
-    },
-    { label: "Religion", value: compactFormPreviewValue(watchedReligion) },
-    {
-      label: "Marital Status",
-      value: compactFormPreviewValue(watchedMaritalStatus),
-    },
-    {
-      label: "Children",
-      value: compactCountPreviewValue(watchedChildrenCount),
-    },
-    {
-      label: "Education Level",
-      value: compactFormPreviewValue(watchedEducationLevel),
-    },
-  ];
-  const applicantDetailCompletion = applicantDetailPreview.filter(
-    (item) => item.value !== "Not filled yet",
-  ).length;
-
   return (
     <Form {...form}>
       <form onSubmit={handleFormSubmit} className="w-full">
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_360px]">
-          <div className="space-y-6">
+        <div className="space-y-6">
             <Card className="overflow-hidden border-border/70 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.22),_transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96))] text-white shadow-xl">
-              <CardContent className="space-y-5 p-6">
+              <CardContent className="space-y-5 p-5 sm:p-6">
                 <div className="space-y-4">
                   <Badge className="w-fit rounded-full border-0 bg-white/15 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-amber-200 hover:bg-white/15">
                     Candidate workflow
                   </Badge>
                   <div className="space-y-2">
-                    <h2 className="text-3xl font-semibold tracking-tight">
+                    <h2 className="text-2xl font-semibold tracking-tight sm:text-3xl">
                       {isEditing
                         ? "Refine and update this candidate profile"
                         : "Create a polished candidate profile in one pass"}
@@ -452,13 +384,14 @@ export function CandidateForm({
                   />
                 </CardHeader>
                 <CardContent className="space-y-6">
-                  <div className="grid gap-5 xl:grid-cols-2">
+                  <div className="grid gap-5 md:grid-cols-2">
                     <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <DocumentUpload
                         key={`passport-${documentResetKey}`}
+                        initialFile={initialDocuments?.passport || null}
                         documentType="passport"
                         title="Passport document"
-                        description="PDF, JPG, or PNG. This is required before CV download."
+                        description="PDF, JPG, or PNG. Passport images auto-fill the matching applicant fields."
                         accept={{
                           "application/pdf": [".pdf"],
                           "image/jpeg": [".jpg", ".jpeg"],
@@ -466,26 +399,10 @@ export function CandidateForm({
                         }}
                         maxSize={10485760}
                         onUpload={(file) => {
-                          setDocumentPresence((current) => ({
-                            ...current,
-                            passport: true,
-                          }));
-                          setPassportDocumentSelected(true);
-                          setPassportDocumentIsImage(
-                            file.type.startsWith("image/"),
-                          );
-                          setPassportPreview(null);
                           onDocumentChange?.("passport", file);
                           handlePassportFileSelected(file);
                         }}
                         onRemove={() => {
-                          setDocumentPresence((current) => ({
-                            ...current,
-                            passport: false,
-                          }));
-                          setPassportDocumentSelected(false);
-                          setPassportDocumentIsImage(false);
-                          setPassportPreview(null);
                           onDocumentChange?.("passport", null);
                         }}
                       />
@@ -494,6 +411,7 @@ export function CandidateForm({
                     <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <DocumentUpload
                         key={`photo-${documentResetKey}`}
+                        initialFile={initialDocuments?.photo || null}
                         documentType="photo"
                         title="Full body photo"
                         description="Use a clean photo with good light and a clear full-body view."
@@ -503,85 +421,31 @@ export function CandidateForm({
                         }}
                         maxSize={10485760}
                         onUpload={(file) => {
-                          setDocumentPresence((current) => ({
-                            ...current,
-                            photo: true,
-                          }));
                           onDocumentChange?.("photo", file);
                         }}
                         onRemove={() => {
-                          setDocumentPresence((current) => ({
-                            ...current,
-                            photo: false,
-                          }));
                           onDocumentChange?.("photo", null);
                         }}
                       />
                     </div>
 
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 xl:col-span-2">
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 md:col-span-2">
                       <DocumentUpload
                         key={`video-${documentResetKey}`}
+                        initialFile={initialDocuments?.video || null}
                         documentType="video"
                         title="Video interview"
                         description="Optional, but helpful for faster employer review."
                         accept={{ "video/mp4": [".mp4"] }}
                         maxSize={52428800}
                         onUpload={(file) => {
-                          setDocumentPresence((current) => ({
-                            ...current,
-                            video: true,
-                          }));
                           onDocumentChange?.("video", file);
                         }}
                         onRemove={() => {
-                          setDocumentPresence((current) => ({
-                            ...current,
-                            video: false,
-                          }));
                           onDocumentChange?.("video", null);
                         }}
                       />
                     </div>
-                  </div>
-
-                  <div className="rounded-2xl border border-primary/15 bg-primary/5 p-4">
-                    <div className="space-y-2">
-                      <p className="text-sm font-semibold text-foreground">
-                        Automatic passport extraction
-                      </p>
-                      <p className="text-sm text-muted-foreground">
-                        As soon as you upload a clear passport image, the system
-                        reads it automatically, fills the matching applicant
-                        detail fields below, and shows the extracted passport
-                        details here. You can still edit any filled value before
-                        saving the candidate.
-                      </p>
-                    </div>
-
-                    {passportDocumentSelected && !passportDocumentIsImage ? (
-                      <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                        Upload a passport image in JPG or PNG format if you want
-                        OCR extraction. PDF passports can still be saved
-                        normally for the CV.
-                      </div>
-                    ) : null}
-
-                    {passportDocumentIsImage && isParsingPassport ? (
-                      <div className="mt-4 flex items-center gap-3 rounded-xl border border-border/70 bg-background/80 px-4 py-4 text-sm text-muted-foreground">
-                        <Loader2 className="h-4 w-4 animate-spin text-primary" />
-                        Reading the passport image and filling the form now.
-                      </div>
-                    ) : null}
-
-                    {activePassportPreview ? (
-                      <PassportPreviewCard passport={activePassportPreview} />
-                    ) : (
-                      <div className="mt-4 rounded-xl border border-dashed border-border/70 bg-background/70 px-4 py-4 text-sm text-muted-foreground">
-                        Upload a passport image and the extracted passport
-                        fields will appear here automatically.
-                      </div>
-                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -613,18 +477,14 @@ export function CandidateForm({
                   )}
                 />
 
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
-                    <span className="rounded-full border border-border bg-background px-3 py-1.5">
-                      {applicantDetailCompletion}/8 applicant rows filled
+                <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                  Uploading a passport image fills the matching applicant fields automatically, but every value below stays editable before you save the candidate.
+                  {isParsingPassport ? (
+                    <span className="mt-2 flex items-center gap-2 font-medium text-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      Reading the passport image now.
                     </span>
-                    <span className="rounded-full border border-border bg-background px-3 py-1.5">
-                      Passport image fills DOB, age, nationality, and place of birth
-                    </span>
-                    <span className="rounded-full border border-border bg-background px-3 py-1.5">
-                      Every field stays editable before save
-                    </span>
-                  </div>
+                  ) : null}
                 </div>
 
                 <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
@@ -1056,102 +916,6 @@ export function CandidateForm({
                 </Button>
               </CardContent>
             </Card>
-          </div>
-
-          <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-            <Card className="overflow-hidden border-border/70 shadow-lg">
-              <CardHeader className="bg-gradient-to-br from-amber-50 via-background to-slate-50">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Sparkles className="h-5 w-5 text-amber-600" />
-                  Submission summary
-                </CardTitle>
-                <CardDescription>
-                  Keep the profile complete before you publish it to foreign
-                  agencies.
-                </CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5 p-6">
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-                    Agency
-                  </p>
-                  <p className="mt-1 truncate text-sm font-semibold">
-                    {user?.company_name || "Agency profile"}
-                  </p>
-                  <p className="mt-1 text-xs text-muted-foreground">
-                    {hasLogo
-                      ? "Saved branding is ready for generated CVs."
-                      : "You can add reusable branding later from Settings."}
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  <SummaryItem
-                    label="Candidate name"
-                    value={fullName?.trim() ? fullName : "Not filled yet"}
-                  />
-                  <SummaryItem
-                    label="Applicant detail rows"
-                    value={`${applicantDetailCompletion}/8 ready for the CV`}
-                  />
-                  <SummaryItem
-                    label="Skills selected"
-                    value={
-                      selectedSkills.length
-                        ? `${selectedSkills.length} selected`
-                        : "Select at least one skill"
-                    }
-                  />
-                  <SummaryItem
-                    label="Languages tracked"
-                    value={
-                      watchedLanguages.length
-                        ? `${watchedLanguages.length} language entries`
-                        : "Add a language"
-                    }
-                  />
-                </div>
-
-                <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex items-center gap-2">
-                    <Globe2 className="h-4 w-4 text-slate-700" />
-                    <p className="text-sm font-semibold">Before you submit</p>
-                  </div>
-                  {requiredDocumentChecklist.map((item) => (
-                    <div
-                      key={item.label}
-                      className="flex items-center gap-2 text-sm"
-                    >
-                      <BadgeCheck
-                        className={`h-4 w-4 ${item.done ? "text-green-600" : "text-muted-foreground"}`}
-                      />
-                      <span
-                        className={
-                          item.done
-                            ? "text-foreground"
-                            : "text-muted-foreground"
-                        }
-                      >
-                        {item.label}
-                      </span>
-                    </div>
-                  ))}
-                  {!showDocuments ? (
-                    <p className="text-xs text-muted-foreground">
-                      Profile details are edited here. The latest supporting
-                      files can be managed from the surrounding candidate
-                      workspace.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Uploaded files are attached right after the candidate
-                      record is saved.
-                    </p>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
         </div>
 
         <div className="mt-8 flex flex-col-reverse gap-3 border-t border-border/70 pt-6 sm:flex-row sm:justify-end">
@@ -1196,126 +960,6 @@ export function CandidateForm({
   );
 }
 
-function SummaryItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </p>
-      <p className="text-sm font-semibold text-foreground">{value}</p>
-    </div>
-  );
-}
-
-function PassportPreviewCard({ passport }: { passport: PassportData }) {
-  const expiryDate = new Date(passport.expiry_date);
-  const expiryWarning = isDateWithinMonths(expiryDate, 6);
-  const calculatedAge = calculateAgeFromDate(passport.date_of_birth);
-
-  return (
-    <div className="mt-4 rounded-2xl border border-border/70 bg-background/85 p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">
-            Extracted passport details
-          </p>
-          <p className="mt-1 text-sm font-semibold text-foreground">
-            {passport.holder_name || "Unnamed passport holder"}
-          </p>
-        </div>
-        <Badge
-          variant="outline"
-          className={
-            expiryWarning ? "border-rose-300 bg-rose-50 text-rose-700" : ""
-          }
-        >
-          Confidence {Math.round(passport.confidence)}
-        </Badge>
-      </div>
-
-      <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-        <PassportPreviewItem
-          label="Passport No"
-          value={passport.passport_number || "Not found"}
-        />
-        <PassportPreviewItem
-          label="Holder name"
-          value={passport.holder_name || "Not found"}
-        />
-        <PassportPreviewItem
-          label="Nationality"
-          value={passport.nationality || "Not found"}
-        />
-        <PassportPreviewItem
-          label="Gender"
-          value={passport.gender || "Not found"}
-        />
-        <PassportPreviewItem
-          label="Date of birth"
-          value={formatPassportValue(passport.date_of_birth)}
-        />
-        <PassportPreviewItem
-          label="Age"
-          value={
-            calculatedAge !== null ? `${calculatedAge} years` : "Not found"
-          }
-        />
-        <PassportPreviewItem
-          label="Issue date"
-          value={formatPassportValue(passport.issue_date)}
-        />
-        <PassportPreviewItem
-          label="Expiry date"
-          value={formatPassportValue(passport.expiry_date)}
-          valueClassName={
-            expiryWarning ? "text-rose-600 dark:text-rose-300" : undefined
-          }
-        />
-        <PassportPreviewItem
-          label="Country code"
-          value={passport.country_code || "Not found"}
-        />
-      </div>
-
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        <PassportPreviewItem
-          label="Place of birth"
-          value={passport.place_of_birth || "Not found"}
-        />
-        <PassportPreviewItem
-          label="Issuing authority"
-          value={passport.issuing_authority || "Not found"}
-        />
-      </div>
-
-      {expiryWarning ? (
-        <div className="mt-3 flex items-start gap-2 rounded-xl border border-rose-300/40 bg-rose-50 px-3 py-3 text-sm text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/30 dark:text-rose-100">
-          <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
-          <span>
-            This passport expires within 6 months, so the CV will highlight it
-            as a warning.
-          </span>
-        </div>
-      ) : null}
-    </div>
-  );
-}
-
-function compactFormPreviewValue(value: string | undefined) {
-  const cleaned = value?.trim();
-  return cleaned ? cleaned : "Not filled yet";
-}
-
-function compactCountPreviewValue(value: number | string | undefined) {
-  if (typeof value === "number") {
-    return String(value);
-  }
-  if (typeof value === "string" && value.trim()) {
-    return value.trim();
-  }
-  return "Not filled yet";
-}
-
 function normalizeDateInputValue(value?: string) {
   if (!value) {
     return "";
@@ -1332,56 +976,6 @@ function normalizeDateInputValue(value?: string) {
   }
 
   return parsed.toISOString().slice(0, 10);
-}
-
-function formatApplicantPreviewDate(value: string | undefined) {
-  if (!value) {
-    return "Not filled yet";
-  }
-  const parsed = new Date(`${value}T00:00:00`);
-  if (Number.isNaN(parsed.getTime())) {
-    return value;
-  }
-  return parsed
-    .toLocaleDateString("en-GB", {
-      day: "2-digit",
-      month: "short",
-      year: "2-digit",
-    })
-    .replace(/ /g, "-");
-}
-
-function formatApplicantPreviewAge(value: number | string | undefined) {
-  if (typeof value === "number" && !Number.isNaN(value)) {
-    return `${value} YRS`;
-  }
-  if (typeof value === "string" && value.trim()) {
-    return `${value.trim()} YRS`;
-  }
-  return "Not filled yet";
-}
-
-function PassportPreviewItem({
-  label,
-  value,
-  valueClassName,
-}: {
-  label: string;
-  value: string;
-  valueClassName?: string;
-}) {
-  return (
-    <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-3">
-      <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-muted-foreground">
-        {label}
-      </p>
-      <p
-        className={`mt-1 text-sm font-semibold text-foreground break-words ${valueClassName ?? ""}`}
-      >
-        {value}
-      </p>
-    </div>
-  );
 }
 
 function calculateAgeFromDate(value?: string) {
@@ -1404,25 +998,4 @@ function calculateAgeFromDate(value?: string) {
     age -= 1;
   }
   return age >= 0 ? age : null;
-}
-
-function formatPassportValue(value?: string) {
-  if (!value) {
-    return "Not found";
-  }
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return value;
-  }
-  return date.toLocaleDateString();
-}
-
-function isDateWithinMonths(date: Date, months: number) {
-  if (Number.isNaN(date.getTime())) {
-    return false;
-  }
-
-  const threshold = new Date();
-  threshold.setMonth(threshold.getMonth() + months);
-  return date.getTime() <= threshold.getTime();
 }

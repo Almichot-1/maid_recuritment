@@ -11,6 +11,7 @@ export interface DocumentUploadProps {
   documentType: string
   accept: Record<string, string[]>
   maxSize: number
+  initialFile?: File | null
   onUpload?: (file: File) => void | Promise<unknown>
   onRemove?: () => void
   title: string
@@ -23,6 +24,7 @@ export function DocumentUpload({
   documentType,
   accept,
   maxSize,
+  initialFile,
   onUpload,
   onRemove,
   title,
@@ -173,6 +175,31 @@ export function DocumentUpload({
     clearSelectedFile()
     onRemove?.()
   }
+
+  React.useEffect(() => {
+    if (!initialFile) {
+      return
+    }
+
+    setFile(initialFile)
+    setStatus("selected")
+    setErrorMessage(null)
+    setPreview((current) => {
+      if (current) {
+        URL.revokeObjectURL(current)
+      }
+
+      if (!shouldRenderPreview(initialFile)) {
+        return null
+      }
+
+      return URL.createObjectURL(initialFile)
+    })
+
+    if (inputRef.current) {
+      inputRef.current.value = ""
+    }
+  }, [initialFile, shouldRenderPreview])
 
   React.useEffect(() => {
     return () => {

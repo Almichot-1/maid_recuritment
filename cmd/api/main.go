@@ -293,6 +293,7 @@ func main() {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/passport/parse", candidateHandler.ParsePassport)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/passport", candidateHandler.GetPassport)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/generate-cv", candidateHandler.GenerateCV)
+			cr.Get("/{id}/download-cv", candidateHandler.DownloadCV)
 			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/select", selectionHandler.SelectCandidate)
 			cr.Get("/{id}/status-steps", statusHandler.GetCandidateStatusSteps)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Patch("/{id}/status-steps/{step_name}", statusHandler.UpdateStatusStep)

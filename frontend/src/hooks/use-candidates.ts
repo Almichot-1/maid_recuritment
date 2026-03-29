@@ -299,6 +299,40 @@ export async function publishCandidateById(id: string) {
   return response.data;
 }
 
+export async function downloadCandidateCVFile(
+  id: string,
+  candidateName?: string,
+) {
+  const response = await api.get(`/candidates/${id}/download-cv`, {
+    responseType: "blob",
+  });
+
+  const contentDisposition = response.headers["content-disposition"] as
+    | string
+    | undefined;
+  const headerFileName = contentDisposition?.match(/filename="([^"]+)"/)?.[1];
+  const fallbackFileName = `${(candidateName || "candidate")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "") || "candidate"}-cv.pdf`;
+  const fileName = headerFileName || fallbackFileName;
+  const blob = new Blob([response.data], {
+    type: response.headers["content-type"] || "application/pdf",
+  });
+  const objectURL = window.URL.createObjectURL(blob);
+  const anchor = document.createElement("a");
+
+  anchor.href = objectURL;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+
+  window.setTimeout(() => {
+    window.URL.revokeObjectURL(objectURL);
+  }, 1000);
+}
+
 export function useGenerateCV(id: string) {
   const queryClient = useQueryClient();
 

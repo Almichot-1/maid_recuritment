@@ -8,10 +8,19 @@ import Link from "next/link"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { publishCandidateById, uploadCandidateDocumentFile, useCreateCandidate } from "@/hooks/use-candidates"
-import { CandidateForm } from "@/components/candidates/candidate-form"
+import { CandidateForm, CandidateFormValues } from "@/components/candidates/candidate-form"
 import { SubmissionProgressOverlay } from "@/components/candidates/submission-progress-overlay"
 import { CandidateInput } from "@/lib/validations"
 import { PageHeader } from "@/components/layout/page-header"
+import {
+  clearCandidateDraft,
+  clearCandidateDraftFile,
+  loadCandidateDraftFile,
+  readCandidateDraftSnapshot,
+  saveCandidateDraftDocumentMeta,
+  saveCandidateDraftFile,
+  saveCandidateDraftFormValues,
+} from "@/lib/candidate-draft"
 
 type PendingDocuments = {
   passport: File | null
@@ -32,6 +41,8 @@ export default function NewCandidatePage() {
   const router = useRouter()
   const { isEthiopianAgent, isLoading: isRoleLoading } = useCurrentUser()
   const { mutateAsync: createCandidate, isPending } = useCreateCandidate()
+  const [isDraftReady, setIsDraftReady] = React.useState(false)
+  const [draftInitialData, setDraftInitialData] = React.useState<Partial<CandidateFormValues> | undefined>(undefined)
   const [pendingDocuments, setPendingDocuments] = React.useState<PendingDocuments>({
     passport: null,
     photo: null,
@@ -54,7 +65,59 @@ export default function NewCandidatePage() {
     }
   }, [isEthiopianAgent, isRoleLoading, router])
 
-  if (isRoleLoading || !isEthiopianAgent) {
+  React.useEffect(() => {
+    let isActive = true
+
+    async function restoreDraft() {
+      try {
+        const snapshot = readCandidateDraftSnapshot()
+        if (!snapshot) {
+          if (isActive) {
+            setIsDraftReady(true)
+          }
+          return
+        }
+
+        const [passport, photo, video] = await Promise.all([
+          loadCandidateDraftFile("passport"),
+          loadCandidateDraftFile("photo"),
+          loadCandidateDraftFile("video"),
+        ])
+
+        if (isActive) {
+          setDraftInitialData(snapshot.formValues)
+          setPendingDocuments({
+            passport,
+            photo,
+            video,
+          })
+          setIsDraftReady(true)
+        }
+
+        if (!isActive) {
+          return
+        }
+
+        toast.info(
+          [passport, photo, video].some(Boolean)
+            ? "Your saved candidate draft and selected files were restored."
+            : "Your saved candidate draft was restored.",
+        )
+      } catch {
+        if (isActive) {
+          setIsDraftReady(true)
+        }
+      }
+    }
+
+    void restoreDraft()
+
+    return () => {
+      isActive = false
+    }
+  }, [])
+
+  if (isRoleLoading || !isEthiopianAgent || !isDraftReady) {
     return (
       <div className="flex h-[50vh] w-full items-center justify-center animate-in fade-in duration-500">
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
@@ -90,6 +153,18 @@ export default function NewCandidatePage() {
       ...current,
       [documentType]: file ? 0 : 0,
     }))
+
+    saveCandidateDraftDocumentMeta(documentType, file)
+    if (file) {
+      void saveCandidateDraftFile(documentType, file).catch(() => {
+        // Ignore temporary draft file persistence failures.
+      })
+      return
+    }
+
+    void clearCandidateDraftFile(documentType).catch(() => {
+      // Ignore temporary draft file cleanup failures.
+    })
   }
 
   const handleSubmit = async (
@@ -141,6 +216,7 @@ export default function NewCandidatePage() {
         await publishCandidateById(candidateID)
       }
 
+      await clearCandidateDraft()
       setSubmissionStage("finalizing")
       await new Promise((resolve) => setTimeout(resolve, 450))
       if (submitter === "create_another") {
@@ -155,6 +231,7 @@ export default function NewCandidatePage() {
           video: 0,
         })
         setActiveUpload(null)
+        setDraftInitialData(undefined)
         setSubmissionStage("idle")
         toast.success("Candidate saved, published, and the form is ready for another profile.")
         return { resetForm: true }
@@ -248,11 +325,21 @@ export default function NewCandidatePage() {
         text="Create a candidate profile, reuse your saved agency branding, and upload the supporting documents used throughout the recruitment flow."
       />
       
-      <div className="relative mx-auto max-w-[1480px] rounded-2xl border border-border/60 bg-card p-2 shadow-sm md:p-6">
+      <div className="relative mx-auto max-w-6xl rounded-2xl border border-border/60 bg-card p-3 shadow-sm sm:p-5 lg:p-6">
         <CandidateForm 
+          initialData={draftInitialData}
+          initialDocuments={pendingDocuments}
           onSubmit={handleSubmit} 
           isLoading={isPending || submissionStage !== "idle"} 
           onDocumentChange={handleDocumentChange}
+          onDraftChange={(draft) => {
+            setDraftInitialData(draft)
+            saveCandidateDraftFormValues(draft)
+          }}
+          onClearDraft={() => {
+            setDraftInitialData(undefined)
+            void clearCandidateDraft()
+          }}
         />
       </div>
     </div>

@@ -15,10 +15,11 @@ import {
   Loader2,
   Sparkles,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useAgencyBranding } from "@/hooks/use-agency-branding"
-import { useCandidate, useGenerateCV } from "@/hooks/use-candidates"
+import { downloadCandidateCVFile, useCandidate, useGenerateCV } from "@/hooks/use-candidates"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -31,6 +32,7 @@ export default function CandidateCVPage() {
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const [hasStartedPreparation, setHasStartedPreparation] = React.useState(false)
+  const [isDownloading, setIsDownloading] = React.useState(false)
 
   const missingRequiredDocuments = React.useMemo(() => {
     if (!candidate) {
@@ -54,6 +56,21 @@ export default function CandidateCVPage() {
     setHasStartedPreparation(true)
     generateCV(brandingPayload)
   }, [brandingPayload, generateCV])
+
+  const handleDownload = React.useCallback(async () => {
+    if (!candidate?.cv_pdf_url) {
+      return
+    }
+
+    try {
+      setIsDownloading(true)
+      await downloadCandidateCVFile(candidate.id, candidate.full_name)
+    } catch {
+      toast.error("Failed to download CV")
+    } finally {
+      setIsDownloading(false)
+    }
+  }, [candidate])
 
   React.useEffect(() => {
     if (!candidate || !canPrepareCV || hasStartedPreparation || isGeneratingCV || !isEthiopianAgent) {
@@ -146,11 +163,9 @@ export default function CandidateCVPage() {
               </Button>
               {candidate.cv_pdf_url ? (
                 <>
-                  <Button className="bg-white text-slate-950 hover:bg-slate-100" asChild>
-                    <a href={candidate.cv_pdf_url} download>
+                  <Button className="bg-white text-slate-950 hover:bg-slate-100" onClick={handleDownload} disabled={isDownloading}>
                       <Download className="mr-2 h-4 w-4" />
-                      Download PDF
-                    </a>
+                      {isDownloading ? "Downloading..." : "Download PDF"}
                   </Button>
                   <Button variant="outline" className="border-white/20 bg-white/10 text-white hover:bg-white/15 hover:text-white" asChild>
                     <a href={candidate.cv_pdf_url} target="_blank" rel="noopener noreferrer">
@@ -224,11 +239,9 @@ export default function CandidateCVPage() {
                   Open this page again or use Refresh Layout after changing the logo so the PDF picks up the latest branding and colors.
                 </div>
               ) : null}
-              <Button className="w-full" asChild>
-                <a href={candidate.cv_pdf_url} download>
-                  <Download className="mr-2 h-4 w-4" />
-                  Download CV
-                </a>
+              <Button className="w-full" onClick={handleDownload} disabled={isDownloading}>
+                <Download className="mr-2 h-4 w-4" />
+                {isDownloading ? "Downloading..." : "Download CV"}
               </Button>
               {isEthiopianAgent ? (
                 <Button variant="outline" className="w-full" onClick={triggerCVBuild} disabled={isGeneratingCV}>
