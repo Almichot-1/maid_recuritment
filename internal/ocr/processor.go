@@ -64,6 +64,14 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 		return "", "", 0, err
 	}
 
+	mrzImagePath := imagePath
+	mrzCleanup := func() {}
+	if processedPath, cleanup, err := prepareMRZImage(imagePath); err == nil {
+		mrzImagePath = processedPath
+		mrzCleanup = cleanup
+	}
+	defer mrzCleanup()
+
 	mrzArgs := []string{
 		"--psm", "6",
 		"-c", "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
@@ -72,7 +80,7 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 	attemptErrors := make([]string, 0, len(languages))
 
 	for _, language := range languages {
-		text, err := p.runTesseractText(imagePath, language, mrzArgs)
+		text, err := p.runTesseractText(mrzImagePath, language, mrzArgs)
 		if err != nil {
 			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", language, err))
 			continue
