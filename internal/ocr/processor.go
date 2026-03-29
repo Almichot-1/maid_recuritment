@@ -188,6 +188,14 @@ func (p *OCRProcessor) ExtractText(imagePath string) (string, error) {
 }
 
 func (p *OCRProcessor) ExtractPassportData(imagePath string) (*PassportData, error) {
+	return p.extractPassportData(imagePath, true)
+}
+
+func (p *OCRProcessor) ExtractPassportPreviewData(imagePath string) (*PassportData, error) {
+	return p.extractPassportData(imagePath, false)
+}
+
+func (p *OCRProcessor) extractPassportData(imagePath string, includeVisualZone bool) (*PassportData, error) {
 	mrz1, mrz2, conf, err := p.ExtractMRZ(imagePath)
 	if err != nil {
 		return nil, err
@@ -217,15 +225,17 @@ func (p *OCRProcessor) ExtractPassportData(imagePath string) (*PassportData, err
 		ExtractedAt:    time.Now().UTC(),
 	}
 
-	if vz, err := p.ExtractVisualZone(imagePath); err == nil && vz != nil {
-		if strings.TrimSpace(vz.PlaceOfBirth) != "" {
-			data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
-		}
-		if !vz.DateOfIssue.IsZero() {
-			data.DateOfIssue = vz.DateOfIssue.UTC()
-		}
-		if strings.TrimSpace(vz.Authority) != "" {
-			data.IssuingAuthority = strings.TrimSpace(vz.Authority)
+	if includeVisualZone {
+		if vz, err := p.ExtractVisualZone(imagePath); err == nil && vz != nil {
+			if strings.TrimSpace(vz.PlaceOfBirth) != "" {
+				data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
+			}
+			if !vz.DateOfIssue.IsZero() {
+				data.DateOfIssue = vz.DateOfIssue.UTC()
+			}
+			if strings.TrimSpace(vz.Authority) != "" {
+				data.IssuingAuthority = strings.TrimSpace(vz.Authority)
+			}
 		}
 	}
 

@@ -112,7 +112,7 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 		return nil, fmt.Errorf("close temp passport image: %w", err)
 	}
 
-	result, err := s.ocrProcessor.ExtractPassportData(tempPath)
+	result, err := s.ocrProcessor.ExtractPassportPreviewData(tempPath)
 	if err != nil {
 		if isPassportOCRUnavailable(err) {
 			return nil, fmt.Errorf("%w: %v", ErrPassportOCRUnavailable, err)
