@@ -2,12 +2,14 @@ package ocr
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"os"
 	"os/exec"
 	"runtime"
 	"strings"
+	"time"
 )
 
 var ErrInvalidMRZOutput = errors.New("OCR produced invalid MRZ output")
@@ -38,7 +40,10 @@ func (p *OCRProcessor) runTesseractText(imagePath, lang string, extraArgs []stri
 	args = append(args, extraArgs...)
 	args = append(args, "-l", lang)
 
-	cmd := exec.Command(p.tesseractExe(), args...)
+	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, p.tesseractExe(), args...)
 	cmd.Env = append([]string{}, os.Environ()...)
 
 	var stdout bytes.Buffer
@@ -46,6 +51,9 @@ func (p *OCRProcessor) runTesseractText(imagePath, lang string, extraArgs []stri
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
 	if err := cmd.Run(); err != nil {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			return "", fmt.Errorf("tesseract CLI timed out after 20s for language %s", lang)
+		}
 		message := strings.TrimSpace(stderr.String())
 		if message == "" {
 			message = err.Error()

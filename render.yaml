@@ -14,7 +14,7 @@ services:
       - key: TESSERACT_PATH
         value: .render/tesseract/tesseract
       - key: TESSDATA_PREFIX
-        value: .render/tesseract
+        value: .render/tesseract/tessdata
       - key: OCR_LANGUAGE
         value: eng
       - key: RUN_EXPIRY_SCHEDULER
