@@ -147,19 +147,25 @@ export function DocumentUpload({
     [isAcceptedFile, maxSize, mode, onUpload, shouldRenderPreview]
   )
 
-  const handleInputChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
+  const scheduleProcessing = React.useCallback((selectedFile: File | null) => {
+    window.setTimeout(() => {
+      void processFile(selectedFile)
+    }, 0)
+  }, [processFile])
+
+  const handleInputChange = (event: React.ChangeEvent<HTMLInputElement>) => {
     const selectedFile = event.target.files?.[0] || null
-    await processFile(selectedFile)
+    scheduleProcessing(selectedFile)
   }
 
-  const handleDrop = async (event: React.DragEvent<HTMLDivElement>) => {
+  const handleDrop = (event: React.DragEvent<HTMLDivElement>) => {
     event.preventDefault()
     if (disabled || status === "selected" || status === "uploading") {
       return
     }
     setIsDragActive(false)
     const selectedFile = event.dataTransfer.files?.[0] || null
-    await processFile(selectedFile)
+    scheduleProcessing(selectedFile)
   }
 
   const handleRemove = (event: React.MouseEvent) => {

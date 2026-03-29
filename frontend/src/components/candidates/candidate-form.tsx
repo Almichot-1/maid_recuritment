@@ -147,12 +147,12 @@ export function CandidateForm({
   const { mutateAsync: parsePassport, isPending: isParsingPassport } =
     useParsePassport(candidateId);
   const [documentResetKey, setDocumentResetKey] = React.useState(0);
-  const [selectedPassportFile, setSelectedPassportFile] =
-    React.useState<File | null>(null);
   const [passportPreview, setPassportPreview] =
     React.useState<PassportData | null>(null);
-  const [lastAutoParsedPassportKey, setLastAutoParsedPassportKey] =
-    React.useState<string | null>(null);
+  const [passportDocumentSelected, setPassportDocumentSelected] =
+    React.useState(false);
+  const [passportDocumentIsImage, setPassportDocumentIsImage] =
+    React.useState(false);
   const [ageAutoSyncEnabled, setAgeAutoSyncEnabled] = React.useState(true);
 
   const blankFormValues = React.useMemo<CandidateFormValues>(
@@ -258,9 +258,9 @@ export function CandidateForm({
       photo: false,
       video: false,
     });
-    setSelectedPassportFile(null);
+    setPassportDocumentSelected(false);
+    setPassportDocumentIsImage(false);
     setPassportPreview(null);
-    setLastAutoParsedPassportKey(null);
     setDocumentResetKey((current) => current + 1);
     onDocumentChange?.("passport", null);
     onDocumentChange?.("photo", null);
@@ -281,15 +281,7 @@ export function CandidateForm({
     }
   });
 
-  const handleExtractPassportData = React.useCallback(async () => {
-    if (
-      !selectedPassportFile ||
-      !selectedPassportFile.type.startsWith("image/")
-    ) {
-      return;
-    }
-
-    const parsed = await parsePassport(selectedPassportFile);
+  const applyPassportAutofill = React.useCallback((parsed: PassportData) => {
     setPassportPreview(parsed);
 
     if (parsed.holder_name?.trim()) {
@@ -329,59 +321,42 @@ export function CandidateForm({
         shouldValidate: true,
       });
     }
-  }, [form, parsePassport, selectedPassportFile]);
+  }, [form]);
 
-  React.useEffect(() => {
-    if (
-      !selectedPassportFile ||
-      !selectedPassportFile.type.startsWith("image/")
-    ) {
-      return;
-    }
-    const fileKey = `${selectedPassportFile.name}:${selectedPassportFile.size}:${selectedPassportFile.lastModified}`;
-    if (lastAutoParsedPassportKey === fileKey || isParsingPassport) {
+  const handlePassportFileSelected = React.useCallback((file: File | null) => {
+    if (!file || !file.type.startsWith("image/")) {
       return;
     }
 
-    setLastAutoParsedPassportKey(fileKey);
     const idleWindow = window as Window & {
       requestIdleCallback?: (
         callback: () => void,
         options?: { timeout: number },
       ) => number;
-      cancelIdleCallback?: (handle: number) => void;
     };
-    let timer: number | null = null;
-    let idleHandle: number | null = null;
-    const runExtraction = () => {
-      void handleExtractPassportData();
+
+    const runExtraction = async () => {
+      try {
+        const parsed = await parsePassport(file);
+        applyPassportAutofill(parsed);
+      } catch {
+        // The mutation already surfaces the error to the user.
+      }
     };
 
     if (typeof idleWindow.requestIdleCallback === "function") {
-      idleHandle = idleWindow.requestIdleCallback(runExtraction, {
-        timeout: 500,
+      idleWindow.requestIdleCallback(() => {
+        void runExtraction();
+      }, {
+        timeout: 700,
       });
-    } else {
-      timer = window.setTimeout(runExtraction, 120);
+      return;
     }
 
-    return () => {
-      if (
-        idleHandle !== null &&
-        typeof idleWindow.cancelIdleCallback === "function"
-      ) {
-        idleWindow.cancelIdleCallback(idleHandle);
-      }
-      if (timer !== null) {
-        window.clearTimeout(timer);
-      }
-    };
-  }, [
-    handleExtractPassportData,
-    isParsingPassport,
-    lastAutoParsedPassportKey,
-    selectedPassportFile,
-  ]);
+    window.setTimeout(() => {
+      void runExtraction();
+    }, 180);
+  }, [applyPassportAutofill, parsePassport]);
 
   const applicantDetailPreview = [
     {
@@ -495,17 +470,22 @@ export function CandidateForm({
                             ...current,
                             passport: true,
                           }));
-                          setSelectedPassportFile(file);
-                          setLastAutoParsedPassportKey(null);
+                          setPassportDocumentSelected(true);
+                          setPassportDocumentIsImage(
+                            file.type.startsWith("image/"),
+                          );
+                          setPassportPreview(null);
                           onDocumentChange?.("passport", file);
+                          handlePassportFileSelected(file);
                         }}
                         onRemove={() => {
                           setDocumentPresence((current) => ({
                             ...current,
                             passport: false,
                           }));
-                          setSelectedPassportFile(null);
-                          setLastAutoParsedPassportKey(null);
+                          setPassportDocumentSelected(false);
+                          setPassportDocumentIsImage(false);
+                          setPassportPreview(null);
                           onDocumentChange?.("passport", null);
                         }}
                       />
@@ -579,8 +559,7 @@ export function CandidateForm({
                       </p>
                     </div>
 
-                    {selectedPassportFile &&
-                    !selectedPassportFile.type.startsWith("image/") ? (
+                    {passportDocumentSelected && !passportDocumentIsImage ? (
                       <div className="mt-4 rounded-xl border border-amber-300/40 bg-amber-50 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
                         Upload a passport image in JPG or PNG format if you want
                         OCR extraction. PDF passports can still be saved
@@ -588,8 +567,7 @@ export function CandidateForm({
                       </div>
                     ) : null}
 
-                    {selectedPassportFile?.type.startsWith("image/") &&
-                    isParsingPassport ? (
+                    {passportDocumentIsImage && isParsingPassport ? (
                       <div className="mt-4 flex items-center gap-3 rounded-xl border border-border/70 bg-background/80 px-4 py-4 text-sm text-muted-foreground">
                         <Loader2 className="h-4 w-4 animate-spin text-primary" />
                         Reading the passport image and filling the form now.
