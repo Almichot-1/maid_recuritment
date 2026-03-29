@@ -12,8 +12,9 @@ import (
 type contextKey string
 
 const (
-	userIDContextKey contextKey = "user_id"
-	roleContextKey   contextKey = "role"
+	userIDContextKey  contextKey = "user_id"
+	roleContextKey    contextKey = "role"
+	sessionContextKey contextKey = "session_id"
 )
 
 func AuthMiddleware(authService *service.AuthService) func(http.Handler) http.Handler {
@@ -25,7 +26,7 @@ func AuthMiddleware(authService *service.AuthService) func(http.Handler) http.Ha
 				return
 			}
 
-			userID, role, err := authService.ValidateToken(token)
+			userID, role, sessionID, err := authService.ValidateTokenWithSession(token)
 			if err != nil {
 				if errors.Is(err, service.ErrInvalidToken) {
 					_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
@@ -37,6 +38,7 @@ func AuthMiddleware(authService *service.AuthService) func(http.Handler) http.Ha
 
 			ctx := context.WithValue(r.Context(), userIDContextKey, userID)
 			ctx = context.WithValue(ctx, roleContextKey, role)
+			ctx = context.WithValue(ctx, sessionContextKey, sessionID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -50,4 +52,9 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 func RoleFromContext(ctx context.Context) (string, bool) {
 	role, ok := ctx.Value(roleContextKey).(string)
 	return role, ok
+}
+
+func SessionIDFromContext(ctx context.Context) (string, bool) {
+	sessionID, ok := ctx.Value(sessionContextKey).(string)
+	return sessionID, ok
 }

@@ -140,6 +140,7 @@ func (r *GormUserRepository) Update(user *domain.User) error {
 		"full_name":      user.FullName,
 		"role":           user.Role,
 		"company_name":   user.CompanyName,
+		"avatar_url":     user.AvatarURL,
 		"account_status": user.AccountStatus,
 		"is_active":      user.IsActive,
 	}

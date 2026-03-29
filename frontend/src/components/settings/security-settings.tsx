@@ -51,7 +51,7 @@ export function SecuritySettings() {
 
   const getPasswordStrength = (password: string) => {
     if (!password) return { strength: 0, label: "", color: "" }
-    
+
     let strength = 0
     if (password.length >= 8) strength++
     if (password.length >= 12) strength++
@@ -68,20 +68,23 @@ export function SecuritySettings() {
   const passwordStrength = getPasswordStrength(newPassword)
 
   const onSubmit = (data: PasswordChangeData & { confirm_password: string }) => {
-    changePassword({
-      current_password: data.current_password,
-      new_password: data.new_password,
-    }, {
-      onSuccess: () => {
-        form.reset()
+    changePassword(
+      {
+        current_password: data.current_password,
+        new_password: data.new_password,
       },
-    })
+      {
+        onSuccess: () => {
+          form.reset()
+        },
+      },
+    )
   }
 
   return (
     <div className="space-y-6">
       <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">
-        Password changes save through the live API, and the session list below now tracks the active browser sessions you have opened on this device.
+        Password changes save through the live API, and the session list below now tracks the active account sessions across your devices.
       </div>
 
       <Card className="overflow-hidden border-border/70 shadow-sm">
@@ -94,7 +97,6 @@ export function SecuritySettings() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Current Password */}
               <FormField
                 control={form.control}
                 name="current_password"
@@ -109,7 +111,6 @@ export function SecuritySettings() {
                 )}
               />
 
-              {/* New Password */}
               <FormField
                 control={form.control}
                 name="new_password"
@@ -119,10 +120,10 @@ export function SecuritySettings() {
                     <FormControl>
                       <Input type="password" placeholder="Enter new password" {...field} />
                     </FormControl>
-                    {newPassword && (
-                      <div className="space-y-2 mt-2">
+                    {newPassword ? (
+                      <div className="mt-2 space-y-2">
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                             <div
                               className={cn("h-full transition-all", passwordStrength.color)}
                               style={{ width: `${(passwordStrength.strength / 5) * 100}%` }}
@@ -134,13 +135,12 @@ export function SecuritySettings() {
                           Use 8+ characters with a mix of letters, numbers & symbols
                         </p>
                       </div>
-                    )}
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              {/* Confirm Password */}
               <FormField
                 control={form.control}
                 name="confirm_password"
@@ -155,9 +155,8 @@ export function SecuritySettings() {
                 )}
               />
 
-              {/* Submit Button */}
               <Button type="submit" disabled={isChangingPassword}>
-                {isChangingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isChangingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Update Password
               </Button>
             </form>
@@ -169,14 +168,14 @@ export function SecuritySettings() {
         <CardHeader>
           <CardTitle>Active Sessions</CardTitle>
           <CardDescription>
-            Review the sessions this browser has remembered for your account and clear the ones you no longer want.
+            Review the active sessions linked to your account and remove the ones you no longer trust.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="grid gap-3">
             {sessions.length === 0 ? (
               <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
-                No remembered browser sessions yet.
+                No active sessions found.
               </div>
             ) : (
               sessions.map((session) => {
@@ -206,7 +205,7 @@ export function SecuritySettings() {
                           {session.browser_name} • {session.os_name}
                         </p>
                         <p className="text-xs text-muted-foreground">
-                          Last active {formatDistanceToNow(new Date(session.last_active_at), { addSuffix: true })}
+                          Last active {formatDistanceToNow(new Date(session.last_seen_at), { addSuffix: true })}
                         </p>
                       </div>
                     </div>
@@ -234,9 +233,9 @@ export function SecuritySettings() {
             <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/20">
               <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
               <div className="text-sm text-amber-800 dark:text-amber-200">
-                <p className="mb-1 font-medium">Clear this browser</p>
+                <p className="mb-1 font-medium">Sign out everywhere</p>
                 <p className="text-xs">
-                  This signs out the current browser session and removes the remembered session history stored on this browser.
+                  This revokes all active sessions for your account, including the one you are using right now.
                 </p>
               </div>
             </div>
@@ -251,7 +250,7 @@ export function SecuritySettings() {
               ) : (
                 <LogOut className="mr-2 h-4 w-4" />
               )}
-              Sign Out and Clear Sessions
+              Sign Out on All Devices
             </Button>
           </div>
         </CardContent>

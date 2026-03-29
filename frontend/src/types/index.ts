@@ -16,7 +16,19 @@ export interface User {
   full_name: string;
   role: UserRole;
   company_name?: string;
+  avatar_url?: string;
   account_status: AccountStatus;
+  current_session_id?: string;
+}
+
+export interface UserSession {
+  id: string;
+  device_label: string;
+  browser_name: string;
+  os_name: string;
+  ip_address?: string;
+  last_seen_at: string;
+  expires_at: string;
 }
 
 export enum AdminRole {

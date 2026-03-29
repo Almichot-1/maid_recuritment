@@ -22,6 +22,7 @@ type User struct {
 	FullName      string
 	Role          UserRole `gorm:"type:user_role;not null"`
 	CompanyName   string
+	AvatarURL     string
 	AccountStatus AccountStatus `gorm:"type:account_status;not null;default:active"`
 	IsActive      bool          `gorm:"not null;default:true"`
 	CreatedAt     time.Time     `gorm:"not null;default:now()"`

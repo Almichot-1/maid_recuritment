@@ -35,6 +35,7 @@ type S3StorageService struct {
 var allowedContentTypes = map[string]struct{}{
 	"image/jpeg":      {},
 	"image/png":       {},
+	"image/webp":      {},
 	"video/mp4":       {},
 	"application/pdf": {},
 }

@@ -109,7 +109,7 @@ export function ProfileSettings() {
                 <div>
                   <p className="text-sm font-semibold">Profile photo</p>
                   <p className="text-sm text-muted-foreground">
-                    Saved on this device and reused across the app immediately.
+                    Saved to your account and reused across the app on every device.
                   </p>
                 </div>
 
@@ -125,7 +125,6 @@ export function ProfileSettings() {
                       className="text-destructive hover:text-destructive"
                       onClick={() => {
                         clearAvatar()
-                        toast.success("Profile photo removed")
                       }}
                     >
                       <Trash2 className="mr-2 h-4 w-4" />
@@ -153,7 +152,6 @@ export function ProfileSettings() {
 
                 try {
                   await saveAvatar(file)
-                  toast.success("Profile photo saved on this device")
                 } catch (error) {
                   toast.error(error instanceof Error ? error.message : "Failed to save profile photo")
                 } finally {
@@ -168,7 +166,7 @@ export function ProfileSettings() {
               <div className="space-y-2">
                 <p className="text-sm font-semibold">Agency logo</p>
                 <p className="text-sm text-muted-foreground">
-                  Upload this once and we will reuse it while you add candidates on this device.
+                  Upload this once and we will reuse it while you add candidates.
                 </p>
               </div>
 

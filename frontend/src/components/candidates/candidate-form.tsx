@@ -69,6 +69,7 @@ const EDUCATION_LEVEL_OPTIONS = [
 
 interface CandidateFormProps {
   candidateId?: string;
+  mode?: "create" | "edit";
   initialData?: Partial<CandidateFormValues>;
   initialDocuments?: Partial<Record<"passport" | "photo" | "video", File | null>>;
   onSubmit: (
@@ -126,6 +127,7 @@ function SectionTitle({
 
 export function CandidateForm({
   candidateId,
+  mode = "create",
   initialData,
   initialDocuments,
   onSubmit,
@@ -174,7 +176,7 @@ export function CandidateForm({
   const watchedDateOfBirth = form.watch("date_of_birth");
   const watchedAge = form.watch("age");
 
-  const isEditing = !!initialData;
+  const isEditing = mode === "edit";
   const addLanguageEntry = () =>
     append({
       language: LANGUAGES_OPTIONS[0],

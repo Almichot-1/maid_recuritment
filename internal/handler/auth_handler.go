@@ -49,12 +49,14 @@ type RegisterResponse struct {
 }
 
 type AuthUserView struct {
-	ID            string `json:"id"`
-	Email         string `json:"email"`
-	FullName      string `json:"full_name"`
-	Role          string `json:"role"`
-	CompanyName   string `json:"company_name,omitempty"`
-	AccountStatus string `json:"account_status"`
+	ID               string `json:"id"`
+	Email            string `json:"email"`
+	FullName         string `json:"full_name"`
+	Role             string `json:"role"`
+	CompanyName      string `json:"company_name,omitempty"`
+	AvatarURL        string `json:"avatar_url,omitempty"`
+	AccountStatus    string `json:"account_status"`
+	CurrentSessionID string `json:"current_session_id,omitempty"`
 }
 
 type AuthHandler struct {
@@ -114,7 +116,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	_ = utils.WriteJSON(w, http.StatusAccepted, RegisterResponse{
 		Message: "Registration submitted and pending approval",
-		User:    mapUserToAuthUserView(user),
+		User:    mapUserToAuthUserView(user, ""),
 	})
 }
 
@@ -130,7 +132,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	token, err := h.authService.Login(req.Email, req.Password)
+	token, sessionID, err := h.authService.LoginWithSession(req.Email, req.Password, r.UserAgent(), clientIP(r))
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrInvalidCredentials):
@@ -166,7 +168,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	middleware.SetSessionCookie(w, r, middleware.UserSessionCookieName, token, middleware.UserSessionMaxAgeSeconds)
 	_ = utils.WriteJSON(w, http.StatusOK, AuthResponse{
 		Token: token,
-		User:  mapUserToAuthUserView(user),
+		User:  mapUserToAuthUserView(user, sessionID),
 	})
 }
 
@@ -226,6 +228,9 @@ func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
+	userID, _ := middleware.UserIDFromContext(r.Context())
+	sessionID, _ := middleware.SessionIDFromContext(r.Context())
+	_ = h.authService.RevokeSession(userID, sessionID)
 	middleware.ClearSessionCookie(w, r, middleware.UserSessionCookieName)
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "logged out"})
 }
@@ -247,18 +252,21 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	sessionID, _ := middleware.SessionIDFromContext(r.Context())
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]AuthUserView{
-		"user": mapUserToAuthUserView(user),
+		"user": mapUserToAuthUserView(user, sessionID),
 	})
 }
 
-func mapUserToAuthUserView(user *domain.User) AuthUserView {
+func mapUserToAuthUserView(user *domain.User, currentSessionID string) AuthUserView {
 	return AuthUserView{
-		ID:            user.ID,
-		Email:         user.Email,
-		FullName:      user.FullName,
-		Role:          string(user.Role),
-		CompanyName:   user.CompanyName,
-		AccountStatus: string(user.AccountStatus),
+		ID:               user.ID,
+		Email:            user.Email,
+		FullName:         user.FullName,
+		Role:             string(user.Role),
+		CompanyName:      user.CompanyName,
+		AvatarURL:        user.AvatarURL,
+		AccountStatus:    string(user.AccountStatus),
+		CurrentSessionID: currentSessionID,
 	}
 }

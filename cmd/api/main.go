@@ -55,6 +55,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize password reset repository: %v", err)
 	}
+	userSessionRepository, err := repository.NewGormUserSessionRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize user session repository: %v", err)
+	}
 
 	authService, err := service.NewAuthService(userRepository, cfg)
 	if err != nil {
@@ -118,6 +122,7 @@ func main() {
 		log.Fatalf("failed to initialize email service: %v", err)
 	}
 	authService.SetEmailService(emailService)
+	authService.SetSessionRepository(userSessionRepository)
 	authService.SetPasswordResetRepository(passwordResetRepository)
 	agencyApprovalService, err := service.NewAgencyApprovalService(userRepository, adminRepository, agencyApprovalRepository, auditLogRepository, emailService)
 	if err != nil {
@@ -178,7 +183,7 @@ func main() {
 	approvalService.SetPlatformSettingsReader(platformSettingsService)
 
 	authHandler := handler.NewAuthHandler(authService, userRepository, agencyApprovalService)
-	userHandler := handler.NewUserHandler(userRepository)
+	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService)
 	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService, passportRepository, medicalRepository, statusStepRepository)
 	candidateHandler := handler.NewCandidateHandler(candidateService, passportOCRService, candidateRepository, selectionRepository, pairingService)
 	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService)
@@ -323,7 +328,12 @@ func main() {
 
 		protected.Route("/users", func(ur chi.Router) {
 			ur.Patch("/profile", userHandler.UpdateProfile)
+			ur.Post("/avatar", userHandler.UploadAvatar)
+			ur.Delete("/avatar", userHandler.DeleteAvatar)
 			ur.Post("/change-password", userHandler.ChangePassword)
+			ur.Get("/sessions", userHandler.ListSessions)
+			ur.Delete("/sessions/{id}", userHandler.RevokeSession)
+			ur.Post("/sessions/logout-all", userHandler.LogoutAllSessions)
 		})
 	})
 

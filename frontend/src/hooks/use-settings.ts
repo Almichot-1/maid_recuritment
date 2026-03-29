@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
-import { clearBrowserSessions } from '@/lib/browser-sessions';
+import { User } from '@/types';
 
 export interface ProfileUpdateData {
   full_name: string;
@@ -34,7 +34,7 @@ export function useUpdateProfile() {
 
   return useMutation({
     mutationFn: async (data: ProfileUpdateData) => {
-      const response = await api.patch<{ user: { full_name: string; company_name?: string } }>('/users/profile', data);
+      const response = await api.patch<{ user: User }>('/users/profile', data);
       return response.data.user;
     },
     onSuccess: (user) => {
@@ -96,20 +96,16 @@ export function useUpdatePreferences() {
 export function useLogoutAllDevices() {
   const router = useRouter();
   const logout = useAuthStore((state) => state.logout);
-  const user = useAuthStore((state) => state.user);
 
   return useMutation({
     mutationFn: async () => {
-      await api.post('/auth/logout');
-      if (user?.id) {
-        clearBrowserSessions(user.id);
-      }
+      await api.post('/users/sessions/logout-all');
       return true;
     },
     onSuccess: () => {
       logout();
       router.push('/login');
-      toast.success('Signed out on this browser and cleared remembered sessions.');
+      toast.success('Signed out everywhere and cleared all active sessions.');
     },
     onError: (error: unknown) => {
       const message = axios.isAxiosError<ApiErrorResponse>(error)

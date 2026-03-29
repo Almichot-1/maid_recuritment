@@ -7,8 +7,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"maid-recruitment-tracking/internal/config"
 	"maid-recruitment-tracking/internal/domain"
@@ -197,6 +199,26 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 		}
 		return nil, fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
 	}
+	if strings.TrimSpace(result.PlaceOfBirth) == "" {
+		if enrichedResult, enrichedErr := s.ocrProcessor.ExtractPassportData(tempPath); enrichedErr == nil && enrichedResult != nil {
+			if strings.TrimSpace(enrichedResult.PlaceOfBirth) != "" {
+				result.PlaceOfBirth = strings.TrimSpace(enrichedResult.PlaceOfBirth)
+			}
+			if result.DateOfIssue.IsZero() && !enrichedResult.DateOfIssue.IsZero() {
+				result.DateOfIssue = enrichedResult.DateOfIssue
+			}
+			if strings.TrimSpace(result.IssuingAuthority) == "" && strings.TrimSpace(enrichedResult.IssuingAuthority) != "" {
+				result.IssuingAuthority = strings.TrimSpace(enrichedResult.IssuingAuthority)
+			}
+		}
+		if strings.TrimSpace(result.PlaceOfBirth) == "" {
+			if rawText, textErr := s.ocrProcessor.ExtractText(tempPath); textErr == nil {
+				if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, result.DateOfBirth); fallbackPlace != "" {
+					result.PlaceOfBirth = fallbackPlace
+				}
+			}
+		}
+	}
 
 	holderName := strings.TrimSpace(strings.TrimSpace(result.GivenNames + " " + result.Surname))
 	passportData := &domain.PassportData{
@@ -264,4 +286,74 @@ func isPassportOCRUnavailable(err error) bool {
 	default:
 		return false
 	}
+}
+
+func extractPlaceOfBirthFromOCRText(text string, dateOfBirth time.Time) string {
+	if strings.TrimSpace(text) == "" || dateOfBirth.IsZero() {
+		return ""
+	}
+
+	lines := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
+	month := strings.ToUpper(dateOfBirth.Format("Jan"))
+	day := dateOfBirth.Day()
+	datePattern := regexp.MustCompile(fmt.Sprintf(`(?i)\b%d\s*%s(?:['\s]*\d{1,2})?\b`, day, month))
+
+	for index, rawLine := range lines {
+		upperLine := strings.ToUpper(strings.TrimSpace(rawLine))
+		if upperLine == "" {
+			continue
+		}
+
+		if !datePattern.MatchString(upperLine) {
+			continue
+		}
+
+		if candidate := cleanupPlaceOfBirthValue(datePattern.ReplaceAllString(rawLine, " ")); candidate != "" {
+			return candidate
+		}
+
+		if index+1 < len(lines) {
+			if candidate := cleanupPlaceOfBirthValue(lines[index+1]); candidate != "" {
+				return candidate
+			}
+		}
+	}
+
+	return ""
+}
+
+func cleanupPlaceOfBirthValue(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	value = strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r):
+			return unicode.ToUpper(r)
+		default:
+			return ' '
+		}
+	}, value)
+
+	parts := strings.Fields(value)
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch part {
+		case "SEX", "F", "M", "MF", "FM", "PLACE", "BIRTH", "DATE", "OF", "DOB", "NATIONALITY":
+			continue
+		}
+		if len(part) < 3 {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	if len(filtered) > 3 {
+		filtered = filtered[len(filtered)-3:]
+	}
+	return strings.Join(filtered, " ")
 }

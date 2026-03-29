@@ -327,6 +327,7 @@ export default function NewCandidatePage() {
       
       <div className="relative mx-auto max-w-6xl rounded-2xl border border-border/60 bg-card p-3 shadow-sm sm:p-5 lg:p-6">
         <CandidateForm 
+          mode="create"
           initialData={draftInitialData}
           initialDocuments={pendingDocuments}
           onSubmit={handleSubmit} 

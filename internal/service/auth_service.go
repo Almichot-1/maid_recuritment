@@ -44,6 +44,7 @@ const (
 
 type AuthService struct {
 	userRepository          domain.UserRepository
+	sessionRepository       domain.UserSessionRepository
 	passwordResetRepository domain.PasswordResetRequestRepository
 	emailService            EmailService
 	jwtSecret               []byte
@@ -56,6 +57,8 @@ type authClaims struct {
 	Role   string `json:"role"`
 	jwt.RegisteredClaims
 }
+
+const authSessionTouchInterval = time.Minute
 
 func NewAuthService(userRepository domain.UserRepository, cfg *config.Config) (*AuthService, error) {
 	if userRepository == nil {
@@ -77,6 +80,10 @@ func NewAuthService(userRepository domain.UserRepository, cfg *config.Config) (*
 
 func (s *AuthService) SetEmailService(emailService EmailService) {
 	s.emailService = emailService
+}
+
+func (s *AuthService) SetSessionRepository(sessionRepository domain.UserSessionRepository) {
+	s.sessionRepository = sessionRepository
 }
 
 func (s *AuthService) SetPasswordResetRepository(passwordResetRepository domain.PasswordResetRequestRepository) {
@@ -126,7 +133,7 @@ func (s *AuthService) Register(email, password, fullName, role, companyName stri
 		return "", fmt.Errorf("create user: %w", err)
 	}
 
-	token, err := s.generateToken(user.ID, user.Email, string(user.Role))
+	token, err := s.generateToken(user.ID, user.Email, string(user.Role), "", time.Now().Add(24*time.Hour))
 	if err != nil {
 		return "", err
 	}
@@ -135,29 +142,50 @@ func (s *AuthService) Register(email, password, fullName, role, companyName stri
 }
 
 func (s *AuthService) Login(email, password string) (string, error) {
+	token, _, err := s.LoginWithSession(email, password, "", "")
+	return token, err
+}
+
+func (s *AuthService) LoginWithSession(email, password, userAgent, ipAddress string) (string, string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 
 	user, err := s.userRepository.GetByEmail(email)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return "", ErrInvalidCredentials
+			return "", "", ErrInvalidCredentials
 		}
-		return "", fmt.Errorf("get user by email: %w", err)
+		return "", "", fmt.Errorf("get user by email: %w", err)
 	}
 
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
-		return "", ErrInvalidCredentials
+		return "", "", ErrInvalidCredentials
 	}
 	if err := validateUserAccess(user); err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	token, err := s.generateToken(user.ID, user.Email, string(user.Role))
+	expiresAt := time.Now().UTC().Add(24 * time.Hour)
+	sessionID := ""
+	if s.sessionRepository != nil {
+		session := &domain.UserSession{
+			UserID:     user.ID,
+			UserAgent:  strings.TrimSpace(userAgent),
+			IPAddress:  strings.TrimSpace(ipAddress),
+			LastSeenAt: time.Now().UTC(),
+			ExpiresAt:  expiresAt,
+		}
+		if err := s.sessionRepository.Create(session); err != nil {
+			return "", "", fmt.Errorf("create user session: %w", err)
+		}
+		sessionID = session.ID
+	}
+
+	token, err := s.generateToken(user.ID, user.Email, string(user.Role), sessionID, expiresAt)
 	if err != nil {
-		return "", err
+		return "", "", err
 	}
 
-	return token, nil
+	return token, sessionID, nil
 }
 
 func (s *AuthService) RequestPasswordReset(email string) (string, error) {
@@ -274,6 +302,9 @@ func (s *AuthService) ResetPassword(email, code, newPassword string) error {
 	if err := s.userRepository.Update(user); err != nil {
 		return err
 	}
+	if s.sessionRepository != nil {
+		_ = s.sessionRepository.RevokeAllByUserID(user.ID, "")
+	}
 
 	if err := s.passwordResetRepository.MarkUsed(request.ID); err != nil {
 		return fmt.Errorf("mark password reset request used: %w", err)
@@ -283,9 +314,14 @@ func (s *AuthService) ResetPassword(email, code, newPassword string) error {
 }
 
 func (s *AuthService) ValidateToken(tokenString string) (string, string, error) {
+	userID, role, _, err := s.ValidateTokenWithSession(tokenString)
+	return userID, role, err
+}
+
+func (s *AuthService) ValidateTokenWithSession(tokenString string) (string, string, string, error) {
 	tokenString = strings.TrimSpace(tokenString)
 	if tokenString == "" {
-		return "", "", ErrInvalidToken
+		return "", "", "", ErrInvalidToken
 	}
 
 	claims := &authClaims{}
@@ -296,35 +332,55 @@ func (s *AuthService) ValidateToken(tokenString string) (string, string, error) 
 		return s.jwtSecret, nil
 	})
 	if err != nil || token == nil || !token.Valid {
-		return "", "", ErrInvalidToken
+		return "", "", "", ErrInvalidToken
 	}
 
 	if claims.UserID == "" || claims.Role == "" {
-		return "", "", ErrInvalidToken
+		return "", "", "", ErrInvalidToken
+	}
+
+	if s.sessionRepository != nil && strings.TrimSpace(claims.ID) != "" {
+		session, err := s.sessionRepository.GetByID(claims.ID)
+		if err != nil {
+			if errors.Is(err, repository.ErrUserSessionNotFound) {
+				return "", "", "", ErrInvalidToken
+			}
+			return "", "", "", fmt.Errorf("get user session by id: %w", err)
+		}
+		if strings.TrimSpace(session.UserID) != claims.UserID || session.RevokedAt != nil || time.Now().UTC().After(session.ExpiresAt.UTC()) {
+			return "", "", "", ErrInvalidToken
+		}
+		if time.Since(session.LastSeenAt.UTC()) >= authSessionTouchInterval {
+			_ = s.sessionRepository.Touch(session.ID, time.Now().UTC())
+		}
 	}
 
 	user, err := s.userRepository.GetByID(claims.UserID)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
-			return "", "", ErrInvalidToken
+			return "", "", "", ErrInvalidToken
 		}
-		return "", "", fmt.Errorf("get user by id: %w", err)
+		return "", "", "", fmt.Errorf("get user by id: %w", err)
 	}
 	if err := validateUserAccess(user); err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 
-	return claims.UserID, claims.Role, nil
+	return claims.UserID, claims.Role, claims.ID, nil
 }
 
-func (s *AuthService) generateToken(userID, email, role string) (string, error) {
-	now := time.Now()
+func (s *AuthService) generateToken(userID, email, role, sessionID string, expiresAt time.Time) (string, error) {
+	now := time.Now().UTC()
+	if expiresAt.IsZero() {
+		expiresAt = now.Add(24 * time.Hour)
+	}
 	claims := authClaims{
 		UserID: userID,
 		Email:  email,
 		Role:   role,
 		RegisteredClaims: jwt.RegisteredClaims{
-			ExpiresAt: jwt.NewNumericDate(now.Add(24 * time.Hour)),
+			ID:        strings.TrimSpace(sessionID),
+			ExpiresAt: jwt.NewNumericDate(expiresAt),
 			IssuedAt:  jwt.NewNumericDate(now),
 		},
 	}
@@ -336,6 +392,16 @@ func (s *AuthService) generateToken(userID, email, role string) (string, error) 
 	}
 
 	return signedToken, nil
+}
+
+func (s *AuthService) RevokeSession(userID, sessionID string) error {
+	if s.sessionRepository == nil || strings.TrimSpace(userID) == "" || strings.TrimSpace(sessionID) == "" {
+		return nil
+	}
+	if err := s.sessionRepository.RevokeByID(userID, sessionID); err != nil && !errors.Is(err, repository.ErrUserSessionNotFound) {
+		return fmt.Errorf("revoke session: %w", err)
+	}
+	return nil
 }
 
 func validateAuthEmail(email string) error {
