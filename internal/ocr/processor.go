@@ -82,6 +82,8 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 	}
 	languages := uniqueOCRLanguages("eng", p.lang, "ocrb")
 	attemptErrors := make([]string, 0, len(languages))
+	bestLine1, bestLine2 := "", ""
+	bestValidationErrors := 1 << 30
 
 	for _, language := range languages {
 		text, err := p.runTesseractTextWithTimeout(mrzImagePath, language, mrzArgs, 8*time.Second)
@@ -91,11 +93,33 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 		}
 
 		line1, line2 := extractMRZLinesFromText(text)
-		if line1 != "" && line2 != "" {
+		if line1 == "" || line2 == "" {
+			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: invalid MRZ output", language))
+			continue
+		}
+
+		parsed, parseErr := p.parser.ParseMRZ(line1, line2)
+		if parseErr == nil && parsed != nil && parsed.IsValid {
 			return line1, line2, 0, nil
 		}
 
-		attemptErrors = append(attemptErrors, fmt.Sprintf("%s: invalid MRZ output", language))
+		validationErrors := bestValidationErrors
+		if parsed != nil && len(parsed.ValidationErrors) > 0 {
+			validationErrors = len(parsed.ValidationErrors)
+		}
+		if validationErrors < bestValidationErrors {
+			bestValidationErrors = validationErrors
+			bestLine1, bestLine2 = line1, line2
+		}
+		if parseErr != nil {
+			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", language, parseErr))
+			continue
+		}
+		attemptErrors = append(attemptErrors, fmt.Sprintf("%s: invalid MRZ output (%s)", language, strings.Join(parsed.ValidationErrors, ", ")))
+	}
+
+	if bestLine1 != "" && bestLine2 != "" {
+		return bestLine1, bestLine2, 0, nil
 	}
 
 	if len(attemptErrors) == 0 {
