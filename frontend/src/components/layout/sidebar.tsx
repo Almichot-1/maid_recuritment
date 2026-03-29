@@ -11,6 +11,7 @@ import { useCurrentUser, useLogout } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useLayoutStore } from "@/stores/layout-store"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
+import { useProfileAvatar } from "@/hooks/use-profile-avatar"
 import { getRoleHomeLabel, getRoleHomePath, isRoleHomePath } from "@/lib/role-home"
 import { PartnerSwitcher } from "@/components/pairings/partner-switcher"
 
@@ -43,6 +44,7 @@ function getActiveNavHref(pathname: string, links: NavItem[]) {
 export function Sidebar() {
   const pathname = usePathname()
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
+  const { avatarDataURL } = useProfileAvatar()
   const { hasActivePairs, isReady } = usePairingContext()
   const logout = useLogout()
   const { isSidebarCollapsed, toggleSidebar, setSidebarCollapsed } = useLayoutStore()
@@ -158,7 +160,7 @@ export function Sidebar() {
       <div className="border-t border-slate-800 p-4 overflow-hidden">
         <div className={cn("flex items-center", isSidebarCollapsed ? "justify-center" : "gap-3")}>
           <Avatar className="h-8 w-8 shrink-0 border border-slate-700">
-            <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`} alt={user.full_name} />
+            <AvatarImage src={avatarDataURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`} alt={user.full_name} />
             <AvatarFallback className="bg-slate-800 text-xs text-white">{user.full_name?.charAt(0) || "U"}</AvatarFallback>
           </Avatar>
           {!isSidebarCollapsed && (

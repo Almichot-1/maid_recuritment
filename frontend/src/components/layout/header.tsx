@@ -19,6 +19,7 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
+import { useProfileAvatar } from "@/hooks/use-profile-avatar"
 import { isRoleHomePath } from "@/lib/role-home"
 
 const NotificationBell = dynamic(
@@ -28,6 +29,7 @@ const NotificationBell = dynamic(
 export function Header() {
   const pathname = usePathname()
   const { user } = useCurrentUser()
+  const { avatarDataURL } = useProfileAvatar()
   const logout = useLogout()
   
   // Format pathname roughly to a readable string
@@ -74,7 +76,7 @@ export function Header() {
           <DropdownMenuTrigger asChild>
             <Button variant="ghost" className="relative h-8 w-8 rounded-full ml-1">
               <Avatar className="h-8 w-8">
-                <AvatarImage src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`} alt={user.full_name} />
+                <AvatarImage src={avatarDataURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`} alt={user.full_name} />
                 <AvatarFallback>{user.full_name?.charAt(0) || "U"}</AvatarFallback>
               </Avatar>
             </Button>

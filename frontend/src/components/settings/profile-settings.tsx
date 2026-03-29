@@ -4,11 +4,12 @@ import * as React from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { CheckCircle2, ImagePlus, Loader2, Trash2, Upload, User } from "lucide-react"
+import { Camera, CheckCircle2, ImagePlus, Loader2, Trash2, Upload, User } from "lucide-react"
 import { toast } from "sonner"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useAgencyBranding } from "@/hooks/use-agency-branding"
+import { useProfileAvatar } from "@/hooks/use-profile-avatar"
 import { useUpdateProfile, ProfileUpdateData } from "@/hooks/use-settings"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -32,9 +33,11 @@ const profileSchema = z.object({
 
 export function ProfileSettings() {
   const { user } = useCurrentUser()
+  const avatarInputRef = React.useRef<HTMLInputElement | null>(null)
   const logoInputRef = React.useRef<HTMLInputElement | null>(null)
   const { mutate: updateProfile, isPending } = useUpdateProfile()
   const { hasLogo, logoDataURL, saveLogo, clearLogo } = useAgencyBranding()
+  const { avatarDataURL, hasAvatar, saveAvatar, clearAvatar } = useProfileAvatar()
 
   const form = useForm<ProfileUpdateData>({
     resolver: zodResolver(profileSchema),
@@ -78,86 +81,139 @@ export function ProfileSettings() {
   if (!user) return null
 
   return (
-    <Card>
+    <Card className="overflow-hidden border-border/70 shadow-sm">
       <CardHeader>
         <CardTitle>Profile Information</CardTitle>
         <CardDescription>
-          Update your personal information and profile details.
+          Update your personal information, profile photo, and reusable agency branding.
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-6">
-        {/* Profile Photo */}
-        <div className="flex items-center gap-6">
-          <Avatar className="h-24 w-24">
-            <AvatarImage 
-              src={`https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`} 
-              alt={user.full_name} 
-            />
-            <AvatarFallback>
-              <User className="h-12 w-12" />
-            </AvatarFallback>
-          </Avatar>
-          <div className="space-y-2">
-            <Button variant="outline" size="sm" disabled>
-              <Upload className="h-4 w-4 mr-2" />
-              Upload Photo
-            </Button>
-            <p className="text-xs text-muted-foreground">
-              JPG, PNG or GIF. Max size 2MB.
-            </p>
-          </div>
-        </div>
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+          <div className="rounded-3xl border border-border/70 bg-muted/25 p-5">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
+              <Avatar className="h-24 w-24 border border-border/70 shadow-sm">
+                <AvatarImage
+                  src={
+                    avatarDataURL ||
+                    `https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`
+                  }
+                  alt={user.full_name}
+                />
+                <AvatarFallback>
+                  <User className="h-12 w-12" />
+                </AvatarFallback>
+              </Avatar>
 
-        <div className="rounded-2xl border border-border/70 bg-muted/30 p-5">
-          <div className="flex flex-col gap-5 lg:flex-row lg:items-center lg:justify-between">
-            <div className="space-y-2">
-              <p className="text-sm font-semibold">Agency logo</p>
-              <p className="text-sm text-muted-foreground">
-                Upload this once and we will reuse it while you add candidates on this device.
-              </p>
-            </div>
+              <div className="flex-1 space-y-3">
+                <div>
+                  <p className="text-sm font-semibold">Profile photo</p>
+                  <p className="text-sm text-muted-foreground">
+                    Saved on this device and reused across the app immediately.
+                  </p>
+                </div>
 
-            <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-              <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border bg-background shadow-sm">
-                {hasLogo ? (
-                  <img src={logoDataURL} alt={`${user.company_name || user.full_name} logo`} className="h-full w-full object-cover" />
-                ) : (
-                  <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/10 via-background to-amber-100 text-primary">
-                    <ImagePlus className="h-8 w-8" />
-                  </div>
-                )}
-              </div>
-
-              <div className="flex flex-wrap gap-2">
-                <Button type="button" variant="outline" onClick={() => logoInputRef.current?.click()}>
-                  <Upload className="mr-2 h-4 w-4" />
-                  {hasLogo ? "Change Logo" : "Upload Logo"}
-                </Button>
-                {hasLogo ? (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    className="text-destructive hover:text-destructive"
-                    onClick={() => {
-                      clearLogo()
-                      toast.success("Agency logo removed")
-                    }}
-                  >
-                    <Trash2 className="mr-2 h-4 w-4" />
-                    Remove
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => avatarInputRef.current?.click()}>
+                    <Camera className="mr-2 h-4 w-4" />
+                    {hasAvatar ? "Change Photo" : "Upload Photo"}
                   </Button>
-                ) : null}
+                  {hasAvatar ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        clearAvatar()
+                        toast.success("Profile photo removed")
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+
+                <p className="text-xs text-muted-foreground">
+                  PNG, JPG, or WEBP. Max size 2 MB.
+                </p>
               </div>
             </div>
+
+            <input
+              ref={avatarInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,.webp,image/jpeg,image/png,image/webp"
+              className="hidden"
+              onChange={async (event) => {
+                const file = event.target.files?.[0]
+                if (!file) {
+                  return
+                }
+
+                try {
+                  await saveAvatar(file)
+                  toast.success("Profile photo saved on this device")
+                } catch (error) {
+                  toast.error(error instanceof Error ? error.message : "Failed to save profile photo")
+                } finally {
+                  event.target.value = ""
+                }
+              }}
+            />
           </div>
 
-          <input
-            ref={logoInputRef}
-            type="file"
-            accept=".jpg,.jpeg,.png,image/jpeg,image/png"
-            className="hidden"
-            onChange={handleLogoChange}
-          />
+          <div className="rounded-3xl border border-border/70 bg-muted/25 p-5">
+            <div className="flex flex-col gap-5 lg:justify-between">
+              <div className="space-y-2">
+                <p className="text-sm font-semibold">Agency logo</p>
+                <p className="text-sm text-muted-foreground">
+                  Upload this once and we will reuse it while you add candidates on this device.
+                </p>
+              </div>
+
+              <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
+                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border bg-background shadow-sm">
+                  {hasLogo ? (
+                    <img src={logoDataURL} alt={`${user.company_name || user.full_name} logo`} className="h-full w-full object-cover" />
+                  ) : (
+                    <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/10 via-background to-amber-100 text-primary">
+                      <ImagePlus className="h-8 w-8" />
+                    </div>
+                  )}
+                </div>
+
+                <div className="flex flex-wrap gap-2">
+                  <Button type="button" variant="outline" onClick={() => logoInputRef.current?.click()}>
+                    <Upload className="mr-2 h-4 w-4" />
+                    {hasLogo ? "Change Logo" : "Upload Logo"}
+                  </Button>
+                  {hasLogo ? (
+                    <Button
+                      type="button"
+                      variant="ghost"
+                      className="text-destructive hover:text-destructive"
+                      onClick={() => {
+                        clearLogo()
+                        toast.success("Agency logo removed")
+                      }}
+                    >
+                      <Trash2 className="mr-2 h-4 w-4" />
+                      Remove
+                    </Button>
+                  ) : null}
+                </div>
+              </div>
+            </div>
+
+            <input
+              ref={logoInputRef}
+              type="file"
+              accept=".jpg,.jpeg,.png,image/jpeg,image/png"
+              className="hidden"
+              onChange={handleLogoChange}
+            />
+          </div>
         </div>
 
         <Form {...form}>

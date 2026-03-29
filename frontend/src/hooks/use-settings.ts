@@ -1,8 +1,10 @@
 import axios from 'axios';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import api from '@/lib/api';
 import { useAuthStore } from '@/stores/auth-store';
+import { clearBrowserSessions } from '@/lib/browser-sessions';
 
 export interface ProfileUpdateData {
   full_name: string;
@@ -40,8 +42,13 @@ export function useUpdateProfile() {
       queryClient.invalidateQueries({ queryKey: ['user'] });
       toast.success('Profile updated successfully');
     },
-    onError: () => {
-      toast.error('Failed to update profile');
+    onError: (error: unknown) => {
+      const message = axios.isAxiosError<ApiErrorResponse>(error)
+        ? error.response?.data?.error || error.response?.data?.message || error.message
+        : error instanceof Error
+          ? error.message
+          : 'Failed to update profile';
+      toast.error(message);
     },
   });
 }
@@ -87,12 +94,30 @@ export function useUpdatePreferences() {
 }
 
 export function useLogoutAllDevices() {
+  const router = useRouter();
+  const logout = useAuthStore((state) => state.logout);
+  const user = useAuthStore((state) => state.user);
+
   return useMutation({
     mutationFn: async () => {
-      throw new Error('Logging out of all devices is not supported by the current API yet.');
+      await api.post('/auth/logout');
+      if (user?.id) {
+        clearBrowserSessions(user.id);
+      }
+      return true;
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to logout of all devices');
+    onSuccess: () => {
+      logout();
+      router.push('/login');
+      toast.success('Signed out on this browser and cleared remembered sessions.');
+    },
+    onError: (error: unknown) => {
+      const message = axios.isAxiosError<ApiErrorResponse>(error)
+        ? error.response?.data?.error || error.response?.data?.message || error.message
+        : error instanceof Error
+          ? error.message
+          : 'Failed to clear active sessions';
+      toast.error(message);
     },
   });
 }

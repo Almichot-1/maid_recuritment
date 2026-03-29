@@ -21,6 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
+import { useProfileAvatar } from "@/hooks/use-profile-avatar"
 import { NavItem } from "./sidebar"
 import { cn } from "@/lib/utils"
 import { getRoleHomeLabel, getRoleHomePath, isRoleHomePath } from "@/lib/role-home"
@@ -50,6 +51,7 @@ export function MobileNav() {
   const [open, setOpen] = React.useState(false)
   const pathname = usePathname()
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
+  const { avatarDataURL } = useProfileAvatar()
   const { hasActivePairs, isReady } = usePairingContext()
   const logout = useLogout()
   const hasWorkspaceAccess = !isReady || hasActivePairs
@@ -134,6 +136,21 @@ export function MobileNav() {
           })}
         </div>
         <div className="border-t border-slate-800 p-4">
+          {user ? (
+            <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
+              <div className="h-10 w-10 overflow-hidden rounded-full border border-slate-700">
+                <img
+                  src={avatarDataURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`}
+                  alt={user.full_name}
+                  className="h-full w-full object-cover"
+                />
+              </div>
+              <div className="min-w-0">
+                <p className="truncate text-sm font-semibold text-white">{user.full_name}</p>
+                <p className="truncate text-xs text-slate-400">{user.company_name || user.email}</p>
+              </div>
+            </div>
+          ) : null}
           <Button 
             variant="ghost" 
             className="w-full justify-start text-slate-400 hover:text-destructive hover:bg-slate-800"

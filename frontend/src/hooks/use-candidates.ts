@@ -193,8 +193,10 @@ export function useCreateCandidate() {
     onSuccess: () => {
       toast.success("Candidate created successfully");
     },
-    onError: () => {
-      toast.error("Failed to create candidate");
+    onError: (error) => {
+      const responseError = error as AxiosError<{ error?: string }>;
+      const message = responseError.response?.data?.error;
+      toast.error(message || "Failed to create candidate");
     },
   });
 }
@@ -213,10 +215,11 @@ export function useUpdateCandidate(id: string) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["candidate", id] });
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
-      toast.success("Candidate updated successfully");
     },
-    onError: () => {
-      toast.error("Failed to update candidate");
+    onError: (error) => {
+      const responseError = error as AxiosError<{ error?: string }>;
+      const message = responseError.response?.data?.error;
+      toast.error(message || "Failed to update candidate");
     },
   });
 }

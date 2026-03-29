@@ -1,7 +1,7 @@
 "use client";
 
 import * as React from "react";
-import { useFieldArray, useForm } from "react-hook-form";
+import { FieldErrors, useFieldArray, useForm } from "react-hook-form";
 import { zodResolver } from "@hookform/resolvers/zod";
 import {
   BriefcaseBusiness,
@@ -12,6 +12,7 @@ import {
   Trash2,
   UserSquare2,
 } from "lucide-react";
+import { toast } from "sonner";
 
 import { useParsePassport } from "@/hooks/use-passport-ocr";
 import { CandidateInput, candidateSchema } from "@/lib/validations";
@@ -245,6 +246,28 @@ export function CandidateForm({
 
     if (!isEditing && submitMode === "create_another" && result?.resetForm) {
       resetForNextCandidate();
+    }
+  }, (errors: FieldErrors<CandidateFormValues>) => {
+    const message = isEditing
+      ? "Please fix the highlighted fields before saving changes."
+      : "Please fix the highlighted fields before creating the candidate.";
+
+    toast.error(message);
+
+    window.requestAnimationFrame(() => {
+      const invalidElement = document.querySelector<HTMLElement>(
+        "[aria-invalid='true']",
+      );
+
+      invalidElement?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      invalidElement?.focus();
+    });
+
+    if (Object.keys(errors).length === 0) {
+      return;
     }
   });
 

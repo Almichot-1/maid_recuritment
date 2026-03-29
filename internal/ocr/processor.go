@@ -192,7 +192,24 @@ func (p *OCRProcessor) ExtractPassportData(imagePath string) (*PassportData, err
 }
 
 func (p *OCRProcessor) ExtractPassportPreviewData(imagePath string) (*PassportData, error) {
-	return p.extractPassportData(imagePath, false)
+	data, err := p.extractPassportData(imagePath, false)
+	if err != nil {
+		return nil, err
+	}
+
+	if vz, err := p.ExtractVisualZone(imagePath); err == nil && vz != nil {
+		if strings.TrimSpace(data.PlaceOfBirth) == "" && strings.TrimSpace(vz.PlaceOfBirth) != "" {
+			data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
+		}
+		if data.DateOfIssue.IsZero() && !vz.DateOfIssue.IsZero() {
+			data.DateOfIssue = vz.DateOfIssue.UTC()
+		}
+		if strings.TrimSpace(data.IssuingAuthority) == "" && strings.TrimSpace(vz.Authority) != "" {
+			data.IssuingAuthority = strings.TrimSpace(vz.Authority)
+		}
+	}
+
+	return data, nil
 }
 
 func (p *OCRProcessor) extractPassportData(imagePath string, includeVisualZone bool) (*PassportData, error) {

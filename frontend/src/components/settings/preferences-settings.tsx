@@ -30,6 +30,7 @@ import {
 export function PreferencesSettings() {
   const { theme, setTheme } = useTheme()
   const { mutate: updatePreferences, isPending } = useUpdatePreferences()
+  const [mounted, setMounted] = React.useState(false)
 
   const form = useForm<PreferencesData>({
     defaultValues: {
@@ -40,6 +41,10 @@ export function PreferencesSettings() {
       approval_alerts: true,
     },
   })
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   React.useEffect(() => {
     if (typeof window === "undefined") {
@@ -75,15 +80,14 @@ export function PreferencesSettings() {
 
   return (
     <div className="space-y-6">
-      {/* Theme Settings */}
-      <Card>
+      <Card className="overflow-hidden border-border/70 shadow-sm">
         <CardHeader>
           <CardTitle>Appearance</CardTitle>
           <CardDescription>
-            Customize how the application looks on your device.
+            Switch between light, dark, and system themes and keep the interface comfortable on mobile or desktop.
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
@@ -96,7 +100,7 @@ export function PreferencesSettings() {
                       <RadioGroup
                         onValueChange={field.onChange}
                         value={field.value}
-                        className="grid grid-cols-3 gap-4"
+                        className="grid gap-3 sm:grid-cols-3"
                       >
                         <div>
                           <RadioGroupItem
@@ -148,13 +152,56 @@ export function PreferencesSettings() {
                   </FormItem>
                 )}
               />
+
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  {
+                    key: "light",
+                    label: "Light",
+                    description: "Bright surfaces and soft borders for daytime use.",
+                  },
+                  {
+                    key: "dark",
+                    label: "Dark",
+                    description: "Muted contrast and calmer glare for long sessions.",
+                  },
+                  {
+                    key: "system",
+                    label: "System",
+                    description: "Automatically follows the device appearance.",
+                  },
+                ].map((option) => {
+                  const isActive = form.watch("theme") === option.key
+                  return (
+                    <div
+                      key={option.key}
+                      className={`rounded-2xl border p-4 transition-all ${
+                        isActive
+                          ? "border-primary bg-primary/5 shadow-sm"
+                          : "border-border/70 bg-muted/20"
+                      }`}
+                    >
+                      <p className="text-sm font-semibold">{option.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {option.description}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="rounded-2xl border border-border/70 bg-muted/25 p-4 text-sm text-muted-foreground">
+                Current theme:{" "}
+                <span className="font-semibold text-foreground">
+                  {mounted ? ((theme as string) || "system") : "system"}
+                </span>
+              </div>
             </form>
           </Form>
         </CardContent>
       </Card>
 
-      {/* Notification Preferences */}
-      <Card>
+      <Card className="overflow-hidden border-border/70 shadow-sm">
         <CardHeader>
           <CardTitle>Notifications</CardTitle>
           <CardDescription>
@@ -170,7 +217,7 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="email_notifications"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <div className="space-y-0.5">
                         <FormLabel className="text-base">Email Notifications</FormLabel>
                         <FormDescription>
@@ -192,7 +239,7 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="selection_alerts"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <div className="space-y-0.5">
                         <FormLabel className="text-base">Selection Alerts</FormLabel>
                         <FormDescription>
@@ -214,7 +261,7 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="status_update_alerts"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <div className="space-y-0.5">
                         <FormLabel className="text-base">Status Update Alerts</FormLabel>
                         <FormDescription>
@@ -236,7 +283,7 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="approval_alerts"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <div className="space-y-0.5">
                         <FormLabel className="text-base">Approval Alerts</FormLabel>
                         <FormDescription>
@@ -258,8 +305,7 @@ export function PreferencesSettings() {
         </CardContent>
       </Card>
 
-      {/* Language Preference */}
-      <Card>
+      <Card className="overflow-hidden border-border/70 shadow-sm">
         <CardHeader>
           <CardTitle>Language</CardTitle>
           <CardDescription>
@@ -290,7 +336,7 @@ export function PreferencesSettings() {
 
       {/* Save Button */}
       <div className="flex justify-end">
-        <Button onClick={form.handleSubmit(onSubmit)} disabled={isPending}>
+        <Button onClick={form.handleSubmit(onSubmit)} disabled={isPending} className="min-w-[180px]">
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
           Save Preferences
         </Button>

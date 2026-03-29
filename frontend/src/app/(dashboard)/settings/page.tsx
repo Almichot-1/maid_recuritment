@@ -32,17 +32,19 @@ export default function SettingsPage() {
       />
 
       <Tabs defaultValue="profile" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-3 h-auto p-1">
-          <TabsTrigger value="profile" className="py-2">
-            Profile
-          </TabsTrigger>
-          <TabsTrigger value="security" className="py-2">
-            Security
-          </TabsTrigger>
-          <TabsTrigger value="preferences" className="py-2">
-            Preferences
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="flex h-auto min-w-max gap-1 p-1">
+            <TabsTrigger value="profile" className="min-w-[132px] py-2">
+              Profile
+            </TabsTrigger>
+            <TabsTrigger value="security" className="min-w-[132px] py-2">
+              Security
+            </TabsTrigger>
+            <TabsTrigger value="preferences" className="min-w-[132px] py-2">
+              Preferences
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         <TabsContent value="profile" className="space-y-6">
           <ProfileSettings />

@@ -2,6 +2,7 @@ import { create } from 'zustand';
 import { User } from '@/types';
 import { usePairingStore } from '@/stores/pairing-store';
 import { getApiBaseUrl } from '@/lib/api-base-url';
+import { ensureBrowserSession, removeCurrentBrowserSession } from '@/lib/browser-sessions';
 
 interface AuthMeResponse {
   user: User;
@@ -28,6 +29,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.setItem('auth_user', JSON.stringify(user));
     localStorage.removeItem('auth_token');
     usePairingStore.getState().clear();
+    ensureBrowserSession(user.id);
     set({ user, token, isAuthenticated: true, isLoading: false });
   },
 
@@ -43,6 +45,15 @@ export const useAuthStore = create<AuthState>((set) => ({
     }),
   
   logout: () => {
+    const storedUser = (() => {
+      try {
+        const raw = localStorage.getItem('auth_user');
+        return raw ? (JSON.parse(raw) as User) : null;
+      } catch {
+        return null;
+      }
+    })();
+    removeCurrentBrowserSession(storedUser?.id);
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     usePairingStore.getState().clear();
@@ -68,6 +79,7 @@ export const useAuthStore = create<AuthState>((set) => ({
       const data = (await response.json()) as AuthMeResponse;
       localStorage.setItem('auth_user', JSON.stringify(data.user));
       localStorage.removeItem('auth_token');
+      ensureBrowserSession(data.user.id);
       set({ user: data.user, token: null, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.error('Failed to load auth state from storage', error);

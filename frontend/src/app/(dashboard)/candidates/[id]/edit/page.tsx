@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { ChevronRight, Eye, FileText, Home, ImagePlus, Loader2, PencilLine, Video, XCircle } from "lucide-react"
 import { toast } from "sonner"
+import { AxiosError } from "axios"
 
 import { CandidateForm } from "@/components/candidates/candidate-form"
 import { PageHeader } from "@/components/layout/page-header"
@@ -145,11 +146,17 @@ export default function EditCandidatePage() {
           })
         }
         toast.success("Candidate details and replacement files saved successfully.")
+      } else {
+        toast.success("Candidate changes saved successfully.")
       }
 
-      router.push(`/candidates/${candidateID}`)
-    } catch {
+      router.replace(`/candidates/${candidateID}`)
+      router.refresh()
+    } catch (error) {
       setIsUploadingDocuments(false)
+      const responseError = error as AxiosError<{ error?: string }>
+      const message = responseError.response?.data?.error
+      toast.error(message || "We could not save your candidate changes.")
       return
     } finally {
       setIsUploadingDocuments(false)
