@@ -112,7 +112,7 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 		return nil, fmt.Errorf("close temp passport image: %w", err)
 	}
 
-	result, err := s.ocrProcessor.ExtractPassportPreviewData(tempPath)
+	result, err := s.ocrProcessor.ExtractPassportData(tempPath)
 	if err != nil {
 		if isPassportOCRUnavailable(err) {
 			return nil, fmt.Errorf("%w: %v", ErrPassportOCRUnavailable, err)
@@ -190,7 +190,7 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 		return nil, fmt.Errorf("close temp passport image: %w", err)
 	}
 
-	result, err := s.ocrProcessor.ExtractPassportData(tempPath)
+	result, err := s.ocrProcessor.ExtractPassportPreviewData(tempPath)
 	if err != nil {
 		if isPassportOCRUnavailable(err) {
 			return nil, fmt.Errorf("%w: %v", ErrPassportOCRUnavailable, err)
