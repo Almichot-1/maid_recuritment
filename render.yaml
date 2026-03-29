@@ -12,9 +12,9 @@ services:
       - key: GO_VERSION
         value: 1.25.8
       - key: TESSERACT_PATH
-        value: /opt/render/project/src/.render/tesseract/tesseract
+        value: .render/tesseract/tesseract
       - key: TESSDATA_PREFIX
-        value: /opt/render/project/src/.render/tesseract
+        value: .render/tesseract
       - key: OCR_LANGUAGE
         value: eng
       - key: RUN_EXPIRY_SCHEDULER

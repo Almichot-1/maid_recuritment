@@ -1,7 +1,9 @@
 package ocr
 
 import (
+	"fmt"
 	"os"
+	"slices"
 	"strings"
 	"time"
 )
@@ -62,19 +64,33 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 		return "", "", 0, err
 	}
 
-	text, err := p.runTesseractText(imagePath, "ocrb", []string{
+	mrzArgs := []string{
 		"--psm", "6",
 		"-c", "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
-	})
-	if err != nil {
-		return "", "", 0, err
+	}
+	languages := uniqueOCRLanguages("ocrb", "eng", p.lang)
+	attemptErrors := make([]string, 0, len(languages))
+
+	for _, language := range languages {
+		text, err := p.runTesseractText(imagePath, language, mrzArgs)
+		if err != nil {
+			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", language, err))
+			continue
+		}
+
+		line1, line2 := extractMRZLinesFromText(text)
+		if line1 != "" && line2 != "" {
+			return line1, line2, 0, nil
+		}
+
+		attemptErrors = append(attemptErrors, fmt.Sprintf("%s: invalid MRZ output", language))
 	}
 
-	line1, line2 := extractMRZLinesFromText(text)
-	if line1 == "" || line2 == "" {
+	if len(attemptErrors) == 0 {
 		return "", "", 0, ErrInvalidMRZOutput
 	}
-	return line1, line2, 0, nil
+
+	return "", "", 0, fmt.Errorf("%w: %s", ErrInvalidMRZOutput, strings.Join(attemptErrors, "; "))
 }
 
 func (p *OCRProcessor) ExtractVisualZone(imagePath string) (*VisualZoneData, error) {
@@ -173,4 +189,16 @@ func (p *OCRProcessor) ExtractPassportData(imagePath string) (*PassportData, err
 	data.CountryCode = strings.ToUpper(strings.TrimSpace(data.CountryCode))
 	data.Nationality = strings.ToUpper(strings.TrimSpace(data.Nationality))
 	return data, nil
+}
+
+func uniqueOCRLanguages(values ...string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		language := strings.TrimSpace(strings.ToLower(value))
+		if language == "" || slices.Contains(out, language) {
+			continue
+		}
+		out = append(out, language)
+	}
+	return out
 }
