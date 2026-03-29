@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -654,8 +655,10 @@ func (h *CandidateHandler) writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrPassportOCRRequiresImage):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "passport OCR requires a JPG or PNG image"})
 	case errors.Is(err, service.ErrPassportOCRParseFailed):
+		log.Printf("passport OCR parse failed: %v", err)
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "We could not read that passport image. Use a clear JPG or PNG photo of the passport page."})
 	case errors.Is(err, service.ErrPassportOCRUnavailable):
+		log.Printf("passport OCR unavailable: %v", err)
 		_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "passport OCR is not available right now"})
 	case errors.Is(err, service.ErrInvalidCandidateInput), errors.Is(err, service.ErrInvalidCandidateUpdateState), errors.Is(err, service.ErrInvalidCandidateDeleteState), errors.Is(err, repository.ErrInvalidStatusTransition):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
