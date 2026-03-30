@@ -239,6 +239,7 @@ func main() {
 
 			protected.Get("/me", adminAuthHandler.Me)
 			protected.Post("/logout", adminAuthHandler.Logout)
+			protected.Post("/change-password", adminAuthHandler.ChangePassword)
 			protected.Get("/analytics/dashboard", adminDashboardHandler.GetStats)
 			protected.Get("/audit-logs", adminReadonlyHandler.GetAuditLogs)
 			protected.Get("/candidates", adminReadonlyHandler.GetCandidates)

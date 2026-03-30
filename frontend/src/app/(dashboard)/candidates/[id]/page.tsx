@@ -527,11 +527,16 @@ export default function CandidateDetailPage() {
                     Download the final PDF directly, or open the preview page only when you want to inspect the layout.
                   </p>
                   <div className="flex flex-col gap-3 sm:flex-row">
-                    <Button variant="outline" onClick={handleDownloadCV} disabled={isDownloadingCV}>
+                    <Button
+                      variant="outline"
+                      className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold sm:w-auto"
+                      onClick={handleDownloadCV}
+                      disabled={isDownloadingCV}
+                    >
                       <Download className="h-4 w-4 mr-2" />
                       {isDownloadingCV ? "Downloading..." : "Download CV"}
                     </Button>
-                    <Button variant="ghost" asChild>
+                    <Button variant="ghost" className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold sm:w-auto" asChild>
                       <Link href={cvPageHref}>
                         <Eye className="h-4 w-4 mr-2" />
                         Preview CV
@@ -646,7 +651,7 @@ export default function CandidateDetailPage() {
 
                   {(candidate.cv_pdf_url || canGenerateCV) && (
                     <Button
-                      className="w-full"
+                      className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
                       variant="outline"
                       onClick={candidate.cv_pdf_url ? handleDownloadCV : undefined}
                       disabled={isDownloadingCV}
@@ -667,7 +672,7 @@ export default function CandidateDetailPage() {
                   )}
 
                   {candidate.cv_pdf_url && (
-                    <Button className="w-full" variant="ghost" asChild>
+                    <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" variant="ghost" asChild>
                       <Link href={cvPageHref}>
                         <Eye className="h-4 w-4 mr-2" />
                         Preview CV
@@ -724,7 +729,7 @@ export default function CandidateDetailPage() {
               {isForeignAgent && (
                 <>
                   {candidate.cv_pdf_url ? (
-                    <Button className="w-full" variant="outline" onClick={handleDownloadCV} disabled={isDownloadingCV}>
+                    <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" variant="outline" onClick={handleDownloadCV} disabled={isDownloadingCV}>
                         <Download className="h-4 w-4 mr-2" />
                         {isDownloadingCV ? "Downloading..." : "Download CV"}
                     </Button>

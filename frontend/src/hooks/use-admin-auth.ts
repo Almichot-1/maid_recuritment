@@ -1,3 +1,4 @@
+import axios from "axios"
 import { useMutation } from "@tanstack/react-query"
 import { useRouter } from "next/navigation"
 import { toast } from "sonner"
@@ -15,6 +16,11 @@ interface AdminLoginResponse {
   token: string
   admin: AdminUser
   expires_at: string
+}
+
+interface AdminChangePasswordInput {
+  current_password: string
+  new_password: string
 }
 
 export function useAdminLogin() {
@@ -59,4 +65,20 @@ export function useCurrentAdmin() {
     isSuperAdmin: admin?.role === AdminRole.SUPER_ADMIN,
     isSupportAdmin: admin?.role === AdminRole.SUPPORT_ADMIN,
   }
+}
+
+export function useAdminChangePassword() {
+  return useMutation({
+    mutationFn: async (data: AdminChangePasswordInput) => {
+      try {
+        const response = await adminApi.post<{ message: string }>("/admin/change-password", data)
+        return response.data
+      } catch (error) {
+        if (axios.isAxiosError<{ error?: string }>(error)) {
+          throw new Error(error.response?.data?.error || "Failed to change admin password")
+        }
+        throw error
+      }
+    },
+  })
 }

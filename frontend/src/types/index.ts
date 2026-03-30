@@ -42,6 +42,7 @@ export interface AdminUser {
   full_name: string;
   role: AdminRole;
   last_login?: string | null;
+  force_password_change?: boolean;
 }
 
 export enum CandidateStatus {

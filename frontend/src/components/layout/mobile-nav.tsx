@@ -20,6 +20,7 @@ import {
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
+import { useUnreadCount } from "@/hooks/use-notifications"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useProfileAvatar } from "@/hooks/use-profile-avatar"
 import { NavItem } from "./sidebar"
@@ -52,6 +53,7 @@ export function MobileNav() {
   const pathname = usePathname()
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const { avatarDataURL } = useProfileAvatar()
+  const { count: unreadCount } = useUnreadCount()
   const { hasActivePairs, isReady } = usePairingContext()
   const logout = useLogout()
   const hasWorkspaceAccess = !isReady || hasActivePairs
@@ -123,12 +125,12 @@ export function MobileNav() {
               >
                 <link.icon className="h-5 w-5 shrink-0" />
                 <span className="truncate flex-1">{link.name}</span>
-                {isNotification && (
+                {isNotification && unreadCount > 0 && (
                   <span className={cn(
                     "ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full",
                     isActive ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
                   )}>
-                    3
+                    {unreadCount}
                   </span>
                 )}
               </Link>

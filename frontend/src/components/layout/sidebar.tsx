@@ -8,6 +8,7 @@ import { LayoutDashboard, Users, UserPlus, CheckSquare, Bell, Settings, Search, 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
+import { useUnreadCount } from "@/hooks/use-notifications"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useLayoutStore } from "@/stores/layout-store"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -45,6 +46,7 @@ export function Sidebar() {
   const pathname = usePathname()
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const { avatarDataURL } = useProfileAvatar()
+  const { count: unreadCount } = useUnreadCount()
   const { hasActivePairs, isReady } = usePairingContext()
   const logout = useLogout()
   const { isSidebarCollapsed, toggleSidebar, setSidebarCollapsed } = useLayoutStore()
@@ -136,16 +138,16 @@ export function Sidebar() {
             >
               <div className="relative shrink-0">
                 <link.icon className="h-5 w-5" />
-                {isNotification && isSidebarCollapsed && (
+                {isNotification && isSidebarCollapsed && unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-slate-950" />
                 )}
               </div>
               {!isSidebarCollapsed && <span className="truncate flex-1">{link.name}</span>}
-              {isNotification && !isSidebarCollapsed && (
+              {isNotification && !isSidebarCollapsed && unreadCount > 0 && (
                 <span className={cn(
                   "ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full",
                   isActive ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
-                )}>3</span>
+                )}>{unreadCount}</span>
               )}
               {isSidebarCollapsed && (
                 <div className="absolute left-14 hidden group-hover:flex bg-slate-800 text-white text-xs font-semibold px-2 py-1 rounded shadow-md z-50 whitespace-nowrap">

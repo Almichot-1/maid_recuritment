@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { Loader2, Save, ShieldAlert } from "lucide-react"
+import { KeyRound, Loader2, Save, ShieldAlert } from "lucide-react"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { Button } from "@/components/ui/button"
@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Textarea } from "@/components/ui/textarea"
-import { useCurrentAdmin } from "@/hooks/use-admin-auth"
+import { useAdminChangePassword, useCurrentAdmin } from "@/hooks/use-admin-auth"
 import { toast } from "@/hooks/use-toast"
 import { useAdminPlatformSettings, useUpdateAdminPlatformSettings } from "@/hooks/use-admin-portal"
 import { PlatformSettings } from "@/types"
@@ -46,7 +46,11 @@ export default function AdminSettingsPage() {
   const { isSuperAdmin } = useCurrentAdmin()
   const { data, isLoading } = useAdminPlatformSettings(isSuperAdmin)
   const updateSettings = useUpdateAdminPlatformSettings()
+  const changePassword = useAdminChangePassword()
   const [form, setForm] = React.useState<PlatformSettings | null>(null)
+  const [currentPassword, setCurrentPassword] = React.useState("")
+  const [newPassword, setNewPassword] = React.useState("")
+  const [confirmPassword, setConfirmPassword] = React.useState("")
 
   React.useEffect(() => {
     if (data) {
@@ -91,6 +95,48 @@ export default function AdminSettingsPage() {
     }
   }
 
+  const savePassword = async () => {
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      toast({
+        title: "Missing password fields",
+        description: "Fill the current password, the new password, and the confirmation field.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    if (newPassword !== confirmPassword) {
+      toast({
+        title: "Passwords do not match",
+        description: "The new password and the confirmation must be identical.",
+        variant: "destructive",
+      })
+      return
+    }
+
+    try {
+      await changePassword.mutateAsync({
+        current_password: currentPassword,
+        new_password: newPassword,
+      })
+      setCurrentPassword("")
+      setNewPassword("")
+      setConfirmPassword("")
+      toast({
+        title: "Password updated",
+        description: "Your admin password has been changed successfully.",
+      })
+    } catch (error) {
+      const message =
+        error instanceof Error ? error.message : "Please check the current password and try again."
+      toast({
+        title: "Failed to change password",
+        description: message,
+        variant: "destructive",
+      })
+    }
+  }
+
   return (
     <div className="space-y-6">
       <AdminPageHeader
@@ -113,6 +159,64 @@ export default function AdminSettingsPage() {
         </Card>
       ) : (
         <>
+          <Card className="border-slate-200 bg-white/90">
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-lg text-slate-950">
+                <KeyRound className="h-5 w-5 text-amber-400" />
+                Admin password
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_auto] xl:items-end">
+              <div className="space-y-2">
+                <Label htmlFor="admin-current-password" className="text-sm font-semibold text-slate-950">
+                  Current password
+                </Label>
+                <Input
+                  id="admin-current-password"
+                  type="password"
+                  value={currentPassword}
+                  onChange={(event) => setCurrentPassword(event.target.value)}
+                  className="bg-white"
+                  placeholder="Enter current password"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="admin-new-password" className="text-sm font-semibold text-slate-950">
+                  New password
+                </Label>
+                <Input
+                  id="admin-new-password"
+                  type="password"
+                  value={newPassword}
+                  onChange={(event) => setNewPassword(event.target.value)}
+                  className="bg-white"
+                  placeholder="At least 12 chars with complexity"
+                />
+              </div>
+              <div className="space-y-2">
+                <Label htmlFor="admin-confirm-password" className="text-sm font-semibold text-slate-950">
+                  Confirm new password
+                </Label>
+                <Input
+                  id="admin-confirm-password"
+                  type="password"
+                  value={confirmPassword}
+                  onChange={(event) => setConfirmPassword(event.target.value)}
+                  className="bg-white"
+                  placeholder="Repeat the new password"
+                />
+              </div>
+              <Button
+                className="gap-2 bg-amber-400 text-slate-950 hover:bg-amber-300"
+                disabled={changePassword.isPending}
+                onClick={savePassword}
+              >
+                {changePassword.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <KeyRound className="h-4 w-4" />}
+                Change password
+              </Button>
+            </CardContent>
+          </Card>
+
           <div className="grid gap-6 xl:grid-cols-2">
             <Card className="border-slate-200 bg-white/90">
               <CardHeader>

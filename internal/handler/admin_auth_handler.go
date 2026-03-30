@@ -22,12 +22,18 @@ type AdminLoginRequest struct {
 	OTPCode  string `json:"otp_code" validate:"required,len=6"`
 }
 
+type AdminChangePasswordRequest struct {
+	CurrentPassword string `json:"current_password" validate:"required,min=12"`
+	NewPassword     string `json:"new_password" validate:"required,min=12"`
+}
+
 type AdminUserView struct {
-	ID        string  `json:"id"`
-	Email     string  `json:"email"`
-	FullName  string  `json:"full_name"`
-	Role      string  `json:"role"`
-	LastLogin *string `json:"last_login,omitempty"`
+	ID                  string  `json:"id"`
+	Email               string  `json:"email"`
+	FullName            string  `json:"full_name"`
+	Role                string  `json:"role"`
+	LastLogin           *string `json:"last_login,omitempty"`
+	ForcePasswordChange bool    `json:"force_password_change"`
 }
 
 type AdminLoginResponse struct {
@@ -112,12 +118,47 @@ func (h *AdminAuthHandler) Logout(w http.ResponseWriter, r *http.Request) {
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "admin logged out"})
 }
 
+func (h *AdminAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
+	adminID, ok := middleware.AdminIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(adminID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req AdminChangePasswordRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	if err := h.authService.ChangePassword(adminID, req.CurrentPassword, req.NewPassword, clientIP(r)); err != nil {
+		switch {
+		case errors.Is(err, service.ErrAdminPasswordMismatch):
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "current password is incorrect"})
+		case errors.Is(err, service.ErrWeakAdminPassword):
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "new password must be at least 12 characters and include uppercase, lowercase, number, and special character"})
+		case errors.Is(err, service.ErrAdminInactive):
+			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "admin account inactive"})
+		default:
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "admin password updated"})
+}
+
 func mapAdminUserView(admin *domain.Admin) AdminUserView {
 	view := AdminUserView{
-		ID:       admin.ID,
-		Email:    admin.Email,
-		FullName: admin.FullName,
-		Role:     string(admin.Role),
+		ID:                  admin.ID,
+		Email:               admin.Email,
+		FullName:            admin.FullName,
+		Role:                string(admin.Role),
+		ForcePasswordChange: admin.ForcePasswordChange,
 	}
 	if admin.LastLogin != nil {
 		value := admin.LastLogin.UTC().Format(time.RFC3339)

@@ -25,6 +25,7 @@ var (
 	ErrAdminInactive           = errors.New("admin account inactive")
 	ErrAdminInvalidMFA         = errors.New("invalid mfa code")
 	ErrWeakAdminPassword       = errors.New("admin password does not meet complexity requirements")
+	ErrAdminPasswordMismatch   = errors.New("current admin password is incorrect")
 )
 
 type AdminAuthService struct {
@@ -195,6 +196,49 @@ func (s *AdminAuthService) ValidateToken(tokenString string) (string, string, er
 
 func (s *AdminAuthService) LogLogout(adminID, ipAddress string) error {
 	return s.logAudit(adminID, "admin_logout", "admin", adminID, map[string]any{}, ipAddress)
+}
+
+func (s *AdminAuthService) ChangePassword(adminID, currentPassword, newPassword, ipAddress string) error {
+	adminID = strings.TrimSpace(adminID)
+	if adminID == "" {
+		return ErrAdminInvalidCredentials
+	}
+
+	admin, err := s.adminRepository.GetByID(adminID)
+	if err != nil {
+		if errors.Is(err, repository.ErrAdminNotFound) {
+			return ErrAdminInvalidCredentials
+		}
+		return fmt.Errorf("get admin by id: %w", err)
+	}
+
+	if err := s.ensureAdminCanLogin(admin); err != nil {
+		return err
+	}
+
+	if bcrypt.CompareHashAndPassword([]byte(admin.PasswordHash), []byte(currentPassword)) != nil {
+		return ErrAdminPasswordMismatch
+	}
+
+	if err := validateAdminPassword(newPassword); err != nil {
+		return err
+	}
+
+	if currentPassword == newPassword {
+		return ErrWeakAdminPassword
+	}
+
+	admin.PasswordHash = newPassword
+	admin.ForcePasswordChange = false
+	if err := s.adminRepository.Update(admin); err != nil {
+		return fmt.Errorf("update admin password: %w", err)
+	}
+
+	_ = s.logAudit(admin.ID, "admin_change_password", "admin", admin.ID, map[string]any{
+		"email": admin.Email,
+	}, ipAddress)
+
+	return nil
 }
 
 func (s *AdminAuthService) ensureAdminCanLogin(admin *domain.Admin) error {

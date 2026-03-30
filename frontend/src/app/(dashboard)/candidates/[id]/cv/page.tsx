@@ -239,17 +239,17 @@ export default function CandidateCVPage() {
                   Open this page again or use Refresh Layout after changing the logo so the PDF picks up the latest branding and colors.
                 </div>
               ) : null}
-              <Button className="w-full" onClick={handleDownload} disabled={isDownloading}>
+              <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" onClick={handleDownload} disabled={isDownloading}>
                 <Download className="mr-2 h-4 w-4" />
                 {isDownloading ? "Downloading..." : "Download CV"}
               </Button>
               {isEthiopianAgent ? (
-                <Button variant="outline" className="w-full" onClick={triggerCVBuild} disabled={isGeneratingCV}>
+                <Button variant="outline" className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" onClick={triggerCVBuild} disabled={isGeneratingCV}>
                   {isGeneratingCV ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Sparkles className="mr-2 h-4 w-4" />}
                   Refresh Layout
                 </Button>
               ) : null}
-              <Button variant="outline" className="w-full" asChild>
+              <Button variant="outline" className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" asChild>
                 <a href={candidate.cv_pdf_url} target="_blank" rel="noopener noreferrer">
                   <ExternalLink className="mr-2 h-4 w-4" />
                   Open in new tab
