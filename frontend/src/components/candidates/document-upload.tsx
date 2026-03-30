@@ -33,7 +33,7 @@ export function DocumentUpload({
   disabled = false,
 }: DocumentUploadProps) {
   const [file, setFile] = React.useState<File | null>(null)
-  const [preview, setPreview] = React.useState<string | null>(null)
+  const [objectURL, setObjectURL] = React.useState<string | null>(null)
   const [status, setStatus] = React.useState<"empty" | "selected" | "uploading" | "error">("empty")
   const [errorMessage, setErrorMessage] = React.useState<string | null>(null)
   const [isDragActive, setIsDragActive] = React.useState(false)
@@ -80,19 +80,21 @@ export function DocumentUpload({
     },
     [accept]
   )
+  const canViewSelectedFile = Boolean(objectURL)
+  const viewButtonLabel = documentType === "passport" ? "View passport" : "View file"
 
   const clearSelectedFile = React.useCallback(() => {
-    if (preview) {
-      URL.revokeObjectURL(preview)
+    if (objectURL) {
+      URL.revokeObjectURL(objectURL)
     }
     setFile(null)
-    setPreview(null)
+    setObjectURL(null)
     setStatus("empty")
     setErrorMessage(null)
     if (inputRef.current) {
       inputRef.current.value = ""
     }
-  }, [preview])
+  }, [objectURL])
 
   const processFile = React.useCallback(
     async (selectedFile: File | null) => {
@@ -112,17 +114,16 @@ export function DocumentUpload({
         return
       }
 
-      let objectURL: string | null = null
+      let nextObjectURL: string | null = null
       setFile(selectedFile)
       setStatus(mode === "instant" ? "uploading" : "selected")
       setErrorMessage(null)
 
-      if (shouldRenderPreview(selectedFile)) {
-        objectURL = URL.createObjectURL(selectedFile)
-        setPreview(objectURL)
-      } else {
-        setPreview(null)
+      if (objectURL) {
+        URL.revokeObjectURL(objectURL)
       }
+      nextObjectURL = URL.createObjectURL(selectedFile)
+      setObjectURL(nextObjectURL)
 
       if (!onUpload) {
         setStatus("selected")
@@ -133,10 +134,10 @@ export function DocumentUpload({
         await onUpload(selectedFile)
         setStatus("selected")
       } catch (error) {
-        if (objectURL) {
-          URL.revokeObjectURL(objectURL)
+        if (nextObjectURL) {
+          URL.revokeObjectURL(nextObjectURL)
         }
-        setPreview(null)
+        setObjectURL(null)
         setFile(null)
         setStatus("error")
         setErrorMessage(error instanceof Error ? error.message : "Upload failed")
@@ -146,7 +147,7 @@ export function DocumentUpload({
         }
       }
     },
-    [isAcceptedFile, maxSize, mode, onUpload, shouldRenderPreview]
+    [isAcceptedFile, maxSize, mode, objectURL, onUpload]
   )
 
   const scheduleProcessing = React.useCallback((selectedFile: File | null) => {
@@ -192,30 +193,25 @@ export function DocumentUpload({
     setFile(initialFile)
     setStatus("selected")
     setErrorMessage(null)
-    setPreview((current) => {
+    setObjectURL((current) => {
       if (current) {
         URL.revokeObjectURL(current)
       }
-
-      if (!shouldRenderPreview(initialFile)) {
-        return null
-      }
-
       return URL.createObjectURL(initialFile)
     })
 
     if (inputRef.current) {
       inputRef.current.value = ""
     }
-  }, [initialFile, shouldRenderPreview])
+  }, [initialFile])
 
   React.useEffect(() => {
     return () => {
-      if (preview) {
-        URL.revokeObjectURL(preview)
+      if (objectURL) {
+        URL.revokeObjectURL(objectURL)
       }
     }
-  }, [preview])
+  }, [objectURL])
 
   return (
     <div className="space-y-2">
@@ -292,12 +288,12 @@ export function DocumentUpload({
 
         {(status === "selected" || status === "uploading") && file ? (
           <div className="flex w-full flex-col items-center space-y-4">
-            {preview ? (
+            {objectURL && shouldRenderPreview(file) ? (
               <div className="relative flex w-full justify-center overflow-hidden rounded-md border border-black/10 bg-black/5 p-2 shadow-sm dark:border-white/10">
                 {file.type.startsWith("video/") ? (
-                  <video src={preview} controls className="h-32 rounded object-cover" />
+                  <video src={objectURL} controls className="h-32 rounded object-cover" />
                 ) : file.type.startsWith("image/") ? (
-                  <img src={preview} alt="Preview" className="h-32 rounded object-cover shadow-sm" />
+                  <img src={objectURL} alt="Preview" className="h-32 rounded object-cover shadow-sm" />
                 ) : (
                   <div className="flex h-32 w-full items-center justify-center rounded bg-muted">
                     <FileIcon className="h-10 w-10 text-muted-foreground" />
@@ -315,15 +311,34 @@ export function DocumentUpload({
                 <span className="truncate text-xs font-medium">{file.name}</span>
                 <span className="ml-2 text-[10px] text-muted-foreground">({(file.size / (1024 * 1024)).toFixed(2)} MB)</span>
               </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                onClick={handleRemove}
-                disabled={status === "uploading"}
-                className="h-7 w-7 shrink-0 pointer-events-auto text-muted-foreground hover:text-destructive"
-              >
-                <X className="h-4 w-4" />
-              </Button>
+              <div className="flex items-center gap-2">
+                {canViewSelectedFile ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={status === "uploading"}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      if (objectURL) {
+                        window.open(objectURL, "_blank", "noopener,noreferrer")
+                      }
+                    }}
+                    className="h-8 pointer-events-auto"
+                  >
+                    {viewButtonLabel}
+                  </Button>
+                ) : null}
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={handleRemove}
+                  disabled={status === "uploading"}
+                  className="h-7 w-7 shrink-0 pointer-events-auto text-muted-foreground hover:text-destructive"
+                >
+                  <X className="h-4 w-4" />
+                </Button>
+              </div>
             </div>
             <p className="text-xs text-muted-foreground">
               {status === "uploading"
