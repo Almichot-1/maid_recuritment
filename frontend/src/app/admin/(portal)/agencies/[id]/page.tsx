@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
@@ -17,16 +17,9 @@ import { useAgencyPairings } from "@/hooks/use-pairings"
 import { AccountStatus } from "@/types"
 import { formatDateTime, titleize } from "@/lib/admin-utils"
 
-interface AgencyDetailPageParams {
-  id: string
-}
-
-interface AgencyDetailPageProps {
-  params: Promise<AgencyDetailPageParams>
-}
-
-export default function AdminAgencyDetailPage({ params }: AgencyDetailPageProps) {
-  const { id } = React.use(params)
+export default function AdminAgencyDetailPage() {
+  const params = useParams<{ id: string }>()
+  const id = typeof params?.id === "string" ? params.id : ""
   const router = useRouter()
   const { data, isLoading } = useAgency(id)
   const { data: pairings = [], isLoading: pairingsLoading } = useAgencyPairings(id)
@@ -46,7 +39,7 @@ export default function AdminAgencyDetailPage({ params }: AgencyDetailPageProps)
     }
   }, [data?.agency.account_status])
 
-  if (isLoading || !data) {
+  if (!id || isLoading || !data) {
     return <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading agency profile...</div>
   }
 
@@ -55,9 +48,12 @@ export default function AdminAgencyDetailPage({ params }: AgencyDetailPageProps)
     if (!confirmed) {
       return
     }
-    await approveAgency(data.agency.id)
-    toast.success("Agency approved.")
-    router.refresh()
+    try {
+      await approveAgency(data.agency.id)
+      toast.success("Agency approved.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to approve agency.")
+    }
   }
 
   const handleReject = async () => {
@@ -65,9 +61,13 @@ export default function AdminAgencyDetailPage({ params }: AgencyDetailPageProps)
       toast.error("Rejection reason is required.")
       return
     }
-    await rejectAgency({ agencyId: data.agency.id, reason: rejectReason, notes: rejectNotes })
-    toast.success("Agency rejected.")
-    setRejectOpen(false)
+    try {
+      await rejectAgency({ agencyId: data.agency.id, reason: rejectReason, notes: rejectNotes })
+      toast.success("Agency rejected.")
+      setRejectOpen(false)
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to reject agency.")
+    }
   }
 
   const handleApplyStatus = async () => {
@@ -75,8 +75,12 @@ export default function AdminAgencyDetailPage({ params }: AgencyDetailPageProps)
       toast.error("A reason is required for suspended or rejected status.")
       return
     }
-    await updateStatus({ agencyId: data.agency.id, status: statusDraft, reason: statusReason })
-    toast.success("Agency status updated.")
+    try {
+      await updateStatus({ agencyId: data.agency.id, status: statusDraft, reason: statusReason })
+      toast.success("Agency status updated.")
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Failed to update agency status.")
+    }
   }
 
   return (
