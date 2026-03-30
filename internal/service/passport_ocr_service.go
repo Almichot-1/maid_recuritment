@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -142,6 +143,11 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 		}
 		return nil, fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
 	}
+	if result.DateOfIssue.IsZero() {
+		if fallbackIssueDate := s.extractPreviewIssueDate(tempPath); !fallbackIssueDate.IsZero() {
+			result.DateOfIssue = fallbackIssueDate
+		}
+	}
 
 	holderName := strings.TrimSpace(strings.TrimSpace(result.GivenNames + " " + result.Surname))
 	passportData := &domain.PassportData{
@@ -229,6 +235,11 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 	if strings.TrimSpace(result.PlaceOfBirth) == "" {
 		if fallbackPlace := s.extractPreviewPlaceOfBirth(tempPath, result.DateOfBirth); fallbackPlace != "" {
 			result.PlaceOfBirth = fallbackPlace
+		}
+	}
+	if result.DateOfIssue.IsZero() {
+		if fallbackIssueDate := s.extractPreviewIssueDate(tempPath); !fallbackIssueDate.IsZero() {
+			result.DateOfIssue = fallbackIssueDate
 		}
 	}
 
@@ -369,6 +380,26 @@ func (s *PassportOCRService) extractPreviewPlaceOfBirth(tempPath string, dateOfB
 	return ""
 }
 
+func (s *PassportOCRService) extractPreviewIssueDate(tempPath string) time.Time {
+	if strings.TrimSpace(tempPath) == "" {
+		return time.Time{}
+	}
+
+	if rawText, err := s.ocrProcessor.ExtractFastText(tempPath); err == nil {
+		if fallbackIssueDate := extractIssueDateFromOCRText(rawText); !fallbackIssueDate.IsZero() {
+			return fallbackIssueDate
+		}
+	}
+
+	if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
+		if fallbackIssueDate := extractIssueDateFromOCRText(rawText); !fallbackIssueDate.IsZero() {
+			return fallbackIssueDate
+		}
+	}
+
+	return time.Time{}
+}
+
 func extractPlaceOfBirthFromOCRText(text string, dateOfBirth time.Time) string {
 	if strings.TrimSpace(text) == "" || dateOfBirth.IsZero() {
 		return ""
@@ -437,4 +468,139 @@ func cleanupPlaceOfBirthValue(value string) string {
 		filtered = filtered[len(filtered)-3:]
 	}
 	return strings.Join(filtered, " ")
+}
+
+var (
+	passportIssueISO      = regexp.MustCompile(`\b(\d{4})-(\d{2})-(\d{2})\b`)
+	passportIssueSlash    = regexp.MustCompile(`\b(\d{2})[\./-](\d{2})[\./-](\d{4})\b`)
+	passportIssueDMMMYY   = regexp.MustCompile(`\b(\d{1,2})\s*([A-Z]{3})\s*(\d{2})\b`)
+	passportIssueDMMMYYYY = regexp.MustCompile(`\b(\d{1,2})\s*([A-Z]{3})\s*(\d{4})\b`)
+)
+
+func extractIssueDateFromOCRText(text string) time.Time {
+	text = strings.ToUpper(strings.ReplaceAll(strings.TrimSpace(text), "\r", "\n"))
+	if text == "" {
+		return time.Time{}
+	}
+
+	candidates := make([]time.Time, 0, 8)
+	for _, rawLine := range strings.Split(text, "\n") {
+		line := strings.TrimSpace(rawLine)
+		if line == "" {
+			continue
+		}
+		candidates = append(candidates, extractPassportIssueCandidates(line)...)
+	}
+
+	if len(candidates) == 0 {
+		return time.Time{}
+	}
+
+	now := time.Now().UTC()
+	cutoffPast := now.AddDate(-15, 0, 0)
+	best := time.Time{}
+
+	for _, candidate := range candidates {
+		candidate = candidate.UTC()
+		if candidate.IsZero() || candidate.After(now.AddDate(0, 0, 1)) || candidate.Before(cutoffPast) {
+			continue
+		}
+		if best.IsZero() || candidate.After(best) {
+			best = candidate
+		}
+	}
+
+	return best
+}
+
+func extractPassportIssueCandidates(text string) []time.Time {
+	candidates := make([]time.Time, 0, 4)
+
+	for _, match := range passportIssueISO.FindAllStringSubmatch(text, -1) {
+		year, _ := strconv.Atoi(match[1])
+		month, _ := strconv.Atoi(match[2])
+		day, _ := strconv.Atoi(match[3])
+		if parsed := safePassportIssueDate(year, month, day); !parsed.IsZero() {
+			candidates = append(candidates, parsed)
+		}
+	}
+
+	for _, match := range passportIssueSlash.FindAllStringSubmatch(text, -1) {
+		day, _ := strconv.Atoi(match[1])
+		month, _ := strconv.Atoi(match[2])
+		year, _ := strconv.Atoi(match[3])
+		if parsed := safePassportIssueDate(year, month, day); !parsed.IsZero() {
+			candidates = append(candidates, parsed)
+		}
+	}
+
+	for _, match := range passportIssueDMMMYYYY.FindAllStringSubmatch(text, -1) {
+		day, _ := strconv.Atoi(match[1])
+		month := passportMonthFromMMM(match[2])
+		year, _ := strconv.Atoi(match[3])
+		if parsed := safePassportIssueDate(year, month, day); !parsed.IsZero() {
+			candidates = append(candidates, parsed)
+		}
+	}
+
+	for _, match := range passportIssueDMMMYY.FindAllStringSubmatch(text, -1) {
+		day, _ := strconv.Atoi(match[1])
+		month := passportMonthFromMMM(match[2])
+		year, _ := strconv.Atoi(match[3])
+		if year <= 99 {
+			currentYY := time.Now().UTC().Year() % 100
+			if year <= currentYY+1 {
+				year += 2000
+			} else {
+				year += 1900
+			}
+		}
+		if parsed := safePassportIssueDate(year, month, day); !parsed.IsZero() {
+			candidates = append(candidates, parsed)
+		}
+	}
+
+	return candidates
+}
+
+func passportMonthFromMMM(value string) int {
+	switch strings.ToUpper(strings.TrimSpace(value)) {
+	case "JAN":
+		return 1
+	case "FEB":
+		return 2
+	case "MAR":
+		return 3
+	case "APR":
+		return 4
+	case "MAY":
+		return 5
+	case "JUN":
+		return 6
+	case "JUL":
+		return 7
+	case "AUG":
+		return 8
+	case "SEP":
+		return 9
+	case "OCT":
+		return 10
+	case "NOV":
+		return 11
+	case "DEC":
+		return 12
+	default:
+		return 0
+	}
+}
+
+func safePassportIssueDate(year, month, day int) time.Time {
+	if year <= 0 || month < 1 || month > 12 || day < 1 || day > 31 {
+		return time.Time{}
+	}
+	parsed := time.Date(year, time.Month(month), day, 0, 0, 0, 0, time.UTC)
+	if parsed.Year() != year || int(parsed.Month()) != month || parsed.Day() != day {
+		return time.Time{}
+	}
+	return parsed
 }

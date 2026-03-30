@@ -886,22 +886,40 @@ func passportRemainingYears(passportData *domain.PassportData) string {
 	if expiry.Before(now) {
 		return "EXPIRED"
 	}
-	years := expiry.Year() - now.Year()
-	anniversary := time.Date(now.Year(), expiry.Month(), expiry.Day(), 0, 0, 0, 0, time.UTC)
-	if now.After(anniversary) {
-		years--
-	}
-	if years < 0 {
-		years = 0
-	}
-	if years == 0 {
-		months := int(expiry.Sub(now).Hours() / 24 / 30)
-		if months < 1 {
-			return "<1 YR"
+	daysRemaining := int(expiry.Sub(now).Hours() / 24)
+	if daysRemaining < 30 {
+		if daysRemaining <= 1 {
+			return "1 day"
 		}
-		return fmt.Sprintf("%d MOS", months)
+		return fmt.Sprintf("%d days", daysRemaining)
 	}
-	return fmt.Sprintf("%d YRS", years)
+
+	monthsRemaining := int(expiry.Sub(now).Hours() / 24 / 30)
+	if monthsRemaining < 12 {
+		if monthsRemaining <= 1 {
+			return "1 month"
+		}
+		return fmt.Sprintf("%d months", monthsRemaining)
+	}
+
+	yearsRemaining := monthsRemaining / 12
+	remainingMonths := monthsRemaining % 12
+	if yearsRemaining <= 1 && remainingMonths == 0 {
+		return "1 year"
+	}
+	if remainingMonths == 0 {
+		return fmt.Sprintf("%d years", yearsRemaining)
+	}
+	if yearsRemaining <= 1 {
+		if remainingMonths == 1 {
+			return "1 year 1 month"
+		}
+		return fmt.Sprintf("1 year %d months", remainingMonths)
+	}
+	if remainingMonths == 1 {
+		return fmt.Sprintf("%d years 1 month", yearsRemaining)
+	}
+	return fmt.Sprintf("%d years %d months", yearsRemaining, remainingMonths)
 }
 
 func shortReference(value string) string {
