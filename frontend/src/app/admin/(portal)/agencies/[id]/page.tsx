@@ -93,7 +93,7 @@ export default function AdminAgencyDetailPage() {
             <AdminStatusBadge status={data.agency.account_status} />
             {data.approval_status === "pending" ? (
               <>
-                <Button className="bg-emerald-600 hover:bg-emerald-700" disabled={approving} onClick={handleApprove}>
+                <Button className="bg-emerald-500 text-slate-950 hover:bg-emerald-400" disabled={approving} onClick={handleApprove}>
                   Approve Agency
                 </Button>
                 <Button variant="destructive" disabled={rejecting} onClick={() => setRejectOpen(true)}>
@@ -148,7 +148,7 @@ export default function AdminAgencyDetailPage() {
                 placeholder="Explain the reason for this status change"
               />
             </div>
-            <Button className="w-full" disabled={updatingStatus} onClick={handleApplyStatus}>
+            <Button className="w-full bg-amber-400 text-slate-950 hover:bg-amber-300" disabled={updatingStatus} onClick={handleApplyStatus}>
               Apply Status Change
             </Button>
           </CardContent>
@@ -197,9 +197,9 @@ export default function AdminAgencyDetailPage() {
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
             <CardTitle className="text-lg text-slate-950">Pair workspaces</CardTitle>
-            <p className="text-sm text-slate-500">Private Ethiopian–Foreign relationships connected to this agency.</p>
+            <p className="text-sm text-slate-500">Private Ethiopian-Foreign relationships connected to this agency.</p>
           </div>
-          <Button variant="outline" onClick={() => router.push("/admin/pairings")}>
+          <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800" onClick={() => router.push("/admin/pairings")}>
             Open pairings manager
           </Button>
         </CardHeader>
@@ -218,9 +218,7 @@ export default function AdminAgencyDetailPage() {
                       {pairing.ethiopian_agency.company_name || pairing.ethiopian_agency.full_name} ↔ {pairing.foreign_agency.company_name || pairing.foreign_agency.full_name}
                     </p>
                   </div>
-                  <p className="text-sm text-slate-500">
-                    Approved {formatDateTime(pairing.approved_at)}
-                  </p>
+                  <p className="text-sm text-slate-500">Approved {formatDateTime(pairing.approved_at)}</p>
                   {pairing.notes ? <p className="text-sm text-slate-500">{pairing.notes}</p> : null}
                 </div>
               </div>
@@ -273,7 +271,7 @@ export default function AdminAgencyDetailPage() {
             </div>
           </div>
           <DialogFooter>
-            <Button variant="outline" onClick={() => setRejectOpen(false)}>Cancel</Button>
+            <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800" onClick={() => setRejectOpen(false)}>Cancel</Button>
             <Button variant="destructive" disabled={rejecting} onClick={handleReject}>Confirm Rejection</Button>
           </DialogFooter>
         </DialogContent>

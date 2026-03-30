@@ -71,7 +71,7 @@ export default function AdminPairingsPage() {
     <div className="space-y-6">
       <AdminPageHeader
         title="Pair Workspaces"
-        description="Create and manage the private Ethiopian–Foreign agency workspaces that govern candidate visibility, selections, and tracking."
+        description="Create and manage the private Ethiopian-Foreign agency workspaces that govern candidate visibility, selections, and tracking."
       />
 
       <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
@@ -121,7 +121,7 @@ export default function AdminPairingsPage() {
               />
             </div>
 
-            <Button className="w-full" onClick={handleCreatePairing} disabled={createPairing.isPending}>
+            <Button className="w-full bg-amber-400 text-slate-950 hover:bg-amber-300" onClick={handleCreatePairing} disabled={createPairing.isPending}>
               Create private workspace
             </Button>
           </CardContent>
@@ -184,6 +184,7 @@ export default function AdminPairingsPage() {
                       {pairing.status !== AgencyPairingStatus.ACTIVE ? (
                         <Button
                           variant="outline"
+                          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
                           onClick={() => handleStatusUpdate(pairing.id, AgencyPairingStatus.ACTIVE, "Reactivated from admin portal")}
                           disabled={updatePairing.isPending}
                         >
@@ -193,6 +194,7 @@ export default function AdminPairingsPage() {
                       {pairing.status === AgencyPairingStatus.ACTIVE ? (
                         <Button
                           variant="outline"
+                          className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800"
                           onClick={() => handleStatusUpdate(pairing.id, AgencyPairingStatus.SUSPENDED, "Suspended from admin portal")}
                           disabled={updatePairing.isPending}
                         >

@@ -114,7 +114,7 @@ export default function AdminDashboardPage() {
         description="A live control center for approvals, agency activity, candidate supply, and recruitment progress across the platform."
         action={
           <Link href="/admin/agencies/pending">
-            <Button className="gap-2 bg-slate-950 hover:bg-slate-800">
+            <Button className="gap-2 bg-amber-400 text-slate-950 hover:bg-amber-300">
               Review queue
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -173,15 +173,13 @@ export default function AdminDashboardPage() {
                     <p className="font-medium text-slate-950">{agency.company_name || agency.contact_person}</p>
                     <AdminStatusBadge status={agency.account_status} />
                   </div>
-                  <p className="text-sm text-slate-500">
-                    {agency.contact_person} • {agency.email}
-                  </p>
+                  <p className="text-sm text-slate-500">{agency.contact_person} • {agency.email}</p>
                   <p className="text-xs uppercase tracking-wide text-slate-400">
                     {titleize(agency.role)} • registered {formatRelative(agency.registration_date)}
                   </p>
                 </div>
                 <Link href={`/admin/agencies/${agency.id}`}>
-                  <Button variant="outline">Review</Button>
+                  <Button variant="outline" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800">Review</Button>
                 </Link>
               </div>
             ))}

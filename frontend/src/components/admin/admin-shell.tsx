@@ -90,8 +90,8 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const logout = useAdminLogout()
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.16),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.1),_transparent_22%),linear-gradient(180deg,#fff9ef_0%,#f3f6fb_52%,#eff3f9_100%)] text-slate-950">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(15,23,42,0.06),transparent)]" />
+    <div className="admin-portal dark min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.14),_transparent_20%),radial-gradient(circle_at_top_right,_rgba(34,211,238,0.1),_transparent_24%),linear-gradient(180deg,#020617_0%,#08111f_38%,#0f172a_100%)] text-slate-50">
+      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(148,163,184,0.08),transparent)]" />
       <div className="relative mx-auto flex min-h-screen max-w-[1760px]">
         <aside className="hidden w-[290px] flex-col border-r border-slate-800 bg-slate-950 px-5 py-6 text-slate-50 lg:flex">
           <div className="rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.22),_transparent_30%),linear-gradient(135deg,#0f172a,#111827_55%,#020617)] p-5 shadow-2xl shadow-black/25">
@@ -132,12 +132,12 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="flex min-h-screen flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/78 backdrop-blur-xl">
+          <header className="sticky top-0 z-30 border-b border-slate-800/80 bg-slate-950/88 backdrop-blur-xl">
             <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
               <div className="flex items-center gap-3">
                 <Sheet>
                   <SheetTrigger asChild>
-                    <Button variant="outline" size="icon" className="lg:hidden">
+                    <Button variant="outline" size="icon" className="border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800 lg:hidden">
                       <Menu className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
@@ -155,19 +155,19 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   </SheetContent>
                 </Sheet>
                 <div className="space-y-1">
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-700">Control Center</div>
-                  <p className="text-sm text-slate-500">Oversight across Ethiopian and Foreign agencies</p>
+                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-300">Control Center</div>
+                  <p className="text-sm text-slate-400">Oversight across Ethiopian and Foreign agencies</p>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Badge variant="outline" className="hidden rounded-full border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700 sm:inline-flex">
+                <Badge variant="outline" className="hidden rounded-full border-amber-400/30 bg-amber-400/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-200 sm:inline-flex">
                   Admin Mode
                 </Badge>
                 <div className="hidden text-right sm:block">
-                  <p className="text-sm font-semibold text-slate-900">{admin?.full_name}</p>
-                  <p className="text-xs text-slate-500">{admin?.role?.replace("_", " ")}</p>
+                  <p className="text-sm font-semibold text-white">{admin?.full_name}</p>
+                  <p className="text-xs text-slate-400">{admin?.role?.replace("_", " ")}</p>
                 </div>
-                <Button variant="outline" size="sm" className="gap-2" onClick={logout}>
+                <Button variant="outline" size="sm" className="gap-2 border-slate-700 bg-slate-900 text-slate-100 hover:bg-slate-800" onClick={logout}>
                   <LogOut className="h-4 w-4" />
                   <span className="hidden sm:inline">Logout</span>
                 </Button>

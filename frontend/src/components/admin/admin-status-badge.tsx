@@ -3,23 +3,23 @@ import { cn } from "@/lib/utils"
 import { titleize } from "@/lib/admin-utils"
 
 const toneByStatus: Record<string, string> = {
-  pending: "border-amber-200 bg-amber-100 text-amber-800",
-  pending_approval: "border-amber-200 bg-amber-100 text-amber-800",
-  active: "border-emerald-200 bg-emerald-100 text-emerald-800",
-  approved: "border-emerald-200 bg-emerald-100 text-emerald-800",
-  available: "border-emerald-200 bg-emerald-100 text-emerald-800",
-  locked: "border-orange-200 bg-orange-100 text-orange-800",
-  suspended: "border-rose-200 bg-rose-100 text-rose-800",
-  rejected: "border-rose-200 bg-rose-100 text-rose-800",
-  expired: "border-slate-200 bg-slate-100 text-slate-700",
-  under_review: "border-sky-200 bg-sky-100 text-sky-800",
-  in_progress: "border-indigo-200 bg-indigo-100 text-indigo-800",
-  completed: "border-violet-200 bg-violet-100 text-violet-800",
+  pending: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+  pending_approval: "border-amber-400/30 bg-amber-400/10 text-amber-200",
+  active: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+  approved: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+  available: "border-emerald-400/30 bg-emerald-400/10 text-emerald-200",
+  locked: "border-orange-400/30 bg-orange-400/10 text-orange-200",
+  suspended: "border-rose-400/30 bg-rose-400/10 text-rose-200",
+  rejected: "border-rose-400/30 bg-rose-400/10 text-rose-200",
+  expired: "border-slate-500/40 bg-slate-500/10 text-slate-200",
+  under_review: "border-sky-400/30 bg-sky-400/10 text-sky-200",
+  in_progress: "border-indigo-400/30 bg-indigo-400/10 text-indigo-200",
+  completed: "border-violet-400/30 bg-violet-400/10 text-violet-200",
 }
 
 export function AdminStatusBadge({ status, className }: { status: string; className?: string }) {
   const normalized = status.trim().toLowerCase()
-  const tone = toneByStatus[normalized] ?? "border-slate-200 bg-slate-100 text-slate-700"
+  const tone = toneByStatus[normalized] ?? "border-slate-500/40 bg-slate-500/10 text-slate-200"
 
   return (
     <Badge variant="outline" className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide", tone, className)}>
