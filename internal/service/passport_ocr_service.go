@@ -227,10 +227,8 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 		return nil, fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
 	}
 	if strings.TrimSpace(result.PlaceOfBirth) == "" {
-		if rawText, textErr := s.ocrProcessor.ExtractFastText(tempPath); textErr == nil {
-			if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, result.DateOfBirth); fallbackPlace != "" {
-				result.PlaceOfBirth = fallbackPlace
-			}
+		if fallbackPlace := s.extractPreviewPlaceOfBirth(tempPath, result.DateOfBirth); fallbackPlace != "" {
+			result.PlaceOfBirth = fallbackPlace
 		}
 	}
 
@@ -349,6 +347,26 @@ func clonePassportData(data *domain.PassportData) *domain.PassportData {
 		cloned.IssueDate = &issueDate
 	}
 	return &cloned
+}
+
+func (s *PassportOCRService) extractPreviewPlaceOfBirth(tempPath string, dateOfBirth time.Time) string {
+	if strings.TrimSpace(tempPath) == "" || dateOfBirth.IsZero() {
+		return ""
+	}
+
+	if rawText, err := s.ocrProcessor.ExtractFastText(tempPath); err == nil {
+		if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, dateOfBirth); fallbackPlace != "" {
+			return fallbackPlace
+		}
+	}
+
+	if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
+		if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, dateOfBirth); fallbackPlace != "" {
+			return fallbackPlace
+		}
+	}
+
+	return ""
 }
 
 func extractPlaceOfBirthFromOCRText(text string, dateOfBirth time.Time) string {
