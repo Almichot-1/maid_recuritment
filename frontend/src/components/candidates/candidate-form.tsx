@@ -67,6 +67,14 @@ const EDUCATION_LEVEL_OPTIONS = [
   "Other",
 ];
 
+const PASSPORT_OCR_PREVIEW_MAX_DIMENSION = 1800;
+const PASSPORT_OCR_PREVIEW_QUALITY = 0.88;
+
+type PassportPreviewResult = {
+  passport: PassportData;
+  requestKey: string;
+};
+
 interface CandidateFormProps {
   candidateId?: string;
   mode?: "create" | "edit";
@@ -145,6 +153,15 @@ export function CandidateForm({
     useParsePassport(candidateId);
   const [documentResetKey, setDocumentResetKey] = React.useState(0);
   const [ageAutoSyncEnabled, setAgeAutoSyncEnabled] = React.useState(true);
+  const passportPreviewCacheRef = React.useRef(
+    new Map<string, PassportData>(),
+  );
+  const passportPreviewInflightRef = React.useRef(
+    new Map<string, Promise<PassportPreviewResult>>(),
+  );
+  const activePassportRequestKeyRef = React.useRef<string | null>(null);
+  const activePassportAbortRef = React.useRef<AbortController | null>(null);
+  const passportRequestSequenceRef = React.useRef(0);
 
   const blankFormValues = React.useMemo<CandidateFormValues>(
     () => ({
@@ -324,22 +341,103 @@ export function CandidateForm({
 
   const handlePassportFileSelected = React.useCallback((file: File | null) => {
     if (!file || !file.type.startsWith("image/")) {
+      passportRequestSequenceRef.current += 1;
+      activePassportAbortRef.current?.abort();
+      activePassportAbortRef.current = null;
+      activePassportRequestKeyRef.current = null;
       return;
     }
 
     const runExtraction = async () => {
+      const requestKey = buildPassportPreviewRequestKey(file);
+      const requestSequence = passportRequestSequenceRef.current + 1;
+      passportRequestSequenceRef.current = requestSequence;
+
+      if (activePassportRequestKeyRef.current && activePassportRequestKeyRef.current !== requestKey) {
+        activePassportAbortRef.current?.abort();
+      }
+
+      if (passportPreviewCacheRef.current.has(requestKey)) {
+        const cached = passportPreviewCacheRef.current.get(requestKey);
+        if (cached) {
+          activePassportRequestKeyRef.current = requestKey;
+          applyPassportAutofill(cached);
+        }
+        return;
+      }
+
+      const existingRequest = passportPreviewInflightRef.current.get(requestKey);
+      if (existingRequest) {
+        activePassportRequestKeyRef.current = requestKey;
+        try {
+          const result = await existingRequest;
+          if (
+            passportRequestSequenceRef.current !== requestSequence ||
+            activePassportRequestKeyRef.current !== result.requestKey
+          ) {
+            return;
+          }
+          applyPassportAutofill(result.passport);
+        } catch {
+          // The shared request already handles user-facing errors.
+        }
+        return;
+      }
+
+      const abortController = new AbortController();
+      activePassportAbortRef.current = abortController;
+      activePassportRequestKeyRef.current = requestKey;
+
+      const parseRequest = (async () => {
+        const previewFile = await buildPassportOCRPreviewFile(file);
+        const result = await parsePassport({
+          file: previewFile,
+          signal: abortController.signal,
+        });
+
+        passportPreviewCacheRef.current.set(requestKey, result.passport);
+        return {
+          passport: result.passport,
+          requestKey,
+        };
+      })();
+
+      passportPreviewInflightRef.current.set(requestKey, parseRequest);
+
       try {
-        const parsed = await parsePassport(file);
-        applyPassportAutofill(parsed);
+        const result = await parseRequest;
+        if (
+          passportRequestSequenceRef.current !== requestSequence ||
+          activePassportRequestKeyRef.current !== result.requestKey
+        ) {
+          return;
+        }
+        applyPassportAutofill(result.passport);
       } catch {
         // The mutation already surfaces the error to the user.
+      } finally {
+        const inflightRequest = passportPreviewInflightRef.current.get(requestKey);
+        if (inflightRequest === parseRequest) {
+          passportPreviewInflightRef.current.delete(requestKey);
+        }
+
+        if (activePassportAbortRef.current === abortController) {
+          activePassportAbortRef.current = null;
+        }
       }
     };
 
-    window.setTimeout(() => {
-      void runExtraction();
-    }, 80);
+    void runExtraction();
   }, [applyPassportAutofill, parsePassport]);
+
+  React.useEffect(() => {
+    const activePassportAbortRefValue = activePassportAbortRef.current;
+    const passportPreviewInflightRefValue = passportPreviewInflightRef.current;
+    return () => {
+      activePassportAbortRefValue?.abort();
+      passportPreviewInflightRefValue.clear();
+    };
+  }, []);
 
   return (
     <Form {...form}>
@@ -1016,4 +1114,81 @@ function calculateAgeFromDate(value?: string) {
     age -= 1;
   }
   return age >= 0 ? age : null;
+}
+
+function buildPassportPreviewRequestKey(file: File) {
+  return [
+    file.name,
+    file.size,
+    file.lastModified,
+    file.type,
+  ].join(":");
+}
+
+async function buildPassportOCRPreviewFile(file: File) {
+  if (typeof window === "undefined" || !file.type.startsWith("image/")) {
+    return file;
+  }
+
+  if (!("createImageBitmap" in window)) {
+    return file;
+  }
+
+  try {
+    const bitmap = await createImageBitmap(file);
+    try {
+      const longestSide = Math.max(bitmap.width, bitmap.height);
+      const scale =
+        longestSide > PASSPORT_OCR_PREVIEW_MAX_DIMENSION
+          ? PASSPORT_OCR_PREVIEW_MAX_DIMENSION / longestSide
+          : 1;
+
+      if (scale >= 1 && file.size <= 2*1024*1024) {
+        return file;
+      }
+
+      const canvas = document.createElement("canvas");
+      canvas.width = Math.max(1, Math.round(bitmap.width * scale));
+      canvas.height = Math.max(1, Math.round(bitmap.height * scale));
+
+      const context = canvas.getContext("2d");
+      if (!context) {
+        return file;
+      }
+
+      context.drawImage(bitmap, 0, 0, canvas.width, canvas.height);
+
+      const blob = await new Promise<Blob | null>((resolve) => {
+        canvas.toBlob(resolve, "image/jpeg", PASSPORT_OCR_PREVIEW_QUALITY);
+      });
+
+      if (!blob) {
+        return file;
+      }
+
+      return new File(
+        [blob],
+        replaceFileExtension(file.name, ".jpg"),
+        {
+          type: "image/jpeg",
+          lastModified: file.lastModified,
+        },
+      );
+    } finally {
+      bitmap.close();
+    }
+  } catch {
+    return file;
+  }
+}
+
+function replaceFileExtension(fileName: string, nextExtension: string) {
+  const normalizedExtension = nextExtension.startsWith(".")
+    ? nextExtension
+    : `.${nextExtension}`;
+  const lastDotIndex = fileName.lastIndexOf(".");
+  if (lastDotIndex <= 0) {
+    return `${fileName}${normalizedExtension}`;
+  }
+  return `${fileName.slice(0, lastDotIndex)}${normalizedExtension}`;
 }

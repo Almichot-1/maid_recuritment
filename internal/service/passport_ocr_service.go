@@ -33,7 +33,9 @@ type PassportOCRService struct {
 	candidateRepository domain.CandidateRepository
 	passportRepository  domain.PassportDataRepository
 	ocrProcessor        *ocr.OCRProcessor
-	previewCache        sync.Map
+	previewCacheMu      sync.Mutex
+	previewCache        map[string]cachedPassportPreview
+	previewCacheOrder   []string
 }
 
 type cachedPassportPreview struct {
@@ -41,7 +43,17 @@ type cachedPassportPreview struct {
 	cachedAt time.Time
 }
 
-const passportPreviewCacheTTL = 15 * time.Minute
+type PassportPreviewMetrics struct {
+	ReadDuration  time.Duration
+	OCRDuration   time.Duration
+	TotalDuration time.Duration
+	CacheHit      bool
+}
+
+const (
+	passportPreviewCacheTTL        = 15 * time.Minute
+	passportPreviewCacheMaxEntries = 128
+)
 
 func NewPassportOCRService(
 	cfg *config.Config,
@@ -68,6 +80,8 @@ func NewPassportOCRService(
 		candidateRepository: candidateRepository,
 		passportRepository:  passportRepository,
 		ocrProcessor:        ocr.NewOCRProcessor(tesseractPath, ocrLanguage),
+		previewCache:        make(map[string]cachedPassportPreview),
+		previewCacheOrder:   make([]string, 0, passportPreviewCacheMaxEntries),
 	}, nil
 }
 
@@ -189,37 +203,57 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 }
 
 func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*domain.PassportData, error) {
+	passportData, _, err := s.ParsePreviewWithMetrics(file, fileName)
+	return passportData, err
+}
+
+func (s *PassportOCRService) ParsePreviewWithMetrics(file io.Reader, fileName string) (*domain.PassportData, PassportPreviewMetrics, error) {
+	var metrics PassportPreviewMetrics
+	startedAt := time.Now()
+
 	if file == nil {
-		return nil, fmt.Errorf("file is required")
+		return nil, metrics, fmt.Errorf("file is required")
 	}
 	if strings.TrimSpace(fileName) == "" {
-		return nil, fmt.Errorf("file name is required")
+		return nil, metrics, fmt.Errorf("file name is required")
 	}
 
 	contentType, err := detectContentTypeFromFileName(fileName)
 	if err != nil {
-		return nil, err
+		return nil, metrics, err
 	}
 	if contentType != "image/jpeg" && contentType != "image/png" {
-		return nil, ErrPassportOCRRequiresImage
+		return nil, metrics, ErrPassportOCRRequiresImage
 	}
 
-	buffer, err := io.ReadAll(io.LimitReader(file, maxDocumentFileSizeBytes+1))
+	readStartedAt := time.Now()
+	buffer, err := readPassportImageBuffer(file)
+	metrics.ReadDuration = time.Since(readStartedAt)
 	if err != nil {
-		return nil, fmt.Errorf("read passport image: %w", err)
-	}
-	if int64(len(buffer)) > maxDocumentFileSizeBytes {
-		return nil, ErrFileTooLarge
+		metrics.TotalDuration = time.Since(startedAt)
+		return nil, metrics, err
 	}
 
+	passportData, cacheHit, ocrDuration, err := s.parsePreviewBuffer(buffer, fileName)
+	metrics.CacheHit = cacheHit
+	metrics.OCRDuration = ocrDuration
+	metrics.TotalDuration = time.Since(startedAt)
+	if err != nil {
+		return nil, metrics, err
+	}
+
+	return passportData, metrics, nil
+}
+
+func (s *PassportOCRService) parsePreviewBuffer(buffer []byte, fileName string) (*domain.PassportData, bool, time.Duration, error) {
 	cacheKey := fingerprintPassportFile(buffer)
 	if cached := s.getCachedPreview(cacheKey); cached != nil {
-		return clonePassportData(cached), nil
+		return clonePassportData(cached), true, 0, nil
 	}
 
 	tempFile, err := os.CreateTemp("", "passport-ocr-preview-*"+strings.ToLower(filepath.Ext(fileName)))
 	if err != nil {
-		return nil, fmt.Errorf("create temp passport image: %w", err)
+		return nil, false, 0, fmt.Errorf("create temp passport image: %w", err)
 	}
 	tempPath := tempFile.Name()
 	defer func() {
@@ -228,18 +262,19 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 	}()
 
 	if _, err := io.Copy(tempFile, bytes.NewReader(buffer)); err != nil {
-		return nil, fmt.Errorf("write temp passport image: %w", err)
+		return nil, false, 0, fmt.Errorf("write temp passport image: %w", err)
 	}
 	if err := tempFile.Close(); err != nil {
-		return nil, fmt.Errorf("close temp passport image: %w", err)
+		return nil, false, 0, fmt.Errorf("close temp passport image: %w", err)
 	}
 
+	ocrStartedAt := time.Now()
 	result, err := s.ocrProcessor.ExtractPassportPreviewData(tempPath)
 	if err != nil {
 		if isPassportOCRUnavailable(err) {
-			return nil, fmt.Errorf("%w: %v", ErrPassportOCRUnavailable, err)
+			return nil, false, time.Since(ocrStartedAt), fmt.Errorf("%w: %v", ErrPassportOCRUnavailable, err)
 		}
-		return nil, fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
+		return nil, false, time.Since(ocrStartedAt), fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
 	}
 	if strings.TrimSpace(result.PlaceOfBirth) == "" || result.DateOfIssue.IsZero() {
 		fallbackPlace, fallbackIssueDate := s.extractPreviewFallbackFields(
@@ -278,7 +313,7 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 	}
 	s.cachePreview(cacheKey, passportData)
 
-	return passportData, nil
+	return passportData, false, time.Since(ocrStartedAt), nil
 }
 
 func (s *PassportOCRService) StoreCachedPreview(candidateID, requestedBy, fileName string, buffer []byte) (*domain.PassportData, bool, error) {
@@ -377,19 +412,20 @@ func (s *PassportOCRService) getCachedPreview(key string) *domain.PassportData {
 	if strings.TrimSpace(key) == "" {
 		return nil
 	}
-	value, ok := s.previewCache.Load(key)
-	if !ok {
-		return nil
-	}
-	cached, ok := value.(cachedPassportPreview)
+	now := time.Now().UTC()
+	s.previewCacheMu.Lock()
+	defer s.previewCacheMu.Unlock()
+
+	s.cleanupExpiredPreviewCacheLocked(now)
+
+	cached, ok := s.previewCache[key]
 	if !ok || cached.data == nil {
-		s.previewCache.Delete(key)
+		s.removePreviewCacheKeyLocked(key)
 		return nil
 	}
-	if time.Since(cached.cachedAt) > passportPreviewCacheTTL {
-		s.previewCache.Delete(key)
-		return nil
-	}
+	cached.cachedAt = now
+	s.previewCache[key] = cached
+	s.touchPreviewCacheKeyLocked(key)
 	return clonePassportData(cached.data)
 }
 
@@ -397,10 +433,68 @@ func (s *PassportOCRService) cachePreview(key string, data *domain.PassportData)
 	if strings.TrimSpace(key) == "" || data == nil {
 		return
 	}
-	s.previewCache.Store(key, cachedPassportPreview{
+	now := time.Now().UTC()
+
+	s.previewCacheMu.Lock()
+	defer s.previewCacheMu.Unlock()
+
+	s.cleanupExpiredPreviewCacheLocked(now)
+	s.previewCache[key] = cachedPassportPreview{
 		data:     clonePassportData(data),
-		cachedAt: time.Now().UTC(),
-	})
+		cachedAt: now,
+	}
+	s.touchPreviewCacheKeyLocked(key)
+
+	for len(s.previewCacheOrder) > passportPreviewCacheMaxEntries {
+		s.removePreviewCacheKeyLocked(s.previewCacheOrder[0])
+	}
+}
+
+func (s *PassportOCRService) cleanupExpiredPreviewCacheLocked(now time.Time) {
+	for _, key := range append([]string(nil), s.previewCacheOrder...) {
+		cached, ok := s.previewCache[key]
+		if !ok {
+			s.removePreviewCacheKeyLocked(key)
+			continue
+		}
+		if now.Sub(cached.cachedAt) > passportPreviewCacheTTL {
+			s.removePreviewCacheKeyLocked(key)
+		}
+	}
+}
+
+func (s *PassportOCRService) touchPreviewCacheKeyLocked(key string) {
+	if strings.TrimSpace(key) == "" {
+		return
+	}
+	for index, existingKey := range s.previewCacheOrder {
+		if existingKey == key {
+			s.previewCacheOrder = append(s.previewCacheOrder[:index], s.previewCacheOrder[index+1:]...)
+			break
+		}
+	}
+	s.previewCacheOrder = append(s.previewCacheOrder, key)
+}
+
+func (s *PassportOCRService) removePreviewCacheKeyLocked(key string) {
+	delete(s.previewCache, key)
+	for index, existingKey := range s.previewCacheOrder {
+		if existingKey == key {
+			s.previewCacheOrder = append(s.previewCacheOrder[:index], s.previewCacheOrder[index+1:]...)
+			return
+		}
+	}
+}
+
+func readPassportImageBuffer(file io.Reader) ([]byte, error) {
+	buffer, err := io.ReadAll(io.LimitReader(file, maxDocumentFileSizeBytes+1))
+	if err != nil {
+		return nil, fmt.Errorf("read passport image: %w", err)
+	}
+	if int64(len(buffer)) > maxDocumentFileSizeBytes {
+		return nil, ErrFileTooLarge
+	}
+	return buffer, nil
 }
 
 func clonePassportData(data *domain.PassportData) *domain.PassportData {

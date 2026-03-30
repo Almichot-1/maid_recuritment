@@ -684,6 +684,7 @@ func (h *CandidateHandler) ParsePassport(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *CandidateHandler) ParsePassportPreview(w http.ResponseWriter, r *http.Request) {
+	requestStartedAt := time.Now()
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok || strings.TrimSpace(userID) == "" {
 		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
@@ -707,11 +708,12 @@ func (h *CandidateHandler) ParsePassportPreview(w http.ResponseWriter, r *http.R
 	}
 	defer file.Close()
 
-	passportData, err := h.passportOCRService.ParsePreview(file, fileHeader.Filename)
+	passportData, metrics, err := h.passportOCRService.ParsePreviewWithMetrics(file, fileHeader.Filename)
 	if err != nil {
 		h.writeServiceError(w, err)
 		return
 	}
+	writePassportPreviewTimingHeaders(w, metrics, time.Since(requestStartedAt))
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]PassportDataResponse{
 		"passport": mapPassportDataResponse(passportData),
@@ -764,6 +766,40 @@ func (h *CandidateHandler) DeleteCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "candidate deleted"})
+}
+
+func writePassportPreviewTimingHeaders(w http.ResponseWriter, metrics service.PassportPreviewMetrics, requestDuration time.Duration) {
+	overheadDuration := requestDuration - metrics.ReadDuration - metrics.OCRDuration
+	if overheadDuration < 0 {
+		overheadDuration = 0
+	}
+
+	serverTiming := []string{
+		fmt.Sprintf("upload-read;dur=%.1f", durationMilliseconds(metrics.ReadDuration)),
+		fmt.Sprintf("passport-ocr;dur=%.1f", durationMilliseconds(metrics.OCRDuration)),
+		fmt.Sprintf("app-overhead;dur=%.1f", durationMilliseconds(overheadDuration)),
+		fmt.Sprintf("total;dur=%.1f", durationMilliseconds(requestDuration)),
+	}
+	if metrics.CacheHit {
+		serverTiming = append(serverTiming, `passport-cache;desc="hit"`)
+	} else {
+		serverTiming = append(serverTiming, `passport-cache;desc="miss"`)
+	}
+
+	w.Header().Set("Server-Timing", strings.Join(serverTiming, ", "))
+
+	log.Printf(
+		"passport preview timing: read=%s ocr=%s overhead=%s total=%s cache_hit=%t",
+		metrics.ReadDuration,
+		metrics.OCRDuration,
+		overheadDuration,
+		requestDuration,
+		metrics.CacheHit,
+	)
+}
+
+func durationMilliseconds(value time.Duration) float64 {
+	return float64(value) / float64(time.Millisecond)
 }
 
 func (h *CandidateHandler) DeleteCandidateDocument(w http.ResponseWriter, r *http.Request) {
