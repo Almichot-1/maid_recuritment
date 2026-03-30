@@ -327,13 +327,6 @@ export function CandidateForm({
       return;
     }
 
-    const idleWindow = window as Window & {
-      requestIdleCallback?: (
-        callback: () => void,
-        options?: { timeout: number },
-      ) => number;
-    };
-
     const runExtraction = async () => {
       try {
         const parsed = await parsePassport(file);
@@ -343,18 +336,9 @@ export function CandidateForm({
       }
     };
 
-    if (typeof idleWindow.requestIdleCallback === "function") {
-      idleWindow.requestIdleCallback(() => {
-        void runExtraction();
-      }, {
-        timeout: 700,
-      });
-      return;
-    }
-
     window.setTimeout(() => {
       void runExtraction();
-    }, 180);
+    }, 80);
   }, [applyPassportAutofill, parsePassport]);
 
   return (

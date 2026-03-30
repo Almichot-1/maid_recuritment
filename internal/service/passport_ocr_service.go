@@ -143,8 +143,17 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 		}
 		return nil, fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
 	}
-	if result.DateOfIssue.IsZero() {
-		if fallbackIssueDate := s.extractPreviewIssueDate(tempPath); !fallbackIssueDate.IsZero() {
+	if strings.TrimSpace(result.PlaceOfBirth) == "" || result.DateOfIssue.IsZero() {
+		fallbackPlace, fallbackIssueDate := s.extractPreviewFallbackFields(
+			tempPath,
+			result.DateOfBirth,
+			strings.TrimSpace(result.PlaceOfBirth) == "",
+			result.DateOfIssue.IsZero(),
+		)
+		if strings.TrimSpace(result.PlaceOfBirth) == "" && fallbackPlace != "" {
+			result.PlaceOfBirth = fallbackPlace
+		}
+		if result.DateOfIssue.IsZero() && !fallbackIssueDate.IsZero() {
 			result.DateOfIssue = fallbackIssueDate
 		}
 	}
@@ -232,13 +241,17 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 		}
 		return nil, fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
 	}
-	if strings.TrimSpace(result.PlaceOfBirth) == "" {
-		if fallbackPlace := s.extractPreviewPlaceOfBirth(tempPath, result.DateOfBirth); fallbackPlace != "" {
+	if strings.TrimSpace(result.PlaceOfBirth) == "" || result.DateOfIssue.IsZero() {
+		fallbackPlace, fallbackIssueDate := s.extractPreviewFallbackFields(
+			tempPath,
+			result.DateOfBirth,
+			strings.TrimSpace(result.PlaceOfBirth) == "",
+			result.DateOfIssue.IsZero(),
+		)
+		if strings.TrimSpace(result.PlaceOfBirth) == "" && fallbackPlace != "" {
 			result.PlaceOfBirth = fallbackPlace
 		}
-	}
-	if result.DateOfIssue.IsZero() {
-		if fallbackIssueDate := s.extractPreviewIssueDate(tempPath); !fallbackIssueDate.IsZero() {
+		if result.DateOfIssue.IsZero() && !fallbackIssueDate.IsZero() {
 			result.DateOfIssue = fallbackIssueDate
 		}
 	}
@@ -403,44 +416,56 @@ func clonePassportData(data *domain.PassportData) *domain.PassportData {
 	return &cloned
 }
 
-func (s *PassportOCRService) extractPreviewPlaceOfBirth(tempPath string, dateOfBirth time.Time) string {
-	if strings.TrimSpace(tempPath) == "" || dateOfBirth.IsZero() {
-		return ""
+func (s *PassportOCRService) extractPreviewFallbackFields(tempPath string, dateOfBirth time.Time, needPlaceOfBirth, needIssueDate bool) (string, time.Time) {
+	if strings.TrimSpace(tempPath) == "" || (!needPlaceOfBirth && !needIssueDate) {
+		return "", time.Time{}
+	}
+
+	resolveFromText := func(rawText string) (string, time.Time) {
+		if strings.TrimSpace(rawText) == "" {
+			return "", time.Time{}
+		}
+
+		placeOfBirth := ""
+		issueDate := time.Time{}
+		if needPlaceOfBirth && !dateOfBirth.IsZero() {
+			placeOfBirth = extractPlaceOfBirthFromOCRText(rawText, dateOfBirth)
+		}
+		if needIssueDate {
+			issueDate = extractIssueDateFromOCRText(rawText)
+		}
+		return placeOfBirth, issueDate
 	}
 
 	if rawText, err := s.ocrProcessor.ExtractFastText(tempPath); err == nil {
-		if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, dateOfBirth); fallbackPlace != "" {
-			return fallbackPlace
+		placeOfBirth, issueDate := resolveFromText(rawText)
+		if (!needPlaceOfBirth || placeOfBirth != "") && (!needIssueDate || !issueDate.IsZero()) {
+			return placeOfBirth, issueDate
 		}
+
+		needPlaceOfBirth = needPlaceOfBirth && placeOfBirth == ""
+		needIssueDate = needIssueDate && issueDate.IsZero()
+		if !needPlaceOfBirth && !needIssueDate {
+			return placeOfBirth, issueDate
+		}
+
+		if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
+			fullPlaceOfBirth, fullIssueDate := resolveFromText(rawText)
+			if placeOfBirth == "" {
+				placeOfBirth = fullPlaceOfBirth
+			}
+			if issueDate.IsZero() {
+				issueDate = fullIssueDate
+			}
+		}
+		return placeOfBirth, issueDate
 	}
 
 	if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
-		if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, dateOfBirth); fallbackPlace != "" {
-			return fallbackPlace
-		}
+		return resolveFromText(rawText)
 	}
 
-	return ""
-}
-
-func (s *PassportOCRService) extractPreviewIssueDate(tempPath string) time.Time {
-	if strings.TrimSpace(tempPath) == "" {
-		return time.Time{}
-	}
-
-	if rawText, err := s.ocrProcessor.ExtractFastText(tempPath); err == nil {
-		if fallbackIssueDate := extractIssueDateFromOCRText(rawText); !fallbackIssueDate.IsZero() {
-			return fallbackIssueDate
-		}
-	}
-
-	if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
-		if fallbackIssueDate := extractIssueDateFromOCRText(rawText); !fallbackIssueDate.IsZero() {
-			return fallbackIssueDate
-		}
-	}
-
-	return time.Time{}
+	return "", time.Time{}
 }
 
 func extractPlaceOfBirthFromOCRText(text string, dateOfBirth time.Time) string {
