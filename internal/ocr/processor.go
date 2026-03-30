@@ -43,6 +43,11 @@ type PassportData struct {
 	ExtractedAt      time.Time
 }
 
+type visualZoneExtractionResult struct {
+	data *VisualZoneData
+	err  error
+}
+
 func NewOCRProcessor(tesseractPath, lang string) *OCRProcessor {
 	lang = strings.TrimSpace(lang)
 	if lang == "" {
@@ -211,32 +216,42 @@ func (p *OCRProcessor) ExtractPassportData(imagePath string) (*PassportData, err
 }
 
 func (p *OCRProcessor) ExtractPassportPreviewData(imagePath string) (*PassportData, error) {
-	data, err := p.extractPassportData(imagePath, false)
+	visualZoneResult := p.startVisualZoneExtraction(imagePath)
+
+	data, err := p.extractPassportCore(imagePath)
 	if err != nil {
 		return nil, err
 	}
 
-	if vz, err := p.ExtractVisualZone(imagePath); err == nil && vz != nil {
-		if strings.TrimSpace(data.PlaceOfBirth) == "" && strings.TrimSpace(vz.PlaceOfBirth) != "" {
-			data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
-		}
-		if strings.TrimSpace(data.PlaceOfBirth) == "" && !data.DateOfBirth.IsZero() && strings.TrimSpace(vz.RawText) != "" {
-			if fallbackPlace := findPlaceOfBirthNearBirthDate(vz.RawText, data.DateOfBirth); fallbackPlace != "" {
-				data.PlaceOfBirth = fallbackPlace
-			}
-		}
-		if data.DateOfIssue.IsZero() && !vz.DateOfIssue.IsZero() {
-			data.DateOfIssue = vz.DateOfIssue.UTC()
-		}
-		if strings.TrimSpace(data.IssuingAuthority) == "" && strings.TrimSpace(vz.Authority) != "" {
-			data.IssuingAuthority = strings.TrimSpace(vz.Authority)
-		}
+	if vz := <-visualZoneResult; vz.err == nil && vz.data != nil {
+		applyVisualZoneData(data, vz.data)
 	}
 
 	return data, nil
 }
 
 func (p *OCRProcessor) extractPassportData(imagePath string, includeVisualZone bool) (*PassportData, error) {
+	if !includeVisualZone {
+		return p.extractPassportCore(imagePath)
+	}
+
+	visualZoneResult := p.startVisualZoneExtraction(imagePath)
+
+	data, err := p.extractPassportCore(imagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	if vz := <-visualZoneResult; vz.err == nil && vz.data != nil {
+		applyVisualZoneData(data, vz.data)
+	}
+
+	data.CountryCode = strings.ToUpper(strings.TrimSpace(data.CountryCode))
+	data.Nationality = strings.ToUpper(strings.TrimSpace(data.Nationality))
+	return data, nil
+}
+
+func (p *OCRProcessor) extractPassportCore(imagePath string) (*PassportData, error) {
 	mrz1, mrz2, conf, err := p.ExtractMRZ(imagePath)
 	if err != nil {
 		return nil, err
@@ -266,23 +281,42 @@ func (p *OCRProcessor) extractPassportData(imagePath string, includeVisualZone b
 		ExtractedAt:    time.Now().UTC(),
 	}
 
-	if includeVisualZone {
-		if vz, err := p.ExtractVisualZone(imagePath); err == nil && vz != nil {
-			if strings.TrimSpace(vz.PlaceOfBirth) != "" {
-				data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
-			}
-			if !vz.DateOfIssue.IsZero() {
-				data.DateOfIssue = vz.DateOfIssue.UTC()
-			}
-			if strings.TrimSpace(vz.Authority) != "" {
-				data.IssuingAuthority = strings.TrimSpace(vz.Authority)
-			}
-		}
-	}
-
 	data.CountryCode = strings.ToUpper(strings.TrimSpace(data.CountryCode))
 	data.Nationality = strings.ToUpper(strings.TrimSpace(data.Nationality))
 	return data, nil
+}
+
+func (p *OCRProcessor) startVisualZoneExtraction(imagePath string) <-chan visualZoneExtractionResult {
+	ch := make(chan visualZoneExtractionResult, 1)
+	go func() {
+		vz, err := p.ExtractVisualZone(imagePath)
+		ch <- visualZoneExtractionResult{
+			data: vz,
+			err:  err,
+		}
+	}()
+	return ch
+}
+
+func applyVisualZoneData(data *PassportData, vz *VisualZoneData) {
+	if data == nil || vz == nil {
+		return
+	}
+
+	if strings.TrimSpace(data.PlaceOfBirth) == "" && strings.TrimSpace(vz.PlaceOfBirth) != "" {
+		data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
+	}
+	if strings.TrimSpace(data.PlaceOfBirth) == "" && !data.DateOfBirth.IsZero() && strings.TrimSpace(vz.RawText) != "" {
+		if fallbackPlace := findPlaceOfBirthNearBirthDate(vz.RawText, data.DateOfBirth); fallbackPlace != "" {
+			data.PlaceOfBirth = fallbackPlace
+		}
+	}
+	if data.DateOfIssue.IsZero() && !vz.DateOfIssue.IsZero() {
+		data.DateOfIssue = vz.DateOfIssue.UTC()
+	}
+	if strings.TrimSpace(data.IssuingAuthority) == "" && strings.TrimSpace(vz.Authority) != "" {
+		data.IssuingAuthority = strings.TrimSpace(vz.Authority)
+	}
 }
 
 func uniqueOCRLanguages(values ...string) []string {
