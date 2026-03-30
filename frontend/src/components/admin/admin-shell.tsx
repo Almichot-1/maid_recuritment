@@ -87,7 +87,9 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
 
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const { admin } = useCurrentAdmin()
+  const pathname = usePathname()
   const logout = useAdminLogout()
+  const visibleNavItems = React.useMemo(() => navItems.filter((item) => isVisible(item, admin?.role)), [admin?.role])
 
   return (
     <div className="admin-portal dark min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.14),_transparent_20%),radial-gradient(circle_at_top_right,_rgba(34,211,238,0.1),_transparent_24%),linear-gradient(180deg,#020617_0%,#08111f_38%,#0f172a_100%)] text-slate-50">
@@ -171,6 +173,30 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
                   <LogOut className="h-4 w-4" />
                   <span className="hidden sm:inline">Logout</span>
                 </Button>
+              </div>
+            </div>
+            <div className="border-t border-slate-800/70 px-4 py-3 lg:hidden">
+              <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
+                <div className="flex min-w-max gap-2">
+                  {visibleNavItems.map((item) => {
+                    const active = pathname === item.href || (item.href !== "/admin/dashboard" && pathname.startsWith(item.href))
+                    return (
+                      <Link
+                        key={item.href}
+                        href={item.href}
+                        className={cn(
+                          "inline-flex items-center gap-2 rounded-full border px-3 py-2 text-xs font-semibold transition-all",
+                          active
+                            ? "border-amber-300/60 bg-amber-400/15 text-amber-100"
+                            : "border-slate-700 bg-slate-900/90 text-slate-300"
+                        )}
+                      >
+                        <item.icon className="h-3.5 w-3.5 shrink-0" />
+                        <span className="whitespace-nowrap">{item.label}</span>
+                      </Link>
+                    )
+                  })}
+                </div>
               </div>
             </div>
           </header>

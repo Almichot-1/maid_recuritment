@@ -286,6 +286,29 @@ export interface AdminAuditLogOverview {
   created_at: string;
 }
 
+export interface AdminAgencyLoginOverview {
+  session_id: string;
+  user_id: string;
+  agency_name: string;
+  contact_name: string;
+  email: string;
+  role: string;
+  device_label: string;
+  browser_name: string;
+  os_name: string;
+  ip_address?: string;
+  logged_in_at: string;
+  last_seen_at: string;
+  is_active: boolean;
+}
+
+export interface AdminAgencyLoginSummary {
+  total_login_events: number;
+  active_sessions: number;
+  ethiopian_login_events: number;
+  foreign_login_events: number;
+}
+
 export interface AdminManagementRecord {
   id: string;
   email: string;

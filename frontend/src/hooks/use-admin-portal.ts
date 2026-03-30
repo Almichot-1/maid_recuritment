@@ -3,6 +3,8 @@ import adminApi from "@/lib/admin-api"
 import {
   AccountStatus,
   AdminAgencyDetail,
+  AdminAgencyLoginOverview,
+  AdminAgencyLoginSummary,
   AdminAgencySummary,
   AdminAuditLogOverview,
   AdminCandidateOverview,
@@ -167,6 +169,25 @@ export function useAdminAuditLogs(filters?: { admin_id?: string; action?: string
         params: filters,
       })
       return response.data.logs
+    },
+  })
+}
+
+export function useAdminAgencyLogins(filters?: { role?: UserRole | "all"; search?: string }) {
+  return useQuery({
+    queryKey: ["admin-agency-logins", filters ?? {}],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const response = await adminApi.get<{ summary: AdminAgencyLoginSummary; logins: AdminAgencyLoginOverview[] }>(
+        "/admin/agency-logins",
+        {
+          params: {
+            ...(filters?.role && filters.role !== "all" ? { role: filters.role } : {}),
+            ...(filters?.search ? { search: filters.search } : {}),
+          },
+        }
+      )
+      return response.data
     },
   })
 }

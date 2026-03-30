@@ -19,6 +19,10 @@ type GormUserSessionRepository struct {
 	db *gorm.DB
 }
 
+func (r *GormUserSessionRepository) DB() *gorm.DB {
+	return r.db
+}
+
 func NewGormUserSessionRepository(cfg *config.Config) (*GormUserSessionRepository, error) {
 	db, err := openDatabase(cfg)
 	if err != nil {
