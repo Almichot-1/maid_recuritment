@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 	"time"
 
@@ -412,15 +413,14 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 	}
 
 	if documentType == domain.Passport && s.passportOCRService != nil && (contentType == "image/jpeg" || contentType == "image/png") {
-		if passportData, err := s.passportOCRService.ParseAndStore(candidateID, uploadedBy, bytes.NewReader(bufferedBytes), input.FileName); err == nil {
-			_ = s.applyPassportAutofill(candidateID, uploadedBy, passportData)
-		}
+		documentBytes := bytes.Clone(bufferedBytes)
+		go s.processPassportDocument(candidateID, uploadedBy, input.FileName, documentBytes)
 	}
 
 	if documentType == domain.MedicalDocument && s.medicalService != nil {
-		if _, err := s.medicalService.ParseAndStore(candidateID, document, input.FileName, contentType, bufferedBytes); err != nil {
-			return document, nil
-		}
+		documentBytes := bytes.Clone(bufferedBytes)
+		documentCopy := *document
+		go s.processMedicalDocument(candidateID, &documentCopy, input.FileName, contentType, documentBytes)
 	}
 
 	return document, nil
@@ -559,6 +559,23 @@ func (s *CandidateService) RemoveCandidateDocument(candidateID, documentID, remo
 
 func (s *CandidateService) ApplyPassportAutofill(candidateID, updatedBy string, passportData *domain.PassportData) error {
 	return s.applyPassportAutofill(candidateID, updatedBy, passportData)
+}
+
+func (s *CandidateService) processPassportDocument(candidateID, uploadedBy, fileName string, bufferedBytes []byte) {
+	passportData, err := s.passportOCRService.ParseAndStore(candidateID, uploadedBy, bytes.NewReader(bufferedBytes), fileName)
+	if err != nil {
+		log.Printf("candidate_service: passport OCR skipped for candidate %s: %v", candidateID, err)
+		return
+	}
+	if err := s.applyPassportAutofill(candidateID, uploadedBy, passportData); err != nil {
+		log.Printf("candidate_service: passport autofill skipped for candidate %s: %v", candidateID, err)
+	}
+}
+
+func (s *CandidateService) processMedicalDocument(candidateID string, document *domain.Document, fileName, contentType string, bufferedBytes []byte) {
+	if _, err := s.medicalService.ParseAndStore(candidateID, document, fileName, contentType, bufferedBytes); err != nil {
+		log.Printf("candidate_service: medical extraction skipped for candidate %s: %v", candidateID, err)
+	}
 }
 
 func (s *CandidateService) applyPassportAutofill(candidateID, updatedBy string, passportData *domain.PassportData) error {

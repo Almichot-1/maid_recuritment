@@ -187,6 +187,25 @@ func (p *OCRProcessor) ExtractText(imagePath string) (string, error) {
 	return mergeOCRTextLines(textPSM6, textPSM11), nil
 }
 
+func (p *OCRProcessor) ExtractFastText(imagePath string) (string, error) {
+	imagePath = strings.TrimSpace(imagePath)
+	if imagePath == "" {
+		return "", os.ErrInvalid
+	}
+	if _, err := os.Stat(imagePath); err != nil {
+		return "", err
+	}
+
+	common := []string{
+		"--oem", "1",
+		"--psm", "6",
+		"-c", "preserve_interword_spaces=1",
+		"-c", "user_defined_dpi=300",
+	}
+
+	return p.runTesseractTextWithTimeout(imagePath, p.lang, common, 5*time.Second)
+}
+
 func (p *OCRProcessor) ExtractPassportData(imagePath string) (*PassportData, error) {
 	return p.extractPassportData(imagePath, true)
 }
@@ -200,6 +219,11 @@ func (p *OCRProcessor) ExtractPassportPreviewData(imagePath string) (*PassportDa
 	if vz, err := p.ExtractVisualZone(imagePath); err == nil && vz != nil {
 		if strings.TrimSpace(data.PlaceOfBirth) == "" && strings.TrimSpace(vz.PlaceOfBirth) != "" {
 			data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
+		}
+		if strings.TrimSpace(data.PlaceOfBirth) == "" && !data.DateOfBirth.IsZero() && strings.TrimSpace(vz.RawText) != "" {
+			if fallbackPlace := findPlaceOfBirthNearBirthDate(vz.RawText, data.DateOfBirth); fallbackPlace != "" {
+				data.PlaceOfBirth = fallbackPlace
+			}
 		}
 		if data.DateOfIssue.IsZero() && !vz.DateOfIssue.IsZero() {
 			data.DateOfIssue = vz.DateOfIssue.UTC()

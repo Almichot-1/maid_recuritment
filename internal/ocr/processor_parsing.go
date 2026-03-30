@@ -331,6 +331,72 @@ func findPlaceOfBirthFallback(text string) string {
 	return ""
 }
 
+func findPlaceOfBirthNearBirthDate(text string, dateOfBirth time.Time) string {
+	if strings.TrimSpace(text) == "" || dateOfBirth.IsZero() {
+		return ""
+	}
+
+	lines := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
+	month := strings.ToUpper(dateOfBirth.Format("Jan"))
+	day := dateOfBirth.Day()
+	datePattern := regexp.MustCompile(`(?i)\b` + strconv.Itoa(day) + `\s*` + month + `(?:['\s]*\d{1,2})?\b`)
+
+	for index, rawLine := range lines {
+		upperLine := strings.ToUpper(strings.TrimSpace(rawLine))
+		if upperLine == "" || !datePattern.MatchString(upperLine) {
+			continue
+		}
+
+		if candidate := cleanupPlaceOfBirthCandidate(datePattern.ReplaceAllString(rawLine, " ")); candidate != "" {
+			return candidate
+		}
+
+		if index+1 < len(lines) {
+			if candidate := cleanupPlaceOfBirthCandidate(lines[index+1]); candidate != "" {
+				return candidate
+			}
+		}
+	}
+
+	return ""
+}
+
+func cleanupPlaceOfBirthCandidate(value string) string {
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return ""
+	}
+
+	value = strings.Map(func(r rune) rune {
+		switch {
+		case unicode.IsLetter(r), unicode.IsDigit(r), unicode.IsSpace(r):
+			return unicode.ToUpper(r)
+		default:
+			return ' '
+		}
+	}, value)
+
+	parts := strings.Fields(value)
+	filtered := make([]string, 0, len(parts))
+	for _, part := range parts {
+		switch part {
+		case "SEX", "F", "M", "MF", "FM", "PLACE", "BIRTH", "DATE", "OF", "DOB", "NATIONALITY":
+			continue
+		}
+		if len(part) < 3 {
+			continue
+		}
+		filtered = append(filtered, part)
+	}
+	if len(filtered) == 0 {
+		return ""
+	}
+	if len(filtered) > 3 {
+		filtered = filtered[len(filtered)-3:]
+	}
+	return strings.Join(filtered, " ")
+}
+
 func normalizeLettersDigits(value string) string {
 	value = strings.ToUpper(value)
 	var b strings.Builder

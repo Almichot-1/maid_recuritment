@@ -2,6 +2,8 @@ package service
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"io"
@@ -9,6 +11,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
 	"time"
 	"unicode"
 
@@ -29,7 +32,15 @@ type PassportOCRService struct {
 	candidateRepository domain.CandidateRepository
 	passportRepository  domain.PassportDataRepository
 	ocrProcessor        *ocr.OCRProcessor
+	previewCache        sync.Map
 }
+
+type cachedPassportPreview struct {
+	data     *domain.PassportData
+	cachedAt time.Time
+}
+
+const passportPreviewCacheTTL = 15 * time.Minute
 
 func NewPassportOCRService(
 	cfg *config.Config,
@@ -97,6 +108,16 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 		return nil, ErrFileTooLarge
 	}
 
+	cacheKey := fingerprintPassportFile(buffer)
+	if cached := s.getCachedPreview(cacheKey); cached != nil {
+		passportData := clonePassportData(cached)
+		passportData.CandidateID = candidateID
+		if err := s.passportRepository.Upsert(passportData); err != nil {
+			return nil, err
+		}
+		return s.passportRepository.GetByCandidateID(candidateID)
+	}
+
 	tempFile, err := os.CreateTemp("", "passport-ocr-*"+strings.ToLower(filepath.Ext(fileName)))
 	if err != nil {
 		return nil, fmt.Errorf("create temp passport image: %w", err)
@@ -143,6 +164,7 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 		issueDate := result.DateOfIssue.UTC()
 		passportData.IssueDate = &issueDate
 	}
+	s.cachePreview(cacheKey, passportData)
 
 	if err := s.passportRepository.Upsert(passportData); err != nil {
 		return nil, err
@@ -175,6 +197,11 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 		return nil, ErrFileTooLarge
 	}
 
+	cacheKey := fingerprintPassportFile(buffer)
+	if cached := s.getCachedPreview(cacheKey); cached != nil {
+		return clonePassportData(cached), nil
+	}
+
 	tempFile, err := os.CreateTemp("", "passport-ocr-preview-*"+strings.ToLower(filepath.Ext(fileName)))
 	if err != nil {
 		return nil, fmt.Errorf("create temp passport image: %w", err)
@@ -200,22 +227,9 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 		return nil, fmt.Errorf("%w: %v", ErrPassportOCRParseFailed, err)
 	}
 	if strings.TrimSpace(result.PlaceOfBirth) == "" {
-		if enrichedResult, enrichedErr := s.ocrProcessor.ExtractPassportData(tempPath); enrichedErr == nil && enrichedResult != nil {
-			if strings.TrimSpace(enrichedResult.PlaceOfBirth) != "" {
-				result.PlaceOfBirth = strings.TrimSpace(enrichedResult.PlaceOfBirth)
-			}
-			if result.DateOfIssue.IsZero() && !enrichedResult.DateOfIssue.IsZero() {
-				result.DateOfIssue = enrichedResult.DateOfIssue
-			}
-			if strings.TrimSpace(result.IssuingAuthority) == "" && strings.TrimSpace(enrichedResult.IssuingAuthority) != "" {
-				result.IssuingAuthority = strings.TrimSpace(enrichedResult.IssuingAuthority)
-			}
-		}
-		if strings.TrimSpace(result.PlaceOfBirth) == "" {
-			if rawText, textErr := s.ocrProcessor.ExtractText(tempPath); textErr == nil {
-				if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, result.DateOfBirth); fallbackPlace != "" {
-					result.PlaceOfBirth = fallbackPlace
-				}
+		if rawText, textErr := s.ocrProcessor.ExtractFastText(tempPath); textErr == nil {
+			if fallbackPlace := extractPlaceOfBirthFromOCRText(rawText, result.DateOfBirth); fallbackPlace != "" {
+				result.PlaceOfBirth = fallbackPlace
 			}
 		}
 	}
@@ -240,6 +254,7 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 		issueDate := result.DateOfIssue.UTC()
 		passportData.IssueDate = &issueDate
 	}
+	s.cachePreview(cacheKey, passportData)
 
 	return passportData, nil
 }
@@ -286,6 +301,54 @@ func isPassportOCRUnavailable(err error) bool {
 	default:
 		return false
 	}
+}
+
+func fingerprintPassportFile(buffer []byte) string {
+	sum := sha256.Sum256(buffer)
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *PassportOCRService) getCachedPreview(key string) *domain.PassportData {
+	if strings.TrimSpace(key) == "" {
+		return nil
+	}
+	value, ok := s.previewCache.Load(key)
+	if !ok {
+		return nil
+	}
+	cached, ok := value.(cachedPassportPreview)
+	if !ok || cached.data == nil {
+		s.previewCache.Delete(key)
+		return nil
+	}
+	if time.Since(cached.cachedAt) > passportPreviewCacheTTL {
+		s.previewCache.Delete(key)
+		return nil
+	}
+	return clonePassportData(cached.data)
+}
+
+func (s *PassportOCRService) cachePreview(key string, data *domain.PassportData) {
+	if strings.TrimSpace(key) == "" || data == nil {
+		return
+	}
+	s.previewCache.Store(key, cachedPassportPreview{
+		data:     clonePassportData(data),
+		cachedAt: time.Now().UTC(),
+	})
+}
+
+func clonePassportData(data *domain.PassportData) *domain.PassportData {
+	if data == nil {
+		return nil
+	}
+
+	cloned := *data
+	if data.IssueDate != nil {
+		issueDate := data.IssueDate.UTC()
+		cloned.IssueDate = &issueDate
+	}
+	return &cloned
 }
 
 func extractPlaceOfBirthFromOCRText(text string, dateOfBirth time.Time) string {
