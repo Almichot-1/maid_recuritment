@@ -268,6 +268,49 @@ func (s *PassportOCRService) ParsePreview(file io.Reader, fileName string) (*dom
 	return passportData, nil
 }
 
+func (s *PassportOCRService) StoreCachedPreview(candidateID, requestedBy, fileName string, buffer []byte) (*domain.PassportData, bool, error) {
+	if strings.TrimSpace(candidateID) == "" {
+		return nil, false, fmt.Errorf("candidate id is required")
+	}
+	if strings.TrimSpace(requestedBy) == "" {
+		return nil, false, ErrForbidden
+	}
+	if strings.TrimSpace(fileName) == "" {
+		return nil, false, fmt.Errorf("file name is required")
+	}
+	if len(buffer) == 0 {
+		return nil, false, fmt.Errorf("file is required")
+	}
+
+	contentType, err := detectContentTypeFromFileName(fileName)
+	if err != nil {
+		return nil, false, err
+	}
+	if contentType != "image/jpeg" && contentType != "image/png" {
+		return nil, false, ErrPassportOCRRequiresImage
+	}
+
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err != nil {
+		return nil, false, err
+	}
+	if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(requestedBy) {
+		return nil, false, ErrForbidden
+	}
+
+	cached := s.getCachedPreview(fingerprintPassportFile(buffer))
+	if cached == nil {
+		return nil, false, nil
+	}
+
+	cached.CandidateID = candidateID
+	if err := s.passportRepository.Upsert(cached); err != nil {
+		return nil, false, err
+	}
+
+	return clonePassportData(cached), true, nil
+}
+
 func (s *PassportOCRService) GetByCandidateID(candidateID, requestedBy string) (*domain.PassportData, error) {
 	if strings.TrimSpace(candidateID) == "" {
 		return nil, fmt.Errorf("candidate id is required")

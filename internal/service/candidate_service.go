@@ -413,8 +413,20 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 	}
 
 	if documentType == domain.Passport && s.passportOCRService != nil && (contentType == "image/jpeg" || contentType == "image/png") {
-		documentBytes := bytes.Clone(bufferedBytes)
-		go s.processPassportDocument(candidateID, uploadedBy, input.FileName, documentBytes)
+		passportData, storedFromPreview, err := s.passportOCRService.StoreCachedPreview(candidateID, uploadedBy, input.FileName, bufferedBytes)
+		switch {
+		case err != nil:
+			log.Printf("candidate_service: cached passport preview skipped for candidate %s: %v", candidateID, err)
+			documentBytes := bytes.Clone(bufferedBytes)
+			go s.processPassportDocument(candidateID, uploadedBy, input.FileName, documentBytes)
+		case storedFromPreview:
+			if err := s.applyPassportAutofill(candidateID, uploadedBy, passportData); err != nil {
+				log.Printf("candidate_service: cached passport autofill skipped for candidate %s: %v", candidateID, err)
+			}
+		default:
+			documentBytes := bytes.Clone(bufferedBytes)
+			go s.processPassportDocument(candidateID, uploadedBy, input.FileName, documentBytes)
+		}
 	}
 
 	if documentType == domain.MedicalDocument && s.medicalService != nil {
