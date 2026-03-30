@@ -24,7 +24,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
-import { downloadCandidateCVFile, useCandidate, useDeleteCandidate, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
+import { downloadCandidateCVFile, isPublishPairingSelectionError, useCandidate, useDeleteCandidate, useDeleteCandidateDocument, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidateShares, usePairingContext, useUnshareCandidateFromWorkspace } from "@/hooks/use-pairings"
 import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
@@ -46,6 +46,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CandidateStatus } from "@/types"
 import { cn } from "@/lib/utils"
 
@@ -55,7 +56,7 @@ export default function CandidateDetailPage() {
   const candidateId = params.id as string
   
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
-  const { activePairingId, activeWorkspace } = usePairingContext()
+  const { context, activePairingId, activeWorkspace } = usePairingContext()
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
   const showProgress = candidate?.status === CandidateStatus.IN_PROGRESS || candidate?.status === CandidateStatus.COMPLETED
   const isOwner = isEthiopianAgent && candidate?.created_by === user?.id
@@ -63,14 +64,17 @@ export default function CandidateDetailPage() {
   const { data: progressData } = useCandidateProgress(candidateId, Boolean(showProgress))
   
   const { mutate: deleteCandidate, isPending: isDeleting } = useDeleteCandidate(candidateId)
-  const { mutate: publishCandidate, isPending: isPublishing } = usePublishCandidate(candidateId)
+  const { mutateAsync: publishCandidate, isPending: isPublishing } = usePublishCandidate(candidateId)
   const { mutateAsync: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
+  const { mutateAsync: removeDocument, isPending: isRemovingDocument } = useDeleteCandidateDocument(candidateId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId)
   const { mutate: unshareFromWorkspace, isPending: isRemovingFromWorkspace } = useUnshareCandidateFromWorkspace()
 
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [selectDialogOpen, setSelectDialogOpen] = React.useState(false)
   const [publishDialogOpen, setPublishDialogOpen] = React.useState(false)
+  const [publishPartnerDialogOpen, setPublishPartnerDialogOpen] = React.useState(false)
+  const [publishPairingId, setPublishPairingId] = React.useState("")
   const [imagePreview, setImagePreview] = React.useState<string | null>(null)
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
   const [isDownloadingCV, setIsDownloadingCV] = React.useState(false)
@@ -169,6 +173,7 @@ export default function CandidateDetailPage() {
   const getDocument = (type: string) => {
     return candidate.documents?.find(doc => doc.document_type === type)
   }
+  const medicalDocument = getDocument("medical")
 
   const handleDelete = () => {
     deleteCandidate()
@@ -183,8 +188,33 @@ export default function CandidateDetailPage() {
   }
 
   const handlePublish = () => {
-    publishCandidate()
-    setPublishDialogOpen(false)
+    void (async () => {
+      try {
+        await publishCandidate({})
+        setPublishDialogOpen(false)
+      } catch (error) {
+        if (isPublishPairingSelectionError(error)) {
+          setPublishDialogOpen(false)
+          setPublishPairingId(activePairingId || activeShares[0]?.pairing_id || "")
+          setPublishPartnerDialogOpen(true)
+        }
+      }
+    })()
+  }
+
+  const handlePublishToSelectedPartner = () => {
+    if (!publishPairingId) {
+      toast.error("Choose a foreign partner before publishing.")
+      return
+    }
+    void (async () => {
+      try {
+        await publishCandidate({ pairingId: publishPairingId })
+        setPublishPartnerDialogOpen(false)
+      } catch {
+        toast.error("Failed to publish the candidate to the selected partner.")
+      }
+    })()
   }
 
   const handleDownloadCV = async () => {
@@ -204,6 +234,13 @@ export default function CandidateDetailPage() {
 
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
     updateStep({ step_name: stepName, status, notes })
+  }
+
+  const handleRemoveMedicalDocument = async () => {
+    if (!medicalDocument?.id) {
+      return
+    }
+    await removeDocument({ documentId: medicalDocument.id })
   }
 
   const missingRequiredDocuments = ["passport", "photo"].filter((documentType) => !getDocument(documentType))
@@ -590,6 +627,8 @@ export default function CandidateDetailPage() {
                 isUpdating={isUpdatingStep}
                 onUploadMedicalDocument={(file) => uploadDocument({ file, type: "medical" })}
                 isUploadingMedicalDocument={isUploadingDocument}
+                onRemoveMedicalDocument={isOwner ? handleRemoveMedicalDocument : undefined}
+                isRemovingMedicalDocument={isRemovingDocument}
               />
             </CardContent>
           </Card>
@@ -896,6 +935,38 @@ export default function CandidateDetailPage() {
               className="w-full h-auto rounded-lg"
             />
           )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={publishPartnerDialogOpen} onOpenChange={setPublishPartnerDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Choose a foreign partner</DialogTitle>
+            <DialogDescription>
+              Multiple active foreign partners are available for this Ethiopian agency. Pick the one that should receive {candidate.full_name} immediately after publishing.
+            </DialogDescription>
+          </DialogHeader>
+          <Select value={publishPairingId} onValueChange={setPublishPairingId}>
+            <SelectTrigger>
+              <SelectValue placeholder="Select a foreign partner" />
+            </SelectTrigger>
+            <SelectContent>
+              {(context?.workspaces || []).map((workspace) => (
+                <SelectItem key={workspace.id} value={workspace.id}>
+                  {workspace.partner_agency.company_name || workspace.partner_agency.full_name || workspace.partner_agency.email}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPublishPartnerDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button onClick={handlePublishToSelectedPartner} disabled={isPublishing}>
+              {isPublishing ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Publish and share
+            </Button>
+          </DialogFooter>
         </DialogContent>
       </Dialog>
 

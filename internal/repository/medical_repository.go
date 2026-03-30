@@ -46,12 +46,12 @@ func (r *GormMedicalDataRepository) Upsert(data *domain.MedicalData) error {
 	if err := r.db.Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "candidate_id"}},
 		DoUpdates: clause.Assignments(map[string]any{
-			"document_id":         data.DocumentID,
-			"expiry_date":         data.ExpiryDate,
-			"raw_text":            data.RawText,
-			"extracted_at":        data.ExtractedAt,
-			"warning_sent_flags":  data.WarningSentFlags,
-			"updated_at":          time.Now().UTC(),
+			"document_id":        data.DocumentID,
+			"expiry_date":        data.ExpiryDate,
+			"raw_text":           data.RawText,
+			"extracted_at":       data.ExtractedAt,
+			"warning_sent_flags": data.WarningSentFlags,
+			"updated_at":         time.Now().UTC(),
 		}),
 	}).Create(data).Error; err != nil {
 		return fmt.Errorf("upsert medical data: %w", err)
@@ -87,4 +87,12 @@ func (r *GormMedicalDataRepository) GetExpiringMedical(days int) ([]*domain.Medi
 		return nil, fmt.Errorf("get expiring medical data: %w", err)
 	}
 	return results, nil
+}
+
+func (r *GormMedicalDataRepository) DeleteByCandidateID(candidateID string) error {
+	result := r.db.Where("candidate_id = ?", strings.TrimSpace(candidateID)).Delete(&domain.MedicalData{})
+	if result.Error != nil {
+		return fmt.Errorf("delete medical data by candidate id: %w", result.Error)
+	}
+	return nil
 }

@@ -141,6 +141,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize candidate service: %v", err)
 	}
+	candidateService.SetUserRepository(userRepository)
 	candidateService.SetPassportRepository(passportRepository)
 	candidateService.SetMedicalDataRepository(medicalRepository)
 
@@ -172,6 +173,7 @@ func main() {
 		log.Fatalf("failed to initialize status step service: %v", err)
 	}
 	statusStepService.SetDocumentRepository(documentRepository)
+	candidateService.SetStatusStepService(statusStepService)
 
 	approvalService, err := service.NewApprovalService(approvalRepository, selectionRepository, candidateRepository, statusStepService, notificationService)
 	if err != nil {
@@ -183,7 +185,7 @@ func main() {
 	approvalService.SetPlatformSettingsReader(platformSettingsService)
 
 	authHandler := handler.NewAuthHandler(authService, userRepository, agencyApprovalService)
-	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService)
+	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService, pairingService)
 	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService, passportRepository, medicalRepository, statusStepRepository)
 	candidateHandler := handler.NewCandidateHandler(candidateService, passportOCRService, candidateRepository, selectionRepository, pairingService)
 	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService)
@@ -292,6 +294,7 @@ func main() {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/passport/parse-preview", candidateHandler.ParsePassportPreview)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}", candidateHandler.UpdateCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}", candidateHandler.DeleteCandidate)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}/documents/{documentId}", candidateHandler.DeleteCandidateDocument)
 			cr.Get("/{id}", candidateHandler.GetCandidate)
 			cr.Get("/", candidateHandler.ListCandidates)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/shares", pairingHandler.GetCandidateShares)
@@ -330,6 +333,7 @@ func main() {
 
 		protected.Route("/users", func(ur chi.Router) {
 			ur.Patch("/profile", userHandler.UpdateProfile)
+			ur.Patch("/sharing-preferences", userHandler.UpdateSharingPreferences)
 			ur.Post("/avatar", userHandler.UploadAvatar)
 			ur.Delete("/avatar", userHandler.DeleteAvatar)
 			ur.Post("/change-password", userHandler.ChangePassword)

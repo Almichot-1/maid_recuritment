@@ -32,6 +32,11 @@ type ChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" validate:"required,min=8"`
 }
 
+type UpdateSharingPreferencesRequest struct {
+	AutoShareCandidates     bool    `json:"auto_share_candidates"`
+	DefaultForeignPairingID *string `json:"default_foreign_pairing_id"`
+}
+
 type UserSessionResponse struct {
 	ID          string `json:"id"`
 	DeviceLabel string `json:"device_label"`
@@ -51,14 +56,16 @@ type UserHandler struct {
 	userRepository    domain.UserRepository
 	sessionRepository domain.UserSessionRepository
 	storageService    service.StorageService
+	pairingService    *service.PairingService
 	inputValidator    *validator.Validate
 }
 
-func NewUserHandler(userRepository domain.UserRepository, sessionRepository domain.UserSessionRepository, storageService service.StorageService) *UserHandler {
+func NewUserHandler(userRepository domain.UserRepository, sessionRepository domain.UserSessionRepository, storageService service.StorageService, pairingService *service.PairingService) *UserHandler {
 	return &UserHandler{
 		userRepository:    userRepository,
 		sessionRepository: sessionRepository,
 		storageService:    storageService,
+		pairingService:    pairingService,
 		inputValidator:    validator.New(),
 	}
 }
@@ -324,6 +331,49 @@ func (h *UserHandler) ChangePassword(w http.ResponseWriter, r *http.Request) {
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "password updated"})
 }
 
+func (h *UserHandler) UpdateSharingPreferences(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	user, err := h.userRepository.GetByID(strings.TrimSpace(userID))
+	if err != nil {
+		h.writeUserError(w, err)
+		return
+	}
+	if user.Role != domain.EthiopianAgent {
+		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	var req UpdateSharingPreferencesRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	defaultPairingID, err := h.validateDefaultForeignPairing(user.ID, req.DefaultForeignPairingID)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	user.AutoShareCandidates = req.AutoShareCandidates
+	user.DefaultForeignPairingID = defaultPairingID
+
+	if err := h.userRepository.Update(user); err != nil {
+		h.writeUserError(w, err)
+		return
+	}
+
+	sessionID, _ := middleware.SessionIDFromContext(r.Context())
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]AuthUserView{
+		"user": mapUserToAuthUserView(user, sessionID),
+	})
+}
+
 func (h *UserHandler) writeUserError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, repository.ErrUserNotFound):
@@ -393,4 +443,26 @@ func buildDeviceLabel(browserName, osName string) string {
 	default:
 		return "Active session"
 	}
+}
+
+func (h *UserHandler) validateDefaultForeignPairing(userID string, pairingID *string) (*string, error) {
+	if pairingID == nil || strings.TrimSpace(*pairingID) == "" {
+		return nil, nil
+	}
+	if h.pairingService == nil {
+		return nil, errors.New("sharing preferences are not configured")
+	}
+
+	activePairings, err := h.pairingService.ListActivePairingsForUser(strings.TrimSpace(userID))
+	if err != nil {
+		return nil, err
+	}
+	for _, pairing := range activePairings {
+		if pairing != nil && strings.TrimSpace(pairing.ID) == strings.TrimSpace(*pairingID) {
+			trimmed := strings.TrimSpace(*pairingID)
+			return &trimmed, nil
+		}
+	}
+
+	return nil, errors.New("default foreign partner must be one of your active pairings")
 }

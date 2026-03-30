@@ -14,12 +14,15 @@ import (
 )
 
 var (
-	ErrCandidateLocked              = errors.New("candidate is locked")
-	ErrForbidden                    = errors.New("forbidden")
-	ErrInvalidCandidateInput        = errors.New("invalid candidate input")
-	ErrInvalidCandidateUpdateState  = errors.New("candidate cannot be updated in current status")
-	ErrInvalidCandidateDeleteState  = errors.New("candidate cannot be deleted in current status")
-	ErrInvalidCandidateDocumentType = errors.New("invalid document type")
+	ErrCandidateLocked                 = errors.New("candidate is locked")
+	ErrForbidden                       = errors.New("forbidden")
+	ErrInvalidCandidateInput           = errors.New("invalid candidate input")
+	ErrInvalidCandidateUpdateState     = errors.New("candidate cannot be updated in current status")
+	ErrInvalidCandidateDeleteState     = errors.New("candidate cannot be deleted in current status")
+	ErrInvalidCandidateDocumentType    = errors.New("invalid document type")
+	ErrCandidateDocumentNotFound       = errors.New("candidate document not found")
+	ErrPublishPairingSelectionRequired = errors.New("publish requires pairing selection")
+	ErrInvalidDefaultForeignPairing    = errors.New("default foreign pairing is invalid")
 )
 
 type CandidateInput struct {
@@ -49,16 +52,27 @@ type CandidateCVBranding struct {
 	LogoDataURL string
 }
 
+type PublishCandidateInput struct {
+	PairingID string
+}
+
+type PublishCandidateResult struct {
+	AutoShared      bool
+	SharedPairingID string
+}
+
 type CandidateService struct {
 	candidateRepository domain.CandidateRepository
 	documentRepository  domain.DocumentRepository
 	passportRepository  domain.PassportDataRepository
 	medicalRepository   domain.MedicalDataRepository
+	userRepository      domain.UserRepository
 	storageService      StorageService
 	pdfService          *PDFService
 	pairingService      *PairingService
 	medicalService      *MedicalDocumentService
 	passportOCRService  *PassportOCRService
+	statusStepService   *StatusStepService
 }
 
 func NewCandidateService(
@@ -106,6 +120,14 @@ func (s *CandidateService) SetMedicalDocumentService(medicalService *MedicalDocu
 
 func (s *CandidateService) SetPassportOCRService(passportOCRService *PassportOCRService) {
 	s.passportOCRService = passportOCRService
+}
+
+func (s *CandidateService) SetUserRepository(userRepository domain.UserRepository) {
+	s.userRepository = userRepository
+}
+
+func (s *CandidateService) SetStatusStepService(statusStepService *StatusStepService) {
+	s.statusStepService = statusStepService
 }
 
 func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput) (*domain.Candidate, error) {
@@ -282,28 +304,48 @@ func (s *CandidateService) ListCandidatesForWorkspace(role, userID, pairingID st
 	return s.candidateRepository.List(filters)
 }
 
-func (s *CandidateService) PublishCandidate(id, publishedBy string) error {
+func (s *CandidateService) PublishCandidate(id, publishedBy string, input PublishCandidateInput) (*PublishCandidateResult, error) {
 	if strings.TrimSpace(id) == "" {
-		return fmt.Errorf("candidate id is required")
+		return nil, fmt.Errorf("candidate id is required")
 	}
 	if strings.TrimSpace(publishedBy) == "" {
-		return ErrForbidden
+		return nil, ErrForbidden
 	}
 
 	candidate, err := s.candidateRepository.GetByID(id)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	if candidate.CreatedBy != strings.TrimSpace(publishedBy) {
-		return ErrForbidden
+		return nil, ErrForbidden
 	}
 	if candidate.Status != domain.CandidateStatusDraft {
-		return repository.ErrInvalidStatusTransition
+		return nil, repository.ErrInvalidStatusTransition
+	}
+
+	autoShareTarget, err := s.resolvePublishPairingTarget(strings.TrimSpace(publishedBy), strings.TrimSpace(input.PairingID))
+	if err != nil {
+		return nil, err
 	}
 
 	candidate.Status = domain.CandidateStatusAvailable
-	return s.candidateRepository.Update(candidate)
+	if err := s.candidateRepository.Update(candidate); err != nil {
+		return nil, err
+	}
+
+	result := &PublishCandidateResult{}
+	if autoShareTarget == nil || s.pairingService == nil {
+		return result, nil
+	}
+
+	if err := s.pairingService.ShareCandidate(candidate.ID, autoShareTarget.ID, publishedBy); err != nil && !errors.Is(err, ErrCandidateAlreadyShared) {
+		return nil, err
+	}
+
+	result.AutoShared = true
+	result.SharedPairingID = autoShareTarget.ID
+	return result, nil
 }
 
 func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy string, input UploadCandidateDocumentInput) (*domain.Document, error) {
@@ -456,6 +498,65 @@ func (s *CandidateService) DeleteCandidate(candidateID, deletedBy string) error 
 	return s.candidateRepository.Delete(candidateID)
 }
 
+func (s *CandidateService) RemoveCandidateDocument(candidateID, documentID, removedBy string) (*domain.Document, error) {
+	if strings.TrimSpace(candidateID) == "" {
+		return nil, fmt.Errorf("candidate id is required")
+	}
+	if strings.TrimSpace(documentID) == "" {
+		return nil, fmt.Errorf("document id is required")
+	}
+	if strings.TrimSpace(removedBy) == "" {
+		return nil, ErrForbidden
+	}
+
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(removedBy) {
+		return nil, ErrForbidden
+	}
+
+	documents, err := s.documentRepository.GetByCandidateID(candidateID)
+	if err != nil {
+		return nil, err
+	}
+
+	var target *domain.Document
+	for _, document := range documents {
+		if document != nil && strings.TrimSpace(document.ID) == strings.TrimSpace(documentID) {
+			target = document
+			break
+		}
+	}
+	if target == nil {
+		return nil, ErrCandidateDocumentNotFound
+	}
+
+	if strings.TrimSpace(target.FileURL) != "" {
+		if err := s.storageService.Delete(target.FileURL); err != nil {
+			return nil, err
+		}
+	}
+	if err := s.documentRepository.Delete(target.ID); err != nil {
+		return nil, err
+	}
+	if target.DocumentType == domain.MedicalDocument {
+		if s.medicalRepository != nil {
+			if err := s.medicalRepository.DeleteByCandidateID(candidateID); err != nil {
+				return nil, err
+			}
+		}
+		if s.statusStepService != nil {
+			if err := s.statusStepService.ReopenMedicalStep(candidateID, removedBy); err != nil {
+				return nil, err
+			}
+		}
+	}
+
+	return target, nil
+}
+
 func (s *CandidateService) ApplyPassportAutofill(candidateID, updatedBy string, passportData *domain.PassportData) error {
 	return s.applyPassportAutofill(candidateID, updatedBy, passportData)
 }
@@ -584,5 +685,58 @@ func parseCandidateDocumentType(value string) (domain.DocumentType, error) {
 		return domain.MedicalDocument, nil
 	default:
 		return "", ErrInvalidCandidateDocumentType
+	}
+}
+
+func (s *CandidateService) resolvePublishPairingTarget(publishedBy, explicitPairingID string) (*domain.AgencyPairing, error) {
+	if s.pairingService == nil || s.userRepository == nil {
+		return nil, nil
+	}
+
+	user, err := s.userRepository.GetByID(strings.TrimSpace(publishedBy))
+	if err != nil {
+		return nil, err
+	}
+
+	activePairings, err := s.pairingService.ListActivePairingsForUser(strings.TrimSpace(publishedBy))
+	if err != nil {
+		return nil, err
+	}
+
+	findPairing := func(pairingID string) *domain.AgencyPairing {
+		for _, pairing := range activePairings {
+			if pairing != nil && strings.TrimSpace(pairing.ID) == strings.TrimSpace(pairingID) {
+				return pairing
+			}
+		}
+		return nil
+	}
+
+	if strings.TrimSpace(explicitPairingID) != "" {
+		pairing := findPairing(explicitPairingID)
+		if pairing == nil {
+			return nil, ErrInvalidDefaultForeignPairing
+		}
+		return pairing, nil
+	}
+
+	if !user.AutoShareCandidates {
+		return nil, nil
+	}
+
+	switch len(activePairings) {
+	case 0:
+		return nil, nil
+	case 1:
+		return activePairings[0], nil
+	default:
+		if user.DefaultForeignPairingID != nil {
+			if pairing := findPairing(*user.DefaultForeignPairingID); pairing != nil {
+				return pairing, nil
+			}
+			user.DefaultForeignPairingID = nil
+			_ = s.userRepository.Update(user)
+		}
+		return nil, ErrPublishPairingSelectionRequired
 	}
 }

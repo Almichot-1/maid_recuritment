@@ -17,6 +17,8 @@ export interface User {
   role: UserRole;
   company_name?: string;
   avatar_url?: string;
+  auto_share_candidates?: boolean;
+  default_foreign_pairing_id?: string | null;
   account_status: AccountStatus;
   current_session_id?: string;
 }

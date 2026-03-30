@@ -24,6 +24,11 @@ export interface PreferencesData {
   approval_alerts: boolean;
 }
 
+export interface SharingPreferencesData {
+  auto_share_candidates: boolean;
+  default_foreign_pairing_id?: string | null;
+}
+
 interface ApiErrorResponse {
   error?: string;
   message?: string;
@@ -113,6 +118,30 @@ export function useLogoutAllDevices() {
         : error instanceof Error
           ? error.message
           : 'Failed to clear active sessions';
+      toast.error(message);
+    },
+  });
+}
+
+export function useUpdateSharingPreferences() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (data: SharingPreferencesData) => {
+      const response = await api.patch<{ user: User }>('/users/sharing-preferences', data);
+      return response.data.user;
+    },
+    onSuccess: (user) => {
+      useAuthStore.getState().updateUser(user);
+      queryClient.invalidateQueries({ queryKey: ['user'] });
+      toast.success('Sharing preferences updated');
+    },
+    onError: (error: unknown) => {
+      const message = axios.isAxiosError<ApiErrorResponse>(error)
+        ? error.response?.data?.error || error.response?.data?.message || error.message
+        : error instanceof Error
+          ? error.message
+          : 'Failed to update sharing preferences';
       toast.error(message);
     },
   });

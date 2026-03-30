@@ -31,6 +31,13 @@ export interface GenerateCVRequest {
   company_name?: string;
 }
 
+export interface PublishCandidateResponse {
+  message: string;
+  auto_shared?: boolean;
+  shared_pairing_id?: string;
+  requires_pairing_selection?: boolean;
+}
+
 export interface CandidateDocumentApiResponse {
   id: string;
   document_type: string;
@@ -228,17 +235,32 @@ export function usePublishCandidate(id: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async () => {
-      const response = await api.post(`/candidates/${id}/publish`);
+    mutationFn: async ({ pairingId }: { pairingId?: string } = {}) => {
+      const response = await api.post<PublishCandidateResponse>(`/candidates/${id}/publish`, {
+        pairing_id: pairingId,
+      });
       return response.data;
     },
-    onSuccess: () => {
+    onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ["candidate", id] });
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      if (data?.auto_shared) {
+        toast.success("Candidate published and shared successfully");
+        return;
+      }
       toast.success("Candidate published successfully");
     },
-    onError: () => {
-      toast.error("Failed to publish candidate");
+    onError: (error) => {
+      const responseError = error as AxiosError<PublishCandidateResponse & { error?: string }>;
+      if (
+        responseError.response?.status === 409 &&
+        responseError.response.data?.requires_pairing_selection
+      ) {
+        return;
+      }
+      toast.error(
+        responseError.response?.data?.error || "Failed to publish candidate",
+      );
     },
   });
 }
@@ -298,8 +320,23 @@ export async function uploadCandidateDocumentFile(
 }
 
 export async function publishCandidateById(id: string) {
-  const response = await api.post(`/candidates/${id}/publish`);
+  const response = await api.post<PublishCandidateResponse>(`/candidates/${id}/publish`);
   return response.data;
+}
+
+export async function publishCandidateWithPairingById(id: string, pairingId: string) {
+  const response = await api.post<PublishCandidateResponse>(`/candidates/${id}/publish`, {
+    pairing_id: pairingId,
+  });
+  return response.data;
+}
+
+export function isPublishPairingSelectionError(error: unknown) {
+  const responseError = error as AxiosError<PublishCandidateResponse>;
+  return (
+    responseError?.response?.status === 409 &&
+    Boolean(responseError.response?.data?.requires_pairing_selection)
+  );
 }
 
 export async function downloadCandidateCVFile(
@@ -381,6 +418,28 @@ export function useDeleteCandidate(id: string) {
       const responseError = error as AxiosError<{ error?: string }>;
       const message = responseError.response?.data?.error;
       toast.error(message || "Failed to delete candidate");
+    },
+  });
+}
+
+export function useDeleteCandidateDocument(candidateId: string) {
+  const queryClient = useQueryClient();
+  const activePairingId = usePairingStore((state) => state.activePairingId);
+
+  return useMutation({
+    mutationFn: async ({ documentId }: { documentId: string }) => {
+      const response = await api.delete(`/candidates/${candidateId}/documents/${documentId}`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["candidate", candidateId, activePairingId] });
+      queryClient.invalidateQueries({ queryKey: ["candidate-progress", candidateId, activePairingId] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success("Document removed successfully");
+    },
+    onError: (error) => {
+      const responseError = error as AxiosError<{ error?: string }>;
+      toast.error(responseError.response?.data?.error || "Failed to remove document");
     },
   });
 }

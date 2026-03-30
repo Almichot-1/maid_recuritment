@@ -21,7 +21,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useCurrentUser } from "@/hooks/use-auth"
-import { useCandidate, useUploadDocument } from "@/hooks/use-candidates"
+import { useCandidate, useDeleteCandidateDocument, useUploadDocument } from "@/hooks/use-candidates"
 import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
 import { CandidateStatus } from "@/types"
 
@@ -33,6 +33,8 @@ export default function CandidateTrackingPage() {
   const { data: progressData, isLoading: isProgressLoading } = useCandidateProgress(candidateId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId)
   const { mutateAsync: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
+  const medicalDocument = candidate?.documents?.find((document) => document.document_type === "medical")
+  const { mutateAsync: removeDocument, isPending: isRemovingMedicalDocument } = useDeleteCandidateDocument(candidateId)
   const canUpdateProgress = isEthiopianAgent && candidate?.created_by === user?.id
 
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
@@ -40,6 +42,14 @@ export default function CandidateTrackingPage() {
       return
     }
     updateStep({ step_name: stepName, status, notes })
+  }
+
+  const handleRemoveMedicalDocument = async () => {
+    if (!medicalDocument?.id || !canUpdateProgress) {
+      return
+    }
+
+    await removeDocument({ documentId: medicalDocument.id })
   }
 
   if (isCandidateLoading || isProgressLoading) {
@@ -105,7 +115,7 @@ export default function CandidateTrackingPage() {
                 Shared recruitment tracking for {candidate.full_name}
               </h1>
               <p className="max-w-2xl text-sm text-slate-200/90">
-                Once both agencies approve a selection, the recruitment process lives here so both sides can follow medical, CoC, LMIS, ticket, and arrival progress clearly.
+                This is the shared recruitment timeline for {candidate.full_name}, so both agencies can follow medical, CoC, LMIS, ticket, and arrival progress clearly.
               </p>
             </div>
             <div className="flex flex-wrap gap-3">
@@ -206,6 +216,8 @@ export default function CandidateTrackingPage() {
                 isUpdating={isUpdatingStep}
                 onUploadMedicalDocument={canUpdateProgress ? (file) => uploadDocument({ file, type: "medical" }) : undefined}
                 isUploadingMedicalDocument={isUploadingDocument}
+                onRemoveMedicalDocument={canUpdateProgress ? handleRemoveMedicalDocument : undefined}
+                isRemovingMedicalDocument={isRemovingMedicalDocument}
               />
             </CardContent>
           </Card>
@@ -219,19 +231,19 @@ export default function CandidateTrackingPage() {
                 <p className="text-xs font-semibold uppercase tracking-[0.2em] text-muted-foreground">Current focus</p>
                 <p className="mt-2 text-base font-semibold text-foreground">
                   {failedStep
-                    ? `${failedStep.step_name} needs attention`
+                    ? `${candidate.full_name}: ${failedStep.step_name} needs attention`
                     : activeStep
-                      ? activeStep.step_name
+                      ? `${candidate.full_name}: ${activeStep.step_name}`
                       : candidate.status === CandidateStatus.COMPLETED
-                        ? "Recruitment completed"
-                        : "Waiting for the next milestone"}
+                        ? `${candidate.full_name}: Recruitment completed`
+                        : `${candidate.full_name}: Waiting for the next milestone`}
                 </p>
                 <p className="mt-2">
                   {failedStep
-                    ? failedStep.notes || "The current milestone has been marked as failed. The written reason will stay visible here for both agencies until the Ethiopian agency resumes it."
+                    ? failedStep.notes || `${candidate.full_name}'s current milestone has been marked as failed. The written reason will stay visible here for both agencies until the Ethiopian agency resumes it.`
                     : activeStep
-                      ? "This is the milestone that is currently active in the shared process."
-                      : "As soon as a step starts, it will show here for both agencies."}
+                      ? `${candidate.full_name} is currently in this milestone.`
+                      : `${candidate.full_name}'s next milestone will appear here as soon as tracking starts.`}
                 </p>
               </div>
               <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">

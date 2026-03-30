@@ -7,11 +7,22 @@ import { ChevronRight, Home, Loader2, UserPlus } from "lucide-react"
 import Link from "next/link"
 
 import { useCurrentUser } from "@/hooks/use-auth"
-import { publishCandidateById, uploadCandidateDocumentFile, useCreateCandidate } from "@/hooks/use-candidates"
+import { isPublishPairingSelectionError, publishCandidateById, publishCandidateWithPairingById, uploadCandidateDocumentFile, useCreateCandidate } from "@/hooks/use-candidates"
+import { usePairingContext } from "@/hooks/use-pairings"
 import { CandidateForm, CandidateFormValues } from "@/components/candidates/candidate-form"
 import { SubmissionProgressOverlay } from "@/components/candidates/submission-progress-overlay"
 import { CandidateInput } from "@/lib/validations"
 import { PageHeader } from "@/components/layout/page-header"
+import { Button } from "@/components/ui/button"
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import {
   clearCandidateDraft,
   clearCandidateDraftFile,
@@ -40,6 +51,7 @@ const DOCUMENT_LABELS: Record<keyof PendingDocuments, string> = {
 export default function NewCandidatePage() {
   const router = useRouter()
   const { isEthiopianAgent, isLoading: isRoleLoading } = useCurrentUser()
+  const { context, activePairingId } = usePairingContext()
   const { mutateAsync: createCandidate, isPending } = useCreateCandidate()
   const [isDraftReady, setIsDraftReady] = React.useState(false)
   const [draftInitialData, setDraftInitialData] = React.useState<Partial<CandidateFormValues> | undefined>(undefined)
@@ -51,6 +63,11 @@ export default function NewCandidatePage() {
   const [submissionStage, setSubmissionStage] = React.useState<SubmissionStage>("idle")
   const [submissionIntent, setSubmissionIntent] = React.useState<SubmissionIntent>("default")
   const [activeUpload, setActiveUpload] = React.useState<keyof PendingDocuments | null>(null)
+  const [publishChooserOpen, setPublishChooserOpen] = React.useState(false)
+  const [publishPairingId, setPublishPairingId] = React.useState<string>("")
+  const [pendingPublishCandidateId, setPendingPublishCandidateId] = React.useState<string | null>(null)
+  const [isResolvingPublishChoice, setIsResolvingPublishChoice] = React.useState(false)
+  const [formResetSignal, setFormResetSignal] = React.useState(0)
   const [uploadProgress, setUploadProgress] = React.useState<Record<keyof PendingDocuments, number>>({
     passport: 0,
     photo: 0,
@@ -123,6 +140,26 @@ export default function NewCandidatePage() {
         <Loader2 className="h-10 w-10 animate-spin text-primary" />
       </div>
     )
+  }
+
+  const finalizeCreateAnotherReset = () => {
+    setPendingDocuments({
+      passport: null,
+      photo: null,
+      video: null,
+    })
+    setUploadProgress({
+      passport: 0,
+      photo: 0,
+      video: 0,
+    })
+    setActiveUpload(null)
+    setDraftInitialData(undefined)
+    setSubmissionStage("idle")
+    setPendingPublishCandidateId(null)
+    setPublishPairingId("")
+    setPublishChooserOpen(false)
+    setFormResetSignal((current) => current + 1)
   }
 
   const breadcrumbs = (
@@ -213,28 +250,28 @@ export default function NewCandidatePage() {
 
       if (submitter === "create_another") {
         setSubmissionStage("publishing")
-        await publishCandidateById(candidateID)
+        try {
+          await publishCandidateById(candidateID)
+        } catch (error) {
+          if (isPublishPairingSelectionError(error)) {
+            setSubmissionStage("idle")
+            setPendingPublishCandidateId(candidateID)
+            setPublishPairingId(activePairingId || context?.workspaces?.[0]?.id || "")
+            setPublishChooserOpen(true)
+            toast.info("Choose which foreign partner should receive this published candidate.")
+            return
+          }
+          throw error
+        }
       }
 
       await clearCandidateDraft()
       setSubmissionStage("finalizing")
       await new Promise((resolve) => setTimeout(resolve, 450))
       if (submitter === "create_another") {
-        setPendingDocuments({
-          passport: null,
-          photo: null,
-          video: null,
-        })
-        setUploadProgress({
-          passport: 0,
-          photo: 0,
-          video: 0,
-        })
-        setActiveUpload(null)
-        setDraftInitialData(undefined)
-        setSubmissionStage("idle")
+        finalizeCreateAnotherReset()
         toast.success("Candidate saved, published, and the form is ready for another profile.")
-        return { resetForm: true }
+        return
       }
 
       router.push(`/candidates/${candidateID}`)
@@ -242,6 +279,24 @@ export default function NewCandidatePage() {
       setSubmissionStage("idle")
       setActiveUpload(null)
       setSubmissionIntent("default")
+    }
+  }
+
+  const handleResolvePublishChoice = async () => {
+    if (!pendingPublishCandidateId || !publishPairingId) {
+      toast.error("Choose a foreign partner before continuing.")
+      return
+    }
+
+    try {
+      setIsResolvingPublishChoice(true)
+      await publishCandidateWithPairingById(pendingPublishCandidateId, publishPairingId)
+      finalizeCreateAnotherReset()
+      toast.success("Candidate saved, published, and shared to the selected partner.")
+    } catch {
+      toast.error("Failed to publish the candidate to the selected partner.")
+    } finally {
+      setIsResolvingPublishChoice(false)
     }
   }
 
@@ -330,6 +385,7 @@ export default function NewCandidatePage() {
           mode="create"
           initialData={draftInitialData}
           initialDocuments={pendingDocuments}
+          resetSignal={formResetSignal}
           onSubmit={handleSubmit} 
           isLoading={isPending || submissionStage !== "idle"} 
           onDocumentChange={handleDocumentChange}
@@ -343,6 +399,40 @@ export default function NewCandidatePage() {
           }}
         />
       </div>
+
+      <Dialog open={publishChooserOpen} onOpenChange={setPublishChooserOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Choose a foreign partner</DialogTitle>
+            <DialogDescription>
+              Multiple active partner workspaces exist for this Ethiopian agency, so pick the foreign partner that should receive the candidate as soon as publishing finishes.
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-3">
+            <Select value={publishPairingId} onValueChange={setPublishPairingId}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select a foreign partner" />
+              </SelectTrigger>
+              <SelectContent>
+                {(context?.workspaces || []).map((workspace) => (
+                  <SelectItem key={workspace.id} value={workspace.id}>
+                    {workspace.partner_agency.company_name || workspace.partner_agency.full_name || workspace.partner_agency.email}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setPublishChooserOpen(false)}>
+              Later
+            </Button>
+            <Button onClick={handleResolvePublishChoice} disabled={isResolvingPublishChoice}>
+              {isResolvingPublishChoice ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+              Publish and share
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

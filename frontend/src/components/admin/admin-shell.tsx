@@ -54,16 +54,24 @@ function isVisible(item: AdminNavItem, role?: AdminRole) {
   return role ? item.roles.includes(role) : false
 }
 
+function getActiveAdminHref(pathname: string, items: AdminNavItem[]) {
+  const matches = items
+    .filter((item) => pathname === item.href || (item.href !== "/admin/dashboard" && pathname.startsWith(`${item.href}/`)))
+    .sort((a, b) => b.href.length - a.href.length)
+
+  return matches[0]?.href ?? "/admin/dashboard"
+}
+
 function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
   const pathname = usePathname()
   const { admin } = useCurrentAdmin()
+  const visibleItems = React.useMemo(() => navItems.filter((item) => isVisible(item, admin?.role)), [admin?.role])
+  const activeHref = React.useMemo(() => getActiveAdminHref(pathname, visibleItems), [pathname, visibleItems])
 
   return (
     <nav className="space-y-1">
-      {navItems
-        .filter((item) => isVisible(item, admin?.role))
-        .map((item) => {
-          const active = pathname === item.href || (item.href !== "/admin/dashboard" && pathname.startsWith(item.href))
+      {visibleItems.map((item) => {
+          const active = activeHref === item.href
           return (
             <Link
               key={item.href}
@@ -90,6 +98,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname()
   const logout = useAdminLogout()
   const visibleNavItems = React.useMemo(() => navItems.filter((item) => isVisible(item, admin?.role)), [admin?.role])
+  const activeHref = React.useMemo(() => getActiveAdminHref(pathname, visibleNavItems), [pathname, visibleNavItems])
 
   return (
     <div className="admin-portal dark min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(245,158,11,0.14),_transparent_20%),radial-gradient(circle_at_top_right,_rgba(34,211,238,0.1),_transparent_24%),linear-gradient(180deg,#020617_0%,#08111f_38%,#0f172a_100%)] text-slate-50">
@@ -179,7 +188,7 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
               <div className="-mx-1 overflow-x-auto px-1 [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
                 <div className="flex min-w-max gap-2">
                   {visibleNavItems.map((item) => {
-                    const active = pathname === item.href || (item.href !== "/admin/dashboard" && pathname.startsWith(item.href))
+                    const active = activeHref === item.href
                     return (
                       <Link
                         key={item.href}

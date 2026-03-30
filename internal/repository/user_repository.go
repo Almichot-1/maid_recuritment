@@ -136,13 +136,15 @@ func (r *GormUserRepository) Update(user *domain.User) error {
 	}
 
 	updates := map[string]any{
-		"email":          user.Email,
-		"full_name":      user.FullName,
-		"role":           user.Role,
-		"company_name":   user.CompanyName,
-		"avatar_url":     user.AvatarURL,
-		"account_status": user.AccountStatus,
-		"is_active":      user.IsActive,
+		"email":                      user.Email,
+		"full_name":                  user.FullName,
+		"role":                       user.Role,
+		"company_name":               user.CompanyName,
+		"avatar_url":                 user.AvatarURL,
+		"auto_share_candidates":      user.AutoShareCandidates,
+		"default_foreign_pairing_id": user.DefaultForeignPairingID,
+		"account_status":             user.AccountStatus,
+		"is_active":                  user.IsActive,
 	}
 	if user.PasswordHash != "" {
 		updates["password_hash"] = user.PasswordHash

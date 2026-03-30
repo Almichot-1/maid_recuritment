@@ -182,19 +182,28 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 		return err
 	}
 
-	nextCandidateStatus := domain.CandidateStatusInProgress
+	nextCandidateStatus := domain.CandidateStatusApproved
 	allCompleted := true
+	hasAnyStartedStep := false
 	for _, step := range steps {
 		if step == nil {
 			continue
 		}
-		if step.StepStatus != domain.Completed {
+		effectiveStatus := step.StepStatus
+		if step.ID == target.ID {
+			effectiveStatus = status
+		}
+		if effectiveStatus != domain.Completed {
 			allCompleted = false
-			break
+		}
+		if effectiveStatus == domain.Completed || effectiveStatus == domain.InProgress || effectiveStatus == domain.Failed {
+			hasAnyStartedStep = true
 		}
 	}
 	if allCompleted {
 		nextCandidateStatus = domain.CandidateStatusCompleted
+	} else if hasAnyStartedStep {
+		nextCandidateStatus = domain.CandidateStatusInProgress
 	}
 
 	if s.db != nil {
@@ -296,6 +305,21 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	}
 
 	return nil
+}
+
+func (s *StatusStepService) ReopenMedicalStep(candidateID, updatedBy string) error {
+	steps, err := s.GetCandidateProgress(candidateID)
+	if err != nil {
+		return err
+	}
+
+	for _, step := range steps {
+		if step != nil && strings.EqualFold(strings.TrimSpace(step.StepName), strings.TrimSpace(domain.Medical)) {
+			return s.UpdateStep(candidateID, domain.Medical, updatedBy, domain.Pending, step.Notes)
+		}
+	}
+
+	return ErrStepNotFound
 }
 
 func (s *StatusStepService) ensureMedicalDocument(candidateID string) error {

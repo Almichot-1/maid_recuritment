@@ -49,14 +49,16 @@ type RegisterResponse struct {
 }
 
 type AuthUserView struct {
-	ID               string `json:"id"`
-	Email            string `json:"email"`
-	FullName         string `json:"full_name"`
-	Role             string `json:"role"`
-	CompanyName      string `json:"company_name,omitempty"`
-	AvatarURL        string `json:"avatar_url,omitempty"`
-	AccountStatus    string `json:"account_status"`
-	CurrentSessionID string `json:"current_session_id,omitempty"`
+	ID                      string  `json:"id"`
+	Email                   string  `json:"email"`
+	FullName                string  `json:"full_name"`
+	Role                    string  `json:"role"`
+	CompanyName             string  `json:"company_name,omitempty"`
+	AvatarURL               string  `json:"avatar_url,omitempty"`
+	AutoShareCandidates     bool    `json:"auto_share_candidates"`
+	DefaultForeignPairingID *string `json:"default_foreign_pairing_id,omitempty"`
+	AccountStatus           string  `json:"account_status"`
+	CurrentSessionID        string  `json:"current_session_id,omitempty"`
 }
 
 type AuthHandler struct {
@@ -260,13 +262,15 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 
 func mapUserToAuthUserView(user *domain.User, currentSessionID string) AuthUserView {
 	return AuthUserView{
-		ID:               user.ID,
-		Email:            user.Email,
-		FullName:         user.FullName,
-		Role:             string(user.Role),
-		CompanyName:      user.CompanyName,
-		AvatarURL:        user.AvatarURL,
-		AccountStatus:    string(user.AccountStatus),
-		CurrentSessionID: currentSessionID,
+		ID:                      user.ID,
+		Email:                   user.Email,
+		FullName:                user.FullName,
+		Role:                    string(user.Role),
+		CompanyName:             user.CompanyName,
+		AvatarURL:               user.AvatarURL,
+		AutoShareCandidates:     user.AutoShareCandidates,
+		DefaultForeignPairingID: user.DefaultForeignPairingID,
+		AccountStatus:           string(user.AccountStatus),
+		CurrentSessionID:        currentSessionID,
 	}
 }

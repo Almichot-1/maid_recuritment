@@ -22,4 +22,5 @@ type MedicalDataRepository interface {
 	Upsert(data *MedicalData) error
 	GetByCandidateID(candidateID string) (*MedicalData, error)
 	GetExpiringMedical(days int) ([]*MedicalData, error)
+	DeleteByCandidateID(candidateID string) error
 }

@@ -26,7 +26,9 @@ interface StatusTimelineProps {
   onUpdateStep?: (stepName: string, status: string, notes?: string) => void;
   isUpdating?: boolean;
   onUploadMedicalDocument?: (file: File) => void | Promise<unknown>;
+  onRemoveMedicalDocument?: () => void | Promise<unknown>;
   isUploadingMedicalDocument?: boolean;
+  isRemovingMedicalDocument?: boolean;
 }
 
 type EditorMode = "note" | "failed";
@@ -37,7 +39,9 @@ export function StatusTimeline({
   onUpdateStep,
   isUpdating = false,
   onUploadMedicalDocument,
+  onRemoveMedicalDocument,
   isUploadingMedicalDocument = false,
+  isRemovingMedicalDocument = false,
 }: StatusTimelineProps) {
   const [editorStepId, setEditorStepId] = React.useState<string | null>(null);
   const [editorMode, setEditorMode] = React.useState<EditorMode>("note");
@@ -270,21 +274,41 @@ export function StatusTimeline({
                       Medical document
                     </p>
                     <p className="text-sm text-muted-foreground">
-                      This step unlocks after the medical report is uploaded.
+                      Upload a PDF, JPG, or PNG medical report to unlock this step.
                     </p>
                   </div>
-                  {step.medical_document_url ? (
-                    <Button variant="outline" size="sm" asChild>
-                      <a
-                        href={step.medical_document_url}
-                        target="_blank"
-                        rel="noreferrer"
+                  <div className="flex flex-wrap gap-2">
+                    {step.medical_document_url ? (
+                      <Button variant="outline" size="sm" asChild>
+                        <a
+                          href={step.medical_document_url}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          <FileBadge2 className="mr-2 h-4 w-4" />
+                          View medical file
+                        </a>
+                      </Button>
+                    ) : null}
+                    {step.medical_document_url && canUpdate && onRemoveMedicalDocument ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isRemovingMedicalDocument}
+                        onClick={() => {
+                          void onRemoveMedicalDocument()
+                        }}
                       >
-                        <FileBadge2 className="mr-2 h-4 w-4" />
-                        View medical file
-                      </a>
-                    </Button>
-                  ) : null}
+                        {isRemovingMedicalDocument ? (
+                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        ) : (
+                          <RotateCcw className="mr-2 h-4 w-4" />
+                        )}
+                        Remove medical file
+                      </Button>
+                    ) : null}
+                  </div>
                 </div>
 
                 {!step.medical_document_url && canUpdate ? (

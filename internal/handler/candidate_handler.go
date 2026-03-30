@@ -141,6 +141,17 @@ type GenerateCVRequest struct {
 	CompanyName         string `json:"company_name"`
 }
 
+type PublishCandidateRequest struct {
+	PairingID string `json:"pairing_id"`
+}
+
+type PublishCandidateResponse struct {
+	Message                  string `json:"message"`
+	AutoShared               bool   `json:"auto_shared"`
+	SharedPairingID          string `json:"shared_pairing_id,omitempty"`
+	RequiresPairingSelection bool   `json:"requires_pairing_selection,omitempty"`
+}
+
 type CandidateHandler struct {
 	candidateService    *service.CandidateService
 	passportOCRService  *service.PassportOCRService
@@ -412,12 +423,38 @@ func (h *CandidateHandler) PublishCandidate(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if err := h.candidateService.PublishCandidate(id, userID); err != nil {
+	var req PublishCandidateRequest
+	if r.Body != nil {
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+			return
+		}
+	}
+
+	result, err := h.candidateService.PublishCandidate(id, userID, service.PublishCandidateInput{
+		PairingID: strings.TrimSpace(req.PairingID),
+	})
+	if err != nil {
+		if errors.Is(err, service.ErrPublishPairingSelectionRequired) {
+			_ = utils.WriteJSON(w, http.StatusConflict, PublishCandidateResponse{
+				Message:                  "Choose which foreign partner should receive this published candidate.",
+				RequiresPairingSelection: true,
+			})
+			return
+		}
 		h.writeServiceError(w, err)
 		return
 	}
 
-	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "candidate published"})
+	response := PublishCandidateResponse{
+		Message:    "candidate published",
+		AutoShared: result != nil && result.AutoShared,
+	}
+	if result != nil {
+		response.SharedPairingID = result.SharedPairingID
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, response)
 }
 
 func (h *CandidateHandler) UploadCandidateDocument(w http.ResponseWriter, r *http.Request) {
@@ -704,6 +741,31 @@ func (h *CandidateHandler) DeleteCandidate(w http.ResponseWriter, r *http.Reques
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "candidate deleted"})
 }
 
+func (h *CandidateHandler) DeleteCandidateDocument(w http.ResponseWriter, r *http.Request) {
+	candidateID := chi.URLParam(r, "id")
+	documentID := chi.URLParam(r, "documentId")
+	if strings.TrimSpace(candidateID) == "" || strings.TrimSpace(documentID) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate id and document id are required"})
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	document, err := h.candidateService.RemoveCandidateDocument(candidateID, documentID, userID)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]CandidateDocumentResponse{
+		"document": mapDocumentResponse(document),
+	})
+}
+
 func (h *CandidateHandler) writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, repository.ErrCandidateNotFound):
@@ -730,6 +792,10 @@ func (h *CandidateHandler) writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, service.ErrPassportOCRUnavailable):
 		log.Printf("passport OCR unavailable: %v", err)
 		_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "passport OCR is not available right now"})
+	case errors.Is(err, service.ErrPublishPairingSelectionRequired), errors.Is(err, service.ErrInvalidDefaultForeignPairing):
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	case errors.Is(err, service.ErrCandidateDocumentNotFound):
+		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "document not found"})
 	case errors.Is(err, service.ErrInvalidCandidateInput), errors.Is(err, service.ErrInvalidCandidateUpdateState), errors.Is(err, service.ErrInvalidCandidateDeleteState), errors.Is(err, repository.ErrInvalidStatusTransition):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
 	case errors.Is(err, service.ErrPassportDataNotFound), errors.Is(err, repository.ErrPassportDataNotFound):

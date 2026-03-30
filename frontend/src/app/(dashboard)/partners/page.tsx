@@ -2,18 +2,21 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Building2, CheckSquare, Link2, Loader2, Route, Users } from "lucide-react"
+import { ArrowRight, Building2, CheckSquare, Link2, Loader2, Route, Share2, Users } from "lucide-react"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidates } from "@/hooks/use-candidates"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useMySelections } from "@/hooks/use-selections"
+import { useUpdateSharingPreferences } from "@/hooks/use-settings"
 import { CandidateTable } from "@/components/candidates/candidate-table"
 import { PageHeader } from "@/components/layout/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Switch } from "@/components/ui/switch"
 import { cn } from "@/lib/utils"
 
 function partnerName(companyName?: string, fullName?: string) {
@@ -21,7 +24,7 @@ function partnerName(companyName?: string, fullName?: string) {
 }
 
 export default function PartnersPage() {
-  const { isEthiopianAgent } = useCurrentUser()
+  const { user, isEthiopianAgent } = useCurrentUser()
   const {
     context,
     activePairingId,
@@ -31,6 +34,14 @@ export default function PartnersPage() {
     setActivePairingId,
   } = usePairingContext()
   const { data: selections = [], isLoading: isSelectionsLoading } = useMySelections()
+  const { mutate: updateSharingPreferences, isPending: isSavingSharingPreferences } = useUpdateSharingPreferences()
+  const [autoShareCandidates, setAutoShareCandidates] = React.useState(Boolean(user?.auto_share_candidates))
+  const [defaultForeignPairingId, setDefaultForeignPairingId] = React.useState<string>(user?.default_foreign_pairing_id || "none")
+
+  React.useEffect(() => {
+    setAutoShareCandidates(Boolean(user?.auto_share_candidates))
+    setDefaultForeignPairingId(user?.default_foreign_pairing_id || "none")
+  }, [user?.auto_share_candidates, user?.default_foreign_pairing_id])
   const { data: candidateData, isLoading: isCandidatesLoading } = useCandidates({
     page: 1,
     page_size: 24,
@@ -60,6 +71,23 @@ export default function PartnersPage() {
           heading="Partner Workspaces"
           text="This page comes alive once an admin connects your agency to at least one partner agency."
         />
+        {isEthiopianAgent ? (
+          <SharingPreferencesCard
+            hasActivePairs={false}
+            autoShareCandidates={autoShareCandidates}
+            defaultForeignPairingId={defaultForeignPairingId}
+            workspaces={[]}
+            isSaving={isSavingSharingPreferences}
+            onAutoShareChange={setAutoShareCandidates}
+            onDefaultPairingChange={setDefaultForeignPairingId}
+            onSave={() =>
+              updateSharingPreferences({
+                auto_share_candidates: autoShareCandidates,
+                default_foreign_pairing_id: null,
+              })
+            }
+          />
+        ) : null}
         <Card className="border-dashed">
           <CardContent className="flex min-h-[260px] flex-col items-center justify-center gap-4 text-center">
             <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
@@ -91,6 +119,27 @@ export default function PartnersPage() {
           </Button>
         }
       />
+
+      {isEthiopianAgent ? (
+        <SharingPreferencesCard
+          hasActivePairs={Boolean(context?.workspaces.length)}
+          autoShareCandidates={autoShareCandidates}
+          defaultForeignPairingId={defaultForeignPairingId}
+          workspaces={context?.workspaces || []}
+          isSaving={isSavingSharingPreferences}
+          onAutoShareChange={setAutoShareCandidates}
+          onDefaultPairingChange={setDefaultForeignPairingId}
+          onSave={() =>
+            updateSharingPreferences({
+              auto_share_candidates: autoShareCandidates,
+              default_foreign_pairing_id:
+                (context?.workspaces?.length || 0) > 1 && defaultForeignPairingId !== "none"
+                  ? defaultForeignPairingId
+                  : null,
+            })
+          }
+        />
+      ) : null}
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
         <Card className="border-border/70 shadow-sm">
@@ -292,6 +341,103 @@ export default function PartnersPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function SharingPreferencesCard({
+  hasActivePairs,
+  autoShareCandidates,
+  defaultForeignPairingId,
+  workspaces,
+  isSaving,
+  onAutoShareChange,
+  onDefaultPairingChange,
+  onSave,
+}: {
+  hasActivePairs: boolean
+  autoShareCandidates: boolean
+  defaultForeignPairingId: string
+  workspaces: Array<{
+    id: string
+    partner_agency: {
+      company_name?: string
+      full_name?: string
+      email?: string
+    }
+  }>
+  isSaving: boolean
+  onAutoShareChange: (value: boolean) => void
+  onDefaultPairingChange: (value: string) => void
+  onSave: () => void
+}) {
+  const hasMultiplePartners = workspaces.length > 1
+
+  return (
+    <Card className="border-border/70 shadow-sm">
+      <CardHeader>
+        <CardTitle className="flex items-center gap-2">
+          <Share2 className="h-4 w-4 text-primary" />
+          Sharing preferences
+        </CardTitle>
+        <CardDescription>
+          Control what happens when you publish a candidate from your Ethiopian agency library.
+        </CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <div className="flex items-start justify-between gap-4 rounded-2xl border border-border/70 bg-muted/20 p-4">
+          <div className="space-y-1">
+            <p className="font-semibold text-foreground">Automatically share published candidates</p>
+            <p className="text-sm text-muted-foreground">
+              If this is on, a publish action can automatically share the candidate into a foreign partner workspace.
+            </p>
+          </div>
+          <Switch
+            checked={autoShareCandidates}
+            onCheckedChange={onAutoShareChange}
+            disabled={!hasActivePairs || isSaving}
+          />
+        </div>
+
+        {hasMultiplePartners ? (
+          <div className="space-y-2">
+            <p className="text-sm font-semibold text-foreground">Default foreign partner</p>
+            <p className="text-sm text-muted-foreground">
+              When multiple active partners exist, this default is used for automatic sharing. If you leave it empty, the app will ask which partner to use during publish.
+            </p>
+            <Select
+              value={defaultForeignPairingId || "none"}
+              onValueChange={onDefaultPairingChange}
+              disabled={!hasActivePairs || isSaving}
+            >
+              <SelectTrigger className="max-w-xl">
+                <SelectValue placeholder="Choose a default foreign partner" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">Ask me each time</SelectItem>
+                {workspaces.map((workspace) => (
+                  <SelectItem key={workspace.id} value={workspace.id}>
+                    {partnerName(workspace.partner_agency.company_name, workspace.partner_agency.full_name)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        ) : (
+          <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+            {hasActivePairs
+              ? "You currently have one active foreign partner, so automatic sharing can go there directly when enabled."
+              : "Once an admin creates a partner workspace for this Ethiopian agency, automatic sharing preferences will become available here."}
+          </div>
+        )}
+
+        <div className="flex justify-end">
+          <Button type="button" onClick={onSave} disabled={isSaving}>
+            {isSaving ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
+            Save sharing preferences
+          </Button>
+        </div>
+      </CardContent>
+    </Card>
   )
 }
 

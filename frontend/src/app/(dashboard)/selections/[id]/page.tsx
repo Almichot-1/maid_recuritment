@@ -21,7 +21,7 @@ import {
 } from "lucide-react"
 
 import { useCurrentUser } from "@/hooks/use-auth"
-import { useUploadDocument } from "@/hooks/use-candidates"
+import { useCandidate, useDeleteCandidateDocument, useUploadDocument } from "@/hooks/use-candidates"
 import {
   useApproveSelection,
   useRejectSelection,
@@ -47,6 +47,7 @@ export default function SelectionDetailPage() {
   const { user, isEthiopianAgent } = useCurrentUser()
   const { data: selection, isLoading: isSelectionLoading } = useSelection(selectionId)
   const candidateId = selection?.candidate_id
+  const { data: trackingCandidate } = useCandidate(candidateId)
   const { data: progressData, isLoading: isProgressLoading } = useCandidateProgress(candidateId)
   const { data: approvalStatus, isLoading: isApprovalsLoading } = useSelectionApprovals(selectionId)
   const { mutate: approveSelection, isPending: isApproving } = useApproveSelection(selectionId, candidateId)
@@ -54,6 +55,7 @@ export default function SelectionDetailPage() {
   const { mutateAsync: uploadSelectionDocument, isPending: isUploadingSelectionDocument } = useUploadSelectionDocument(selectionId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId || "")
   const { mutateAsync: uploadCandidateDocument, isPending: isUploadingMedicalDocument } = useUploadDocument(candidateId || "")
+  const { mutateAsync: removeCandidateDocument, isPending: isRemovingMedicalDocument } = useDeleteCandidateDocument(candidateId || "")
 
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
@@ -99,12 +101,20 @@ export default function SelectionDetailPage() {
   const hasRequiredEmployerDocuments = hasEmployerContract && hasEmployerID
   const approvalBlockedByEmployerPackage = isEthiopianAgent && !hasRequiredEmployerDocuments
   const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
+  const medicalDocument = trackingCandidate?.documents?.find((document) => document.document_type === "medical")
 
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
     if (!candidateId || !canUpdateProgress) {
       return
     }
     updateStep({ step_name: stepName, status, notes })
+  }
+
+  const handleRemoveMedicalDocument = async () => {
+    if (!medicalDocument?.id || !canUpdateProgress) {
+      return
+    }
+    await removeCandidateDocument({ documentId: medicalDocument.id })
   }
 
   const handleUploadSelectionDocument = async (type: "contract" | "employer_id", file: File) => {
@@ -345,7 +355,7 @@ export default function SelectionDetailPage() {
             <CardHeader>
               <CardTitle>Recruitment Tracking</CardTitle>
               <CardDescription>
-                After both agencies approve, this is where the shared recruitment process becomes visible.
+                After both agencies approve, this is where {candidate.full_name}&apos;s shared recruitment process becomes visible.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -396,7 +406,7 @@ export default function SelectionDetailPage() {
                     <Button variant="outline" asChild>
                       <Link href={trackingPageHref}>
                         <Eye className="mr-2 h-4 w-4" />
-                        Open Process Tracking
+                        Open {candidate.full_name} Tracking
                       </Link>
                     </Button>
                   </div>
@@ -408,13 +418,15 @@ export default function SelectionDetailPage() {
                     isUpdating={isUpdatingStep}
                     onUploadMedicalDocument={canUpdateProgress ? (file) => uploadCandidateDocument({ file, type: "medical" }) : undefined}
                     isUploadingMedicalDocument={isUploadingMedicalDocument}
+                    onRemoveMedicalDocument={canUpdateProgress ? handleRemoveMedicalDocument : undefined}
+                    isRemovingMedicalDocument={isRemovingMedicalDocument}
                   />
                 </>
               ) : (
                 <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
                   {isPending
-                    ? "Tracking has not started yet. Once both agencies approve, the Ethiopian agency can update medical, CoC, LMIS, ticket, and arrival steps here."
-                    : "This selection is approved, but the tracking steps are still being prepared."}
+                    ? `${candidate.full_name}'s tracking has not started yet. Once both agencies approve, the Ethiopian agency can update medical, CoC, LMIS, ticket, and arrival steps here.`
+                    : `${candidate.full_name}'s selection is approved, but the tracking steps are still being prepared.`}
                 </div>
               )}
             </CardContent>
@@ -496,7 +508,7 @@ export default function SelectionDetailPage() {
                 <Button variant="outline" className="w-full" asChild>
                   <Link href={trackingPageHref}>
                     <Sparkles className="mr-2 h-4 w-4" />
-                    Open Process Tracking
+                    Open {candidate.full_name} Tracking
                   </Link>
                 </Button>
               ) : null}

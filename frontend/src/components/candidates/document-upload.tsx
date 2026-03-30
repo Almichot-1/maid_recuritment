@@ -176,6 +176,14 @@ export function DocumentUpload({
     onRemove?.()
   }
 
+  const openFilePicker = React.useCallback((event?: React.SyntheticEvent) => {
+    event?.stopPropagation()
+    if (disabled || status === "selected" || status === "uploading") {
+      return
+    }
+    inputRef.current?.click()
+  }, [disabled, status])
+
   React.useEffect(() => {
     if (!initialFile) {
       return
@@ -209,9 +217,6 @@ export function DocumentUpload({
     }
   }, [preview])
 
-  const pickerClassName =
-    "w-full max-w-xs rounded-md border border-border/70 bg-background px-3 py-2 text-sm text-foreground file:mr-3 file:rounded-md file:border-0 file:bg-primary file:px-3 file:py-2 file:text-sm file:font-medium file:text-primary-foreground hover:file:opacity-90 focus:outline-none focus:ring-2 focus:ring-primary/30"
-
   return (
     <div className="space-y-2">
       <div className="flex items-center justify-between">
@@ -234,6 +239,7 @@ export function DocumentUpload({
       </div>
 
       <div
+        onClick={openFilePicker}
         onDragOver={(event) => {
           event.preventDefault()
           if (!disabled && status !== "selected" && status !== "uploading") {
@@ -253,6 +259,15 @@ export function DocumentUpload({
           status === "selected" || status === "uploading" || disabled ? "cursor-default opacity-80" : "cursor-pointer"
         )}
       >
+        <input
+          ref={inputRef}
+          type="file"
+          accept={acceptValue}
+          onChange={handleInputChange}
+          disabled={disabled}
+          className="hidden"
+        />
+
         {status === "empty" && (
           <div className="flex flex-col items-center justify-center space-y-2 text-center">
             <div className="flex h-12 w-12 items-center justify-center rounded-full bg-primary/10">
@@ -262,15 +277,16 @@ export function DocumentUpload({
               <span className="font-semibold text-primary">Drag and drop here</span> or use the file picker
             </div>
             {description ? <p className="text-xs text-muted-foreground">{description}</p> : null}
-            <input
-              ref={inputRef}
-              type="file"
-              accept={acceptValue}
-              onChange={handleInputChange}
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
               disabled={disabled}
-              className={pickerClassName}
-              onClick={(event) => event.stopPropagation()}
-            />
+              onClick={openFilePicker}
+              className="mt-2"
+            >
+              Choose File
+            </Button>
           </div>
         )}
 
@@ -338,15 +354,15 @@ export function DocumentUpload({
               >
                 Reset
               </Button>
-              <input
-                ref={inputRef}
-                type="file"
-                accept={acceptValue}
-                onChange={handleInputChange}
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
                 disabled={disabled}
-                className={pickerClassName}
-                onClick={(event) => event.stopPropagation()}
-              />
+                onClick={openFilePicker}
+              >
+                Choose another file
+              </Button>
             </div>
           </div>
         )}

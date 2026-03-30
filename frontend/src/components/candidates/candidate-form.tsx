@@ -84,6 +84,7 @@ interface CandidateFormProps {
   onDraftChange?: (draft: CandidateFormValues) => void;
   onClearDraft?: () => void;
   showDocuments?: boolean;
+  resetSignal?: number;
 }
 
 export type CandidateFormValues = {
@@ -136,6 +137,7 @@ export function CandidateForm({
   onDraftChange,
   onClearDraft,
   showDocuments = true,
+  resetSignal = 0,
 }: CandidateFormProps) {
   const { user } = useCurrentUser();
   const { hasLogo } = useAgencyBranding();
@@ -236,6 +238,13 @@ export function CandidateForm({
     onDocumentChange?.("video", null);
     onClearDraft?.();
   }, [blankFormValues, form, onClearDraft, onDocumentChange]);
+
+  React.useEffect(() => {
+    if (resetSignal <= 0) {
+      return
+    }
+    resetForNextCandidate()
+  }, [resetForNextCandidate, resetSignal])
 
   const handleFormSubmit = form.handleSubmit(async (data, event) => {
     const submitter = (event?.nativeEvent as SubmitEvent | undefined)
