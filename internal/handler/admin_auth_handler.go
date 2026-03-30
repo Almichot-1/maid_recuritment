@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net"
 	"net/http"
@@ -27,6 +26,16 @@ type AdminChangePasswordRequest struct {
 	NewPassword     string `json:"new_password" validate:"required,min=12"`
 }
 
+type AdminSetupPreviewRequest struct {
+	Token string `json:"token" validate:"required"`
+}
+
+type AdminSetupCompleteRequest struct {
+	Token       string `json:"token" validate:"required"`
+	NewPassword string `json:"new_password" validate:"required,min=12"`
+	OTPCode     string `json:"otp_code" validate:"required,len=6"`
+}
+
 type AdminUserView struct {
 	ID                  string  `json:"id"`
 	Email               string  `json:"email"`
@@ -37,9 +46,13 @@ type AdminUserView struct {
 }
 
 type AdminLoginResponse struct {
-	Token     string        `json:"token"`
 	Admin     AdminUserView `json:"admin"`
 	ExpiresAt string        `json:"expires_at"`
+}
+
+type AdminSetupPreviewResponse struct {
+	Admin           AdminUserView `json:"admin"`
+	ProvisioningURL string        `json:"provisioning_url"`
 }
 
 type AdminAuthHandler struct {
@@ -58,7 +71,7 @@ func NewAdminAuthHandler(authService *service.AdminAuthService, adminRepository 
 
 func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req AdminLoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -74,6 +87,8 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid admin credentials"})
 		case errors.Is(err, service.ErrAdminAccountLocked):
 			_ = utils.WriteJSON(w, http.StatusLocked, map[string]string{"error": "admin account locked"})
+		case errors.Is(err, service.ErrAdminSetupRequired):
+			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "admin setup required"})
 		case errors.Is(err, service.ErrAdminInactive):
 			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "admin account inactive"})
 		default:
@@ -85,7 +100,6 @@ func (h *AdminAuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	expiresAt := time.Now().UTC().Add(1 * time.Hour)
 	middleware.SetSessionCookie(w, r, middleware.AdminSessionCookieName, token, middleware.AdminSessionMaxAgeSeconds)
 	_ = utils.WriteJSON(w, http.StatusOK, AdminLoginResponse{
-		Token:     token,
 		Admin:     mapAdminUserView(admin),
 		ExpiresAt: expiresAt.Format(time.RFC3339),
 	})
@@ -126,7 +140,7 @@ func (h *AdminAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 	}
 
 	var req AdminChangePasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -150,6 +164,66 @@ func (h *AdminAuthHandler) ChangePassword(w http.ResponseWriter, r *http.Request
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "admin password updated"})
+}
+
+func (h *AdminAuthHandler) PreviewSetup(w http.ResponseWriter, r *http.Request) {
+	var req AdminSetupPreviewRequest
+	if err := decodeJSONBody(w, r, &req, 8<<10); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	preview, err := h.authService.PreviewSetup(req.Token)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrAdminInvalidToken):
+			_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid setup token"})
+		case errors.Is(err, service.ErrAdminInactive):
+			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "admin account inactive"})
+		default:
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, AdminSetupPreviewResponse{
+		Admin:           mapAdminUserView(preview.Admin),
+		ProvisioningURL: preview.ProvisioningURL,
+	})
+}
+
+func (h *AdminAuthHandler) CompleteSetup(w http.ResponseWriter, r *http.Request) {
+	var req AdminSetupCompleteRequest
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	if err := h.authService.CompleteSetup(req.Token, req.NewPassword, req.OTPCode, clientIP(r)); err != nil {
+		switch {
+		case errors.Is(err, service.ErrAdminInvalidToken):
+			_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid setup token"})
+		case errors.Is(err, service.ErrAdminInvalidMFA):
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid mfa code"})
+		case errors.Is(err, service.ErrWeakAdminPassword):
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "new password must be at least 12 characters and include uppercase, lowercase, number, and special character"})
+		case errors.Is(err, service.ErrAdminInactive):
+			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "admin account inactive"})
+		default:
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "admin setup completed"})
 }
 
 func mapAdminUserView(admin *domain.Admin) AdminUserView {

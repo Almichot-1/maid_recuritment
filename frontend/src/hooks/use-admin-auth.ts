@@ -13,7 +13,6 @@ interface AdminLoginInput {
 }
 
 interface AdminLoginResponse {
-  token: string
   admin: AdminUser
   expires_at: string
 }
@@ -33,9 +32,21 @@ export function useAdminLogin() {
       return response.data
     },
     onSuccess: (data) => {
-      setAuth(data.admin, data.token)
+      setAuth(data.admin)
       toast.success("Admin session started")
       router.push("/admin/dashboard")
+    },
+    onError: (error) => {
+      if (axios.isAxiosError<{ error?: string }>(error)) {
+        const message = error.response?.data?.error
+        toast.error(
+          message === "admin setup required"
+            ? "This admin account must finish the one-time setup link before it can sign in."
+            : message || "Failed to start admin session"
+        )
+        return
+      }
+      toast.error("Failed to start admin session")
     },
   })
 }

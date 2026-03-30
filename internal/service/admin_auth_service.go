@@ -1,10 +1,14 @@
 package service
 
 import (
+	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"net/mail"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -26,12 +30,15 @@ var (
 	ErrAdminInvalidMFA         = errors.New("invalid mfa code")
 	ErrWeakAdminPassword       = errors.New("admin password does not meet complexity requirements")
 	ErrAdminPasswordMismatch   = errors.New("current admin password is incorrect")
+	ErrAdminSetupRequired      = errors.New("admin setup required")
 )
 
 type AdminAuthService struct {
 	adminRepository domain.AdminRepository
 	auditRepository domain.AuditLogRepository
+	setupRepository domain.AdminSetupTokenRepository
 	jwtSecret       []byte
+	appBaseURL      string
 }
 
 type adminClaims struct {
@@ -60,7 +67,12 @@ func NewAdminAuthService(adminRepository domain.AdminRepository, auditRepository
 		adminRepository: adminRepository,
 		auditRepository: auditRepository,
 		jwtSecret:       []byte(cfg.JWTSecret),
+		appBaseURL:      strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/"),
 	}, nil
+}
+
+func (s *AdminAuthService) SetSetupTokenRepository(setupRepository domain.AdminSetupTokenRepository) {
+	s.setupRepository = setupRepository
 }
 
 func (s *AdminAuthService) CreateAdmin(email, password, fullName, role, mfaSecret string) (*domain.Admin, error) {
@@ -212,7 +224,7 @@ func (s *AdminAuthService) ChangePassword(adminID, currentPassword, newPassword,
 		return fmt.Errorf("get admin by id: %w", err)
 	}
 
-	if err := s.ensureAdminCanLogin(admin); err != nil {
+	if err := s.ensureAdminCanChangePassword(admin); err != nil {
 		return err
 	}
 
@@ -241,7 +253,104 @@ func (s *AdminAuthService) ChangePassword(adminID, currentPassword, newPassword,
 	return nil
 }
 
+type AdminSetupPreview struct {
+	Admin           *domain.Admin
+	ProvisioningURL string
+}
+
+func (s *AdminAuthService) CreateSetupInvitation(admin *domain.Admin) (string, error) {
+	if admin == nil {
+		return "", ErrAdminInvalidCredentials
+	}
+	if s.setupRepository == nil {
+		return "", fmt.Errorf("admin setup repository is not configured")
+	}
+
+	rawToken, err := randomAdminSetupToken()
+	if err != nil {
+		return "", err
+	}
+	tokenHash := hashAdminSetupToken(rawToken)
+	if err := s.setupRepository.InvalidateByAdminID(admin.ID); err != nil {
+		return "", fmt.Errorf("invalidate previous admin setup tokens: %w", err)
+	}
+
+	setupToken := &domain.AdminSetupToken{
+		AdminID:   admin.ID,
+		TokenHash: tokenHash,
+		ExpiresAt: time.Now().UTC().Add(24 * time.Hour),
+	}
+	if err := s.setupRepository.Create(setupToken); err != nil {
+		return "", fmt.Errorf("create admin setup token: %w", err)
+	}
+
+	baseURL := s.appBaseURL
+	if baseURL == "" {
+		baseURL = "http://localhost:3000"
+	}
+	return baseURL + "/admin/setup?token=" + rawToken, nil
+}
+
+func (s *AdminAuthService) PreviewSetup(token string) (*AdminSetupPreview, error) {
+	admin, setupToken, err := s.resolveSetupToken(strings.TrimSpace(token))
+	if err != nil {
+		return nil, err
+	}
+	_ = setupToken
+	return &AdminSetupPreview{
+		Admin:           admin,
+		ProvisioningURL: buildAdminProvisioningURL(admin),
+	}, nil
+}
+
+func (s *AdminAuthService) CompleteSetup(token, newPassword, otpCode, ipAddress string) error {
+	admin, setupToken, err := s.resolveSetupToken(strings.TrimSpace(token))
+	if err != nil {
+		return err
+	}
+	if err := validateAdminPassword(newPassword); err != nil {
+		return err
+	}
+	if !totp.Validate(strings.TrimSpace(otpCode), admin.MFASecret) {
+		return ErrAdminInvalidMFA
+	}
+
+	admin.PasswordHash = newPassword
+	admin.ForcePasswordChange = false
+	admin.FailedLoginAttempts = 0
+	admin.LockedUntil = nil
+	if err := s.adminRepository.Update(admin); err != nil {
+		return fmt.Errorf("complete admin setup: %w", err)
+	}
+
+	if err := s.setupRepository.MarkUsed(setupToken.ID, time.Now().UTC()); err != nil {
+		return err
+	}
+
+	_ = s.logAudit(admin.ID, "admin_setup_completed", "admin", admin.ID, map[string]any{
+		"email": admin.Email,
+	}, ipAddress)
+
+	return nil
+}
+
 func (s *AdminAuthService) ensureAdminCanLogin(admin *domain.Admin) error {
+	if admin == nil {
+		return ErrAdminInvalidCredentials
+	}
+	if !admin.IsActive {
+		return ErrAdminInactive
+	}
+	if admin.LockedUntil != nil && admin.LockedUntil.After(time.Now().UTC()) {
+		return ErrAdminAccountLocked
+	}
+	if admin.ForcePasswordChange {
+		return ErrAdminSetupRequired
+	}
+	return nil
+}
+
+func (s *AdminAuthService) ensureAdminCanChangePassword(admin *domain.Admin) error {
 	if admin == nil {
 		return ErrAdminInvalidCredentials
 	}
@@ -337,4 +446,54 @@ func parseAdminRole(role string) (domain.AdminRole, error) {
 	default:
 		return "", repository.ErrInvalidAdminRole
 	}
+}
+
+func (s *AdminAuthService) resolveSetupToken(token string) (*domain.Admin, *domain.AdminSetupToken, error) {
+	if strings.TrimSpace(token) == "" {
+		return nil, nil, ErrAdminInvalidToken
+	}
+	if s.setupRepository == nil {
+		return nil, nil, ErrAdminInvalidToken
+	}
+	setupToken, err := s.setupRepository.GetActiveByHash(hashAdminSetupToken(token))
+	if err != nil {
+		if errors.Is(err, repository.ErrAdminSetupTokenNotFound) {
+			return nil, nil, ErrAdminInvalidToken
+		}
+		return nil, nil, err
+	}
+	admin, err := s.adminRepository.GetByID(setupToken.AdminID)
+	if err != nil {
+		if errors.Is(err, repository.ErrAdminNotFound) {
+			return nil, nil, ErrAdminInvalidToken
+		}
+		return nil, nil, err
+	}
+	if !admin.IsActive {
+		return nil, nil, ErrAdminInactive
+	}
+	return admin, setupToken, nil
+}
+
+func buildAdminProvisioningURL(admin *domain.Admin) string {
+	if admin == nil {
+		return ""
+	}
+	issuer := url.QueryEscape("Maid Recruitment Platform")
+	account := url.QueryEscape(strings.TrimSpace(strings.ToLower(admin.Email)))
+	secret := url.QueryEscape(strings.TrimSpace(admin.MFASecret))
+	return fmt.Sprintf("otpauth://totp/%s:%s?secret=%s&issuer=%s&algorithm=SHA1&digits=6&period=30", issuer, account, secret, issuer)
+}
+
+func hashAdminSetupToken(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
+}
+
+func randomAdminSetupToken() (string, error) {
+	buffer := make([]byte, 32)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buffer), nil
 }

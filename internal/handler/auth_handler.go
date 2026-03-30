@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -39,7 +38,6 @@ type ResetPasswordRequest struct {
 }
 
 type AuthResponse struct {
-	Token string       `json:"token"`
 	User  AuthUserView `json:"user"`
 }
 
@@ -79,7 +77,7 @@ func NewAuthHandler(authService *service.AuthService, userRepository domain.User
 
 func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 	var req RegisterRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -124,7 +122,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	var req LoginRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -139,6 +137,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case errors.Is(err, service.ErrInvalidCredentials):
 			_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid credentials"})
+			return
+		case errors.Is(err, service.ErrAuthRateLimited):
+			_ = utils.WriteJSON(w, http.StatusTooManyRequests, map[string]string{"error": "too many login attempts"})
 			return
 		case errors.Is(err, service.ErrAccountPendingApproval):
 			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "account pending approval", "account_status": string(domain.AccountStatusPendingApproval)})
@@ -169,14 +170,13 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	middleware.SetSessionCookie(w, r, middleware.UserSessionCookieName, token, middleware.UserSessionMaxAgeSeconds)
 	_ = utils.WriteJSON(w, http.StatusOK, AuthResponse{
-		Token: token,
-		User:  mapUserToAuthUserView(user, sessionID),
+		User: mapUserToAuthUserView(user, sessionID),
 	})
 }
 
 func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
 	var req ForgotPasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 8<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -202,7 +202,7 @@ func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Reques
 
 func (h *AuthHandler) ResetPassword(w http.ResponseWriter, r *http.Request) {
 	var req ResetPasswordRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}

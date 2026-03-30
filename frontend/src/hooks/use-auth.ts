@@ -10,7 +10,6 @@ import { getRoleHomePath } from "@/lib/role-home"
 
 interface AuthResponse {
   user: User
-  token: string
 }
 
 interface RegisterResponse {
@@ -56,7 +55,7 @@ export function useLogin() {
       return response.data
     },
     onSuccess: (data) => {
-      setAuth(data.user, data.token)
+      setAuth(data.user)
       toast.success("Successfully logged in")
       router.replace(getRoleHomePath(data.user.role))
     },

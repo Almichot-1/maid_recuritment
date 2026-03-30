@@ -52,10 +52,15 @@ type SelectionHandler struct {
 	candidateRepo    domain.CandidateRepository
 	approvalRepo     domain.ApprovalRepository
 	pairingService   *service.PairingService
+	documentStorage  secureDocumentStorage
 }
 
 func NewSelectionHandler(selectionService *service.SelectionService, candidateRepo domain.CandidateRepository, approvalRepo domain.ApprovalRepository, pairingService *service.PairingService) *SelectionHandler {
 	return &SelectionHandler{selectionService: selectionService, candidateRepo: candidateRepo, approvalRepo: approvalRepo, pairingService: pairingService}
+}
+
+func (h *SelectionHandler) SetDocumentStorage(storage secureDocumentStorage) {
+	h.documentStorage = storage
 }
 
 func (h *SelectionHandler) SelectCandidate(w http.ResponseWriter, r *http.Request) {
@@ -332,7 +337,7 @@ func (h *SelectionHandler) mapSelectionResponse(selection *domain.Selection, can
 	photoURL := ""
 	for _, document := range candidate.Documents {
 		if document.DocumentType == string(domain.Photo) {
-			photoURL = document.FileURL
+			photoURL = buildSignedDocumentURL(h.documentStorage, document.FileURL, document.FileName, contentTypeFromFileName(document.FileName), true)
 			break
 		}
 	}
@@ -355,20 +360,20 @@ func (h *SelectionHandler) mapSelectionResponse(selection *domain.Selection, can
 		},
 		EthiopianApproved: ethiopianApproved,
 		ForeignApproved:   foreignApproved,
-		EmployerContract:  mapSelectionDocumentSummary(selection.EmployerContractURL, selection.EmployerContractFileName, selection.EmployerContractUploadedAt),
-		EmployerID:        mapSelectionDocumentSummary(selection.EmployerIDURL, selection.EmployerIDFileName, selection.EmployerIDUploadedAt),
+		EmployerContract:  h.mapSelectionDocumentSummary(selection.EmployerContractURL, selection.EmployerContractFileName, selection.EmployerContractUploadedAt),
+		EmployerID:        h.mapSelectionDocumentSummary(selection.EmployerIDURL, selection.EmployerIDFileName, selection.EmployerIDUploadedAt),
 		CreatedAt:         selection.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:         selection.UpdatedAt.UTC().Format(time.RFC3339),
 	}, nil
 }
 
-func mapSelectionDocumentSummary(fileURL, fileName string, uploadedAt *time.Time) *SelectionDocumentSummary {
+func (h *SelectionHandler) mapSelectionDocumentSummary(fileURL, fileName string, uploadedAt *time.Time) *SelectionDocumentSummary {
 	if strings.TrimSpace(fileURL) == "" {
 		return nil
 	}
 
 	summary := &SelectionDocumentSummary{
-		FileURL:  fileURL,
+		FileURL:  buildSignedDocumentURL(h.documentStorage, fileURL, fileName, contentTypeFromFileName(fileName), true),
 		FileName: fileName,
 	}
 	if uploadedAt != nil {

@@ -48,9 +48,7 @@ type UpdateAdminRequest struct {
 
 type CreateAdminResponse struct {
 	Admin             AdminManagementView `json:"admin"`
-	TemporaryPassword string              `json:"temporary_password"`
-	MFASecret         string              `json:"mfa_secret"`
-	ProvisioningURL   string              `json:"provisioning_url"`
+	SetupURL          string              `json:"setup_url"`
 	InvitationWarning string              `json:"invitation_warning,omitempty"`
 }
 
@@ -103,7 +101,7 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req CreateAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -147,15 +145,21 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	invitationWarning := "For security, the temporary password and MFA secret were not emailed. Share them with the new admin using a secure out-of-band channel."
+	setupURL, err := h.authService.CreateSetupInvitation(admin)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate admin setup link"})
+		return
+	}
+
+	invitationWarning := "The new admin must use the one-time setup link to create a password and activate MFA."
 	if h.emailService != nil {
 		body := fmt.Sprintf(
-			"Hello %s,\n\nYou have been added as an admin on the Maid Recruitment Platform.\n\nFor security reasons, your one-time password and MFA secret were not sent by email. Please contact the platform super admin who created your account to receive your onboarding credentials through a secure channel.\n\nOnce you receive them, use this setup URL to add MFA to your authenticator app:\n%s",
+			"Hello %s,\n\nYou have been added as an admin on the Maid Recruitment Platform.\n\nUse the secure one-time setup link below to create your password and add MFA to your authenticator app:\n\n%s\n\nThis setup link expires in 24 hours.",
 			admin.FullName,
-			key.URL(),
+			setupURL,
 		)
 		if err := h.emailService.Send(admin.Email, "Your admin portal invitation", body); err != nil {
-			invitationWarning = invitationWarning + " Email delivery also failed: " + err.Error()
+			invitationWarning = "Setup link generated, but invitation email delivery failed: " + err.Error()
 		}
 	}
 
@@ -167,9 +171,7 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 
 	_ = utils.WriteJSON(w, http.StatusCreated, CreateAdminResponse{
 		Admin:             mapAdminManagementView(admin),
-		TemporaryPassword: tempPassword,
-		MFASecret:         key.Secret(),
-		ProvisioningURL:   key.URL(),
+		SetupURL:          setupURL,
 		InvitationWarning: invitationWarning,
 	})
 }
@@ -193,7 +195,7 @@ func (h *AdminManagementHandler) UpdateAdmin(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req UpdateAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}

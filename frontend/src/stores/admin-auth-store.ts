@@ -8,30 +8,28 @@ interface AdminMeResponse {
 
 interface AdminAuthState {
   admin: AdminUser | null
-  token: string | null
   isAuthenticated: boolean
   isLoading: boolean
-  setAuth: (admin: AdminUser, token: string) => void
+  setAuth: (admin: AdminUser) => void
   logout: () => void
   loadFromStorage: () => Promise<void>
 }
 
 export const useAdminAuthStore = create<AdminAuthState>((set) => ({
   admin: null,
-  token: null,
   isAuthenticated: false,
   isLoading: true,
 
-  setAuth: (admin, token) => {
+  setAuth: (admin) => {
     localStorage.setItem("admin_auth_user", JSON.stringify(admin))
     localStorage.removeItem("admin_auth_token")
-    set({ admin, token, isAuthenticated: true, isLoading: false })
+    set({ admin, isAuthenticated: true, isLoading: false })
   },
 
   logout: () => {
     localStorage.removeItem("admin_auth_token")
     localStorage.removeItem("admin_auth_user")
-    set({ admin: null, token: null, isAuthenticated: false, isLoading: false })
+    set({ admin: null, isAuthenticated: false, isLoading: false })
   },
 
   loadFromStorage: async () => {
@@ -52,7 +50,7 @@ export const useAdminAuthStore = create<AdminAuthState>((set) => ({
       const data = (await response.json()) as AdminMeResponse
       localStorage.setItem("admin_auth_user", JSON.stringify(data.admin))
       localStorage.removeItem("admin_auth_token")
-      set({ admin: data.admin, token: null, isAuthenticated: true, isLoading: false })
+      set({ admin: data.admin, isAuthenticated: true, isLoading: false })
       return
     } catch (error) {
       console.error("Failed to load admin auth state", error)
@@ -60,6 +58,6 @@ export const useAdminAuthStore = create<AdminAuthState>((set) => ({
       localStorage.removeItem("admin_auth_user")
     }
 
-    set({ admin: null, token: null, isAuthenticated: false, isLoading: false })
+    set({ admin: null, isAuthenticated: false, isLoading: false })
   },
 }))

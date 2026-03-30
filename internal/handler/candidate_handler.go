@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -158,6 +157,7 @@ type CandidateHandler struct {
 	candidateRepository *repository.GormCandidateRepository
 	selectionRepository domain.SelectionRepository
 	pairingService      *service.PairingService
+	documentStorage     secureDocumentStorage
 	inputValidator      *validator.Validate
 }
 
@@ -172,6 +172,10 @@ func NewCandidateHandler(candidateService *service.CandidateService, passportOCR
 	}
 }
 
+func (h *CandidateHandler) SetDocumentStorage(storage secureDocumentStorage) {
+	h.documentStorage = storage
+}
+
 func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok || strings.TrimSpace(userID) == "" {
@@ -180,7 +184,7 @@ func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req CreateCandidateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 64<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -214,7 +218,7 @@ func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	_ = utils.WriteJSON(w, http.StatusCreated, map[string]CandidateResponse{
-		"candidate": mapCandidateResponse(candidate, nil),
+		"candidate": h.mapCandidateResponse(candidate, nil),
 	})
 }
 
@@ -232,7 +236,7 @@ func (h *CandidateHandler) UpdateCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	var req UpdateCandidateRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 64<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -304,7 +308,7 @@ func (h *CandidateHandler) GetCandidate(w http.ResponseWriter, r *http.Request) 
 	sanitizeCandidateForViewer(candidate, userID, role)
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]CandidateResponse{
-		"candidate": mapCandidateResponse(candidate, documents),
+		"candidate": h.mapCandidateResponse(candidate, documents),
 	})
 }
 
@@ -397,7 +401,7 @@ func (h *CandidateHandler) ListCandidates(w http.ResponseWriter, r *http.Request
 	responses := make([]CandidateResponse, 0, len(candidates))
 	for _, candidate := range candidates {
 		sanitizeCandidateForViewer(candidate, userID, role)
-		responses = append(responses, mapCandidateResponse(candidate, nil))
+		responses = append(responses, h.mapCandidateResponse(candidate, nil))
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, CandidateListResponse{
@@ -425,7 +429,7 @@ func (h *CandidateHandler) PublishCandidate(w http.ResponseWriter, r *http.Reque
 
 	var req PublishCandidateRequest
 	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		if err := decodeJSONBody(w, r, &req, 8<<10); err != nil && !errors.Is(err, io.EOF) {
 			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
@@ -506,7 +510,7 @@ func (h *CandidateHandler) UploadCandidateDocument(w http.ResponseWriter, r *htt
 	}
 
 	_ = utils.WriteJSON(w, http.StatusCreated, map[string]CandidateDocumentResponse{
-		"document": mapDocumentResponse(document),
+		"document": h.mapDocumentResponse(document),
 	})
 }
 
@@ -525,7 +529,7 @@ func (h *CandidateHandler) GenerateCV(w http.ResponseWriter, r *http.Request) {
 
 	var req GenerateCVRequest
 	if r.Body != nil {
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+		if err := decodeJSONBody(w, r, &req, 64<<10); err != nil && !errors.Is(err, io.EOF) {
 			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
@@ -545,7 +549,7 @@ func (h *CandidateHandler) GenerateCV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_ = utils.WriteJSON(w, http.StatusOK, GenerateCVResponse{CVPDFURL: candidate.CVPDFURL})
+	_ = utils.WriteJSON(w, http.StatusOK, GenerateCVResponse{CVPDFURL: h.buildCandidateCVURL(candidate)})
 }
 
 func (h *CandidateHandler) DownloadCV(w http.ResponseWriter, r *http.Request) {
@@ -586,6 +590,29 @@ func (h *CandidateHandler) DownloadCV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	fileName := buildCandidateCVFileName(candidate.FullName)
+	contentType := "application/pdf"
+
+	if h.documentStorage != nil {
+		reader, detectedContentType, err := h.documentStorage.Open(candidate.CVPDFURL)
+		if err != nil {
+			_ = utils.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "cv download failed"})
+			return
+		}
+		defer reader.Close()
+
+		if strings.TrimSpace(detectedContentType) != "" {
+			contentType = detectedContentType
+		}
+
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, fileName))
+		w.Header().Set("Cache-Control", "private, max-age=300")
+		w.WriteHeader(http.StatusOK)
+		_, _ = io.Copy(w, reader)
+		return
+	}
+
 	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, candidate.CVPDFURL, nil)
 	if err != nil {
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
@@ -604,10 +631,8 @@ func (h *CandidateHandler) DownloadCV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileName := buildCandidateCVFileName(candidate.FullName)
-	contentType := strings.TrimSpace(response.Header.Get("Content-Type"))
-	if contentType == "" {
-		contentType = "application/pdf"
+	if headerContentType := strings.TrimSpace(response.Header.Get("Content-Type")); headerContentType != "" {
+		contentType = headerContentType
 	}
 
 	w.Header().Set("Content-Type", contentType)
@@ -762,7 +787,7 @@ func (h *CandidateHandler) DeleteCandidateDocument(w http.ResponseWriter, r *htt
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]CandidateDocumentResponse{
-		"document": mapDocumentResponse(document),
+		"document": h.mapDocumentResponse(document),
 	})
 }
 
@@ -912,7 +937,7 @@ func splitCSVQueryValues(values []string) []string {
 	return parsed
 }
 
-func mapCandidateResponse(candidate *domain.Candidate, documents []*domain.Document) CandidateResponse {
+func (h *CandidateHandler) mapCandidateResponse(candidate *domain.Candidate, documents []*domain.Document) CandidateResponse {
 	createdAt := candidate.CreatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 	updatedAt := candidate.UpdatedAt.UTC().Format("2006-01-02T15:04:05Z07:00")
 
@@ -930,18 +955,19 @@ func mapCandidateResponse(candidate *domain.Candidate, documents []*domain.Docum
 
 	responseDocuments := make([]CandidateDocumentResponse, 0, len(documents)+len(candidate.Documents))
 	for _, document := range documents {
-		responseDocuments = append(responseDocuments, mapDocumentResponse(document))
+		responseDocuments = append(responseDocuments, h.mapDocumentResponse(document))
 	}
 	if len(responseDocuments) == 0 {
 		for _, document := range candidate.Documents {
-			responseDocuments = append(responseDocuments, CandidateDocumentResponse{
+			responseDocuments = append(responseDocuments, h.mapDocumentResponse(&domain.Document{
 				ID:           document.ID,
-				DocumentType: document.DocumentType,
+				CandidateID:  candidate.ID,
+				DocumentType: domain.DocumentType(document.DocumentType),
 				FileURL:      document.FileURL,
 				FileName:     document.FileName,
 				FileSize:     dereferenceInt64(document.FileSize),
-				UploadedAt:   document.UploadedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
-			})
+				UploadedAt:   document.UploadedAt,
+			}))
 		}
 	}
 
@@ -964,35 +990,26 @@ func mapCandidateResponse(candidate *domain.Candidate, documents []*domain.Docum
 		LockedBy:        candidate.LockedBy,
 		LockedAt:        lockedAt,
 		LockExpiresAt:   lockExpiresAt,
-		CVPDFURL:        candidate.CVPDFURL,
+		CVPDFURL:        h.buildCandidateCVURL(candidate),
 		Documents:       responseDocuments,
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 	}
 }
 
-func mapDocumentResponse(document *domain.Document) CandidateDocumentResponse {
+func (h *CandidateHandler) mapDocumentResponse(document *domain.Document) CandidateDocumentResponse {
+	fileURL := ""
+	if document != nil {
+		fileURL = h.buildCandidateDocumentURL(document)
+	}
 	return CandidateDocumentResponse{
 		ID:           document.ID,
 		DocumentType: string(document.DocumentType),
-		FileURL:      document.FileURL,
+		FileURL:      fileURL,
 		FileName:     document.FileName,
 		FileSize:     document.FileSize,
 		UploadedAt:   document.UploadedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	}
-}
-
-func decodeStringSlice(value json.RawMessage) []string {
-	if len(value) == 0 {
-		return []string{}
-	}
-
-	var parsed []string
-	if err := json.Unmarshal(value, &parsed); err != nil {
-		return []string{}
-	}
-
-	return parsed
 }
 
 func parseOptionalDateString(value string) (*time.Time, error) {
@@ -1008,14 +1025,6 @@ func parseOptionalDateString(value string) (*time.Time, error) {
 	return &normalized, nil
 }
 
-func formatOptionalDate(value *time.Time) *string {
-	if value == nil || value.IsZero() {
-		return nil
-	}
-	formatted := value.UTC().Format("2006-01-02")
-	return &formatted
-}
-
 func applyRoleScopedCandidateFilters(role, userID string, filters domain.CandidateFilters) (domain.CandidateFilters, error) {
 	switch strings.TrimSpace(role) {
 	case string(domain.EthiopianAgent):
@@ -1027,6 +1036,20 @@ func applyRoleScopedCandidateFilters(role, userID string, filters domain.Candida
 	}
 
 	return filters, nil
+}
+
+func (h *CandidateHandler) buildCandidateDocumentURL(document *domain.Document) string {
+	if document == nil {
+		return ""
+	}
+	return buildSignedDocumentURL(h.documentStorage, document.FileURL, document.FileName, contentTypeFromFileName(document.FileName), true)
+}
+
+func (h *CandidateHandler) buildCandidateCVURL(candidate *domain.Candidate) string {
+	if candidate == nil || strings.TrimSpace(candidate.CVPDFURL) == "" {
+		return ""
+	}
+	return buildSignedDocumentURL(h.documentStorage, candidate.CVPDFURL, buildCandidateCVFileName(candidate.FullName), "application/pdf", true)
 }
 
 func (h *CandidateHandler) canViewCandidate(candidate *domain.Candidate, userID, role, pairingID string) (bool, error) {

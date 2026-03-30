@@ -27,9 +27,7 @@ export default function AdminManagementPage() {
   const [fullName, setFullName] = React.useState("")
   const [role, setRole] = React.useState<AdminRole>(AdminRole.SUPPORT_ADMIN)
   const [createdCredentials, setCreatedCredentials] = React.useState<null | {
-    temporary_password: string
-    mfa_secret: string
-    provisioning_url: string
+    setup_url: string
     invitation_warning?: string
   }>(null)
 
@@ -46,9 +44,7 @@ export default function AdminManagementPage() {
   const handleCreateAdmin = async () => {
     const response = await createAdmin({ email, full_name: fullName, role })
     setCreatedCredentials({
-      temporary_password: response.temporary_password,
-      mfa_secret: response.mfa_secret,
-      provisioning_url: response.provisioning_url,
+      setup_url: response.setup_url,
       invitation_warning: response.invitation_warning,
     })
     toast.success("Admin account created.")
@@ -74,10 +70,8 @@ export default function AdminManagementPage() {
       {createdCredentials ? (
         <Card className="border-amber-200 bg-amber-50">
           <CardContent className="space-y-2 p-5 text-sm text-amber-950">
-            <p className="font-semibold">Initial admin credentials</p>
-            <p>Temporary password: <span className="font-mono">{createdCredentials.temporary_password}</span></p>
-            <p>MFA secret: <span className="font-mono">{createdCredentials.mfa_secret}</span></p>
-            <p className="break-all">Provisioning URL: <span className="font-mono">{createdCredentials.provisioning_url}</span></p>
+            <p className="font-semibold">One-time admin setup link</p>
+            <p className="break-all">Setup URL: <span className="font-mono">{createdCredentials.setup_url}</span></p>
             {createdCredentials.invitation_warning ? (
               <p className="text-amber-800">Invitation warning: {createdCredentials.invitation_warning}</p>
             ) : null}

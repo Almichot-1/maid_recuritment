@@ -11,6 +11,7 @@ import (
 	"net/mail"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/golang-jwt/jwt/v5"
@@ -29,6 +30,7 @@ var (
 	ErrAccountRejected             = errors.New("account rejected")
 	ErrAccountSuspended            = errors.New("account suspended")
 	ErrAccountInactive             = errors.New("account inactive")
+	ErrAuthRateLimited             = errors.New("too many login attempts")
 	ErrPasswordResetCodeInvalid    = errors.New("invalid password reset code")
 	ErrPasswordResetCodeExpired    = errors.New("password reset code has expired")
 	ErrPasswordResetServiceMissing = errors.New("password reset service is not configured")
@@ -40,6 +42,8 @@ const (
 	passwordResetCooldown      = 60 * time.Second
 	passwordResetMaxAttempts   = 5
 	passwordResetGenericNotice = "If an active account exists for that email, we sent a reset code."
+	authLoginAttemptLimit      = 8
+	authLoginAttemptWindow     = 15 * time.Minute
 )
 
 type AuthService struct {
@@ -49,6 +53,13 @@ type AuthService struct {
 	emailService            EmailService
 	jwtSecret               []byte
 	appBaseURL              string
+	loginAttemptsMu         sync.Mutex
+	loginAttempts           map[string]authLoginAttempt
+}
+
+type authLoginAttempt struct {
+	count   int
+	resetAt time.Time
 }
 
 type authClaims struct {
@@ -75,6 +86,7 @@ func NewAuthService(userRepository domain.UserRepository, cfg *config.Config) (*
 		userRepository: userRepository,
 		jwtSecret:      []byte(cfg.JWTSecret),
 		appBaseURL:     strings.TrimRight(strings.TrimSpace(cfg.AppBaseURL), "/"),
+		loginAttempts:  make(map[string]authLoginAttempt),
 	}, nil
 }
 
@@ -148,21 +160,27 @@ func (s *AuthService) Login(email, password string) (string, error) {
 
 func (s *AuthService) LoginWithSession(email, password, userAgent, ipAddress string) (string, string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
+	if s.isLoginRateLimited(email, ipAddress) {
+		return "", "", ErrAuthRateLimited
+	}
 
 	user, err := s.userRepository.GetByEmail(email)
 	if err != nil {
 		if errors.Is(err, repository.ErrUserNotFound) {
+			s.recordFailedLogin(email, ipAddress)
 			return "", "", ErrInvalidCredentials
 		}
 		return "", "", fmt.Errorf("get user by email: %w", err)
 	}
 
 	if bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)) != nil {
+		s.recordFailedLogin(email, ipAddress)
 		return "", "", ErrInvalidCredentials
 	}
 	if err := validateUserAccess(user); err != nil {
 		return "", "", err
 	}
+	s.clearFailedLogin(email, ipAddress)
 
 	expiresAt := time.Now().UTC().Add(24 * time.Hour)
 	sessionID := ""
@@ -186,6 +204,55 @@ func (s *AuthService) LoginWithSession(email, password, userAgent, ipAddress str
 	}
 
 	return token, sessionID, nil
+}
+
+func (s *AuthService) isLoginRateLimited(email, ipAddress string) bool {
+	key := authLoginAttemptKey(email, ipAddress)
+	now := time.Now().UTC()
+
+	s.loginAttemptsMu.Lock()
+	defer s.loginAttemptsMu.Unlock()
+
+	entry, ok := s.loginAttempts[key]
+	if !ok {
+		return false
+	}
+	if now.After(entry.resetAt) {
+		delete(s.loginAttempts, key)
+		return false
+	}
+	return entry.count >= authLoginAttemptLimit
+}
+
+func (s *AuthService) recordFailedLogin(email, ipAddress string) {
+	key := authLoginAttemptKey(email, ipAddress)
+	now := time.Now().UTC()
+
+	s.loginAttemptsMu.Lock()
+	defer s.loginAttemptsMu.Unlock()
+
+	entry, ok := s.loginAttempts[key]
+	if !ok || now.After(entry.resetAt) {
+		s.loginAttempts[key] = authLoginAttempt{
+			count:   1,
+			resetAt: now.Add(authLoginAttemptWindow),
+		}
+		return
+	}
+
+	entry.count++
+	s.loginAttempts[key] = entry
+}
+
+func (s *AuthService) clearFailedLogin(email, ipAddress string) {
+	key := authLoginAttemptKey(email, ipAddress)
+	s.loginAttemptsMu.Lock()
+	defer s.loginAttemptsMu.Unlock()
+	delete(s.loginAttempts, key)
+}
+
+func authLoginAttemptKey(email, ipAddress string) string {
+	return strings.TrimSpace(strings.ToLower(email)) + "|" + strings.TrimSpace(ipAddress)
 }
 
 func (s *AuthService) RequestPasswordReset(email string) (string, error) {

@@ -5,8 +5,11 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/url"
+	"path"
 	"strings"
+	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awsconfig "github.com/aws/aws-sdk-go-v2/config"
@@ -26,6 +29,7 @@ type StorageService interface {
 
 type S3StorageService struct {
 	client        *s3.Client
+	presignClient *s3.PresignClient
 	bucket        string
 	region        string
 	endpoint      string
@@ -71,6 +75,7 @@ func NewS3StorageService(cfg *config.Config) (*S3StorageService, error) {
 
 	return &S3StorageService{
 		client:        client,
+		presignClient: s3.NewPresignClient(client),
 		bucket:        cfg.S3Bucket,
 		region:        cfg.AWSRegion,
 		endpoint:      cfg.S3Endpoint,
@@ -121,6 +126,77 @@ func (s *S3StorageService) Delete(fileURL string) error {
 	return nil
 }
 
+type ReadURLOptions struct {
+	FileName    string
+	ContentType string
+	Inline      bool
+	Expires     time.Duration
+}
+
+func (s *S3StorageService) Open(fileURL string) (io.ReadCloser, string, error) {
+	key, err := s.extractObjectKey(fileURL)
+	if err != nil {
+		return nil, "", err
+	}
+
+	result, err := s.client.GetObject(context.Background(), &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	})
+	if err != nil {
+		return nil, "", fmt.Errorf("open object: %w", err)
+	}
+
+	contentType := strings.TrimSpace(aws.ToString(result.ContentType))
+	if contentType == "" {
+		contentType = mime.TypeByExtension(path.Ext(key))
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+
+	return result.Body, contentType, nil
+}
+
+func (s *S3StorageService) SignedURL(fileURL string, options ReadURLOptions) (string, error) {
+	key, err := s.extractObjectKey(fileURL)
+	if err != nil {
+		return "", err
+	}
+
+	ttl := options.Expires
+	if ttl <= 0 {
+		ttl = 10 * time.Minute
+	}
+	if ttl > time.Hour {
+		ttl = time.Hour
+	}
+
+	input := &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+	}
+	if contentType := strings.TrimSpace(options.ContentType); contentType != "" {
+		input.ResponseContentType = aws.String(contentType)
+	}
+	if fileName := sanitizeDownloadFileName(options.FileName, key); fileName != "" {
+		dispositionType := "attachment"
+		if options.Inline {
+			dispositionType = "inline"
+		}
+		input.ResponseContentDisposition = aws.String(fmt.Sprintf(`%s; filename="%s"`, dispositionType, fileName))
+	}
+
+	result, err := s.presignClient.PresignGetObject(context.Background(), input, func(opts *s3.PresignOptions) {
+		opts.Expires = ttl
+	})
+	if err != nil {
+		return "", fmt.Errorf("presign object: %w", err)
+	}
+
+	return result.URL, nil
+}
+
 func (s *S3StorageService) publicURL(key string) string {
 	if strings.TrimSpace(s.publicBaseURL) != "" {
 		return s.publicBaseURL + "/" + key
@@ -132,6 +208,15 @@ func (s *S3StorageService) publicURL(key string) string {
 }
 
 func (s *S3StorageService) extractObjectKey(fileURL string) (string, error) {
+	if strings.HasPrefix(strings.TrimSpace(fileURL), "s3://") {
+		trimmed := strings.TrimPrefix(strings.TrimSpace(fileURL), "s3://")
+		prefix := s.bucket + "/"
+		if strings.HasPrefix(trimmed, prefix) {
+			return strings.TrimPrefix(trimmed, prefix), nil
+		}
+		return trimmed, nil
+	}
+
 	parsedURL, err := url.Parse(fileURL)
 	if err != nil {
 		return "", fmt.Errorf("parse url: %w", err)
@@ -157,4 +242,20 @@ func (s *S3StorageService) extractObjectKey(fileURL string) (string, error) {
 	}
 
 	return trimmedPath, nil
+}
+
+func sanitizeDownloadFileName(fileName, objectKey string) string {
+	name := strings.TrimSpace(fileName)
+	if name == "" {
+		name = path.Base(objectKey)
+	}
+	name = strings.Map(func(r rune) rune {
+		switch r {
+		case '"', '\\', '\r', '\n':
+			return -1
+		default:
+			return r
+		}
+	}, name)
+	return strings.TrimSpace(name)
 }

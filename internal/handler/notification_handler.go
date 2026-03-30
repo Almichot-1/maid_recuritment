@@ -63,6 +63,13 @@ type NotificationHandler struct {
 	connectionsMu          sync.RWMutex
 }
 
+const (
+	maxNotificationConnectionsPerUser = 3
+	notificationWriteWait             = 10 * time.Second
+	notificationPongWait              = 60 * time.Second
+	notificationPingPeriod            = 45 * time.Second
+)
+
 func NewNotificationHandler(notificationRepository domain.NotificationRepository, allowedOrigins []string) *NotificationHandler {
 	paginator, _ := notificationRepository.(notificationPaginator)
 	normalizedOrigins := normalizeAllowedOrigins(allowedOrigins)
@@ -73,7 +80,7 @@ func NewNotificationHandler(notificationRepository domain.NotificationRepository
 			CheckOrigin: func(r *http.Request) bool {
 				origin := strings.TrimSpace(r.Header.Get("Origin"))
 				if origin == "" {
-					return true
+					return false
 				}
 				return isAllowedOrigin(origin, normalizedOrigins)
 			},
@@ -233,10 +240,34 @@ func (h *NotificationHandler) NotificationsWebSocket(w http.ResponseWriter, r *h
 
 	client := &wsConn{conn: conn}
 	conn.SetReadLimit(4096)
-	h.addConnection(userID, client)
+	conn.SetReadDeadline(time.Now().Add(notificationPongWait))
+	conn.SetPongHandler(func(string) error {
+		conn.SetReadDeadline(time.Now().Add(notificationPongWait))
+		return nil
+	})
+	if !h.addConnection(userID, client) {
+		_ = conn.WriteControl(websocket.CloseMessage, websocket.FormatCloseMessage(websocket.ClosePolicyViolation, "too many websocket connections"), time.Now().Add(notificationWriteWait))
+		_ = conn.Close()
+		return
+	}
 	defer func() {
 		h.removeConnection(userID, client)
 		_ = conn.Close()
+	}()
+
+	pingTicker := time.NewTicker(notificationPingPeriod)
+	defer pingTicker.Stop()
+
+	go func() {
+		for range pingTicker.C {
+			client.mu.Lock()
+			err := client.conn.WriteControl(websocket.PingMessage, []byte("ping"), time.Now().Add(notificationWriteWait))
+			client.mu.Unlock()
+			if err != nil {
+				_ = conn.Close()
+				return
+			}
+		}
 	}()
 
 	for {
@@ -261,6 +292,7 @@ func (h *NotificationHandler) PushToUser(userID string, notification *domain.Not
 
 	for client := range userConnections {
 		client.mu.Lock()
+		_ = client.conn.SetWriteDeadline(time.Now().Add(notificationWriteWait))
 		err := client.conn.WriteJSON(payload)
 		client.mu.Unlock()
 		if err != nil {
@@ -270,13 +302,17 @@ func (h *NotificationHandler) PushToUser(userID string, notification *domain.Not
 	}
 }
 
-func (h *NotificationHandler) addConnection(userID string, client *wsConn) {
+func (h *NotificationHandler) addConnection(userID string, client *wsConn) bool {
 	h.connectionsMu.Lock()
 	defer h.connectionsMu.Unlock()
 	if h.connections[userID] == nil {
 		h.connections[userID] = make(map[*wsConn]struct{})
 	}
+	if len(h.connections[userID]) >= maxNotificationConnectionsPerUser {
+		return false
+	}
 	h.connections[userID][client] = struct{}{}
+	return true
 }
 
 func (h *NotificationHandler) removeConnection(userID string, client *wsConn) {

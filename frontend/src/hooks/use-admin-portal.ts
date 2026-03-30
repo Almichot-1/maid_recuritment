@@ -239,9 +239,7 @@ export function useCreateAdminUser() {
       const response = await adminApi.post("/admin/admins", payload)
       return response.data as {
         admin: AdminManagementRecord
-        temporary_password: string
-        mfa_secret: string
-        provisioning_url: string
+        setup_url: string
         invitation_warning?: string
       }
     },

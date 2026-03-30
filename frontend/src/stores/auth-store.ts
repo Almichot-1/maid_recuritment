@@ -9,10 +9,9 @@ interface AuthMeResponse {
 
 interface AuthState {
   user: User | null;
-  token: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  setAuth: (user: User, token: string) => void;
+  setAuth: (user: User) => void;
   updateUser: (updates: Partial<User>) => void;
   logout: () => void;
   loadFromStorage: () => Promise<void>;
@@ -20,15 +19,14 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
-  token: null,
   isAuthenticated: false,
   isLoading: true, // Start true until hydrated
   
-  setAuth: (user: User, token: string) => {
+  setAuth: (user: User) => {
     localStorage.setItem('auth_user', JSON.stringify(user));
     localStorage.removeItem('auth_token');
     usePairingStore.getState().clear();
-    set({ user, token, isAuthenticated: true, isLoading: false });
+    set({ user, isAuthenticated: true, isLoading: false });
   },
 
   updateUser: (updates: Partial<User>) =>
@@ -46,7 +44,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     usePairingStore.getState().clear();
-    set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+    set({ user: null, isAuthenticated: false, isLoading: false });
   },
   
   loadFromStorage: async () => {
@@ -68,12 +66,12 @@ export const useAuthStore = create<AuthState>((set) => ({
       const data = (await response.json()) as AuthMeResponse;
       localStorage.setItem('auth_user', JSON.stringify(data.user));
       localStorage.removeItem('auth_token');
-      set({ user: data.user, token: null, isAuthenticated: true, isLoading: false });
+      set({ user: data.user, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.error('Failed to load auth state from storage', error);
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
-      set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, isAuthenticated: false, isLoading: false });
     }
   }
 }));

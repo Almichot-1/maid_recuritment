@@ -31,6 +31,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize admin repository: %v", err)
 	}
+	adminSetupTokenRepository, err := repository.NewGormAdminSetupTokenRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize admin setup token repository: %v", err)
+	}
 	platformSettingsRepository, err := repository.NewGormPlatformSettingsRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize platform settings repository: %v", err)
@@ -68,6 +72,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize admin auth service: %v", err)
 	}
+	adminAuthService.SetSetupTokenRepository(adminSetupTokenRepository)
 	platformSettingsService, err := service.NewPlatformSettingsService(platformSettingsRepository, auditLogRepository)
 	if err != nil {
 		log.Fatalf("failed to initialize platform settings service: %v", err)
@@ -188,7 +193,9 @@ func main() {
 	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService, pairingService)
 	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService, passportRepository, medicalRepository, statusStepRepository)
 	candidateHandler := handler.NewCandidateHandler(candidateService, passportOCRService, candidateRepository, selectionRepository, pairingService)
+	candidateHandler.SetDocumentStorage(storageService)
 	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService)
+	selectionHandler.SetDocumentStorage(storageService)
 	approvalHandler := handler.NewApprovalHandler(approvalService, selectionService, candidateRepository, pairingService)
 	statusHandler := handler.NewStatusHandler(statusStepService, candidateRepository, selectionRepository, documentRepository, userRepository, pairingService)
 	notificationHandler := handler.NewNotificationHandler(notificationRepository, cfg.CORSAllowedOrigins)
@@ -221,10 +228,10 @@ func main() {
 	apiRouter.Get("/health", handler.Health)
 	apiRouter.Route("/auth", func(r chi.Router) {
 		r.Use(appmiddleware.PlatformMaintenance(platformSettingsService))
-		r.Post("/register", authHandler.Register)
-		r.Post("/login", authHandler.Login)
-		r.Post("/forgot-password/request", authHandler.RequestPasswordReset)
-		r.Post("/forgot-password/reset", authHandler.ResetPassword)
+		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-register", 5, 10*time.Minute)).Post("/register", authHandler.Register)
+		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-login", 10, 10*time.Minute)).Post("/login", authHandler.Login)
+		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-forgot-password", 5, 10*time.Minute)).Post("/forgot-password/request", authHandler.RequestPasswordReset)
+		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-reset-password", 10, 10*time.Minute)).Post("/forgot-password/reset", authHandler.ResetPassword)
 
 		r.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.AuthMiddleware(authService))
@@ -234,7 +241,9 @@ func main() {
 	})
 
 	apiRouter.Route("/admin", func(adminRouter chi.Router) {
-		adminRouter.Post("/login", adminAuthHandler.Login)
+		adminRouter.With(appmiddleware.NewIPRateLimitMiddleware("admin-login", 8, 10*time.Minute)).Post("/login", adminAuthHandler.Login)
+		adminRouter.With(appmiddleware.NewIPRateLimitMiddleware("admin-setup-preview", 10, 10*time.Minute)).Post("/setup/preview", adminAuthHandler.PreviewSetup)
+		adminRouter.With(appmiddleware.NewIPRateLimitMiddleware("admin-setup-complete", 10, 10*time.Minute)).Post("/setup/complete", adminAuthHandler.CompleteSetup)
 
 		adminRouter.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.AdminAuthMiddleware(adminAuthService))
@@ -275,6 +284,7 @@ func main() {
 	apiRouter.Group(func(wsProtected chi.Router) {
 		wsProtected.Use(appmiddleware.PlatformMaintenance(platformSettingsService))
 		wsProtected.Use(appmiddleware.AuthMiddleware(authService))
+		wsProtected.Use(appmiddleware.NewIPRateLimitMiddleware("notifications-websocket", 20, time.Minute))
 		wsProtected.Get("/ws/notifications", notificationHandler.NotificationsWebSocket)
 	})
 
@@ -291,7 +301,7 @@ func main() {
 
 		protected.Route("/candidates", func(cr chi.Router) {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/", candidateHandler.CreateCandidate)
-			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/passport/parse-preview", candidateHandler.ParsePassportPreview)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent)), appmiddleware.NewIPRateLimitMiddleware("passport-parse-preview", 12, time.Minute)).Post("/passport/parse-preview", candidateHandler.ParsePassportPreview)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}", candidateHandler.UpdateCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}", candidateHandler.DeleteCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}/documents/{documentId}", candidateHandler.DeleteCandidateDocument)
@@ -302,7 +312,7 @@ func main() {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/documents", candidateHandler.UploadCandidateDocument)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/passport/parse", candidateHandler.ParsePassport)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/passport", candidateHandler.GetPassport)
-			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/generate-cv", candidateHandler.GenerateCV)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent)), appmiddleware.NewIPRateLimitMiddleware("candidate-generate-cv", 8, time.Minute)).Post("/{id}/generate-cv", candidateHandler.GenerateCV)
 			cr.Get("/{id}/download-cv", candidateHandler.DownloadCV)
 			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/select", selectionHandler.SelectCandidate)
 			cr.Get("/{id}/status-steps", statusHandler.GetCandidateStatusSteps)

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -85,7 +84,7 @@ func (h *ApprovalHandler) RejectSelection(w http.ResponseWriter, r *http.Request
 	}
 
 	var req RejectSelectionRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
+	if err := decodeJSONBody(w, r, &req, 8<<10); err != nil && !errors.Is(err, io.EOF) {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}

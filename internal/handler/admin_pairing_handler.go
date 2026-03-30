@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -80,7 +79,7 @@ func (h *AdminPairingHandler) CreatePairing(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req AdminCreatePairingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 32<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -107,7 +106,7 @@ func (h *AdminPairingHandler) UpdatePairing(w http.ResponseWriter, r *http.Reque
 	}
 
 	var req AdminUpdatePairingRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 32<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}

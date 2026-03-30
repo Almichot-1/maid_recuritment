@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -215,7 +214,7 @@ func (h *AdminAgencyHandler) RejectAgency(w http.ResponseWriter, r *http.Request
 		return
 	}
 	var req AdminRejectAgencyRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 32<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -238,7 +237,7 @@ func (h *AdminAgencyHandler) UpdateAgencyStatus(w http.ResponseWriter, r *http.R
 		return
 	}
 	var req AdminUpdateAgencyStatusRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 32<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
