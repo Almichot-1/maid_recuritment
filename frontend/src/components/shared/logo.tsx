@@ -1,6 +1,5 @@
 import Link from "next/link"
-import { Users } from "lucide-react"
-import { APP_NAME } from "@/constants/branding"
+import { APP_NAME, LOGO_DARK_URL, LOGO_URL } from "@/constants/branding"
 import { cn } from "@/lib/utils"
 
 type LogoSize = "sm" | "md" | "lg"
@@ -14,17 +13,17 @@ interface LogoProps {
 
 const sizeConfig = {
   sm: {
-    icon: "h-6 w-6",
+    icon: "h-7 w-7",
     text: "text-lg",
     container: "gap-2",
   },
   md: {
-    icon: "h-8 w-8",
+    icon: "h-9 w-9",
     text: "text-xl",
     container: "gap-2",
   },
   lg: {
-    icon: "h-10 w-10",
+    icon: "h-12 w-12",
     text: "text-2xl",
     container: "gap-3",
   },
@@ -35,9 +34,20 @@ export function Logo({ size = "md", showText = true, href = "/", className }: Lo
 
   const content = (
     <div className={cn("flex items-center", config.container, className)}>
-      <div className="flex items-center justify-center rounded-lg bg-primary p-1.5">
-        <Users className={cn(config.icon, "text-primary-foreground")} />
-      </div>
+      <span className={cn("inline-flex shrink-0 items-center justify-center", config.icon)}>
+        <img
+          src={LOGO_URL}
+          alt={`${APP_NAME} logo`}
+          className="h-full w-full object-contain dark:hidden"
+          decoding="async"
+        />
+        <img
+          src={LOGO_DARK_URL}
+          alt={`${APP_NAME} logo`}
+          className="hidden h-full w-full object-contain dark:block"
+          decoding="async"
+        />
+      </span>
       {showText && (
         <span className={cn("font-bold text-foreground", config.text)}>
           {APP_NAME}

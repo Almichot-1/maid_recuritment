@@ -18,6 +18,13 @@ const geistMono = localFont({
 export const metadata: Metadata = {
   title: "Maid Recruitment Platform",
   description: "Track and manage maid recruitment",
+  icons: {
+    icon: [
+      { url: "/branding/logo-light.png", media: "(prefers-color-scheme: light)" },
+      { url: "/branding/logo-dark.png", media: "(prefers-color-scheme: dark)" },
+    ],
+    apple: [{ url: "/branding/logo-light.png" }],
+  },
 };
 
 export default function RootLayout({
