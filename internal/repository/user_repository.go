@@ -137,6 +137,7 @@ func (r *GormUserRepository) Update(user *domain.User) error {
 
 	updates := map[string]any{
 		"email":                      user.Email,
+		"email_verified":             user.EmailVerified,
 		"full_name":                  user.FullName,
 		"role":                       user.Role,
 		"company_name":               user.CompanyName,

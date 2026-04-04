@@ -18,6 +18,7 @@ const (
 type User struct {
 	ID                      string `gorm:"type:uuid;primaryKey"`
 	Email                   string `gorm:"uniqueIndex;not null"`
+	EmailVerified           bool   `gorm:"not null;default:false"`
 	PasswordHash            string `gorm:"not null"`
 	FullName                string
 	Role                    UserRole `gorm:"type:user_role;not null"`

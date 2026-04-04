@@ -60,6 +60,57 @@ type authPasswordResetRepoMock struct {
 	deleteFn            func(id string) error
 }
 
+type authEmailVerificationRepoMock struct {
+	createFn             func(token *domain.EmailVerificationToken) error
+	getActiveByTokenHash func(tokenHash string) (*domain.EmailVerificationToken, error)
+	getLatestByUserIDFn  func(userID string) (*domain.EmailVerificationToken, error)
+	invalidateActiveFn   func(userID string) error
+	markUsedFn           func(id string) error
+	deleteFn             func(id string) error
+}
+
+func (m *authEmailVerificationRepoMock) Create(token *domain.EmailVerificationToken) error {
+	if m.createFn != nil {
+		return m.createFn(token)
+	}
+	return nil
+}
+
+func (m *authEmailVerificationRepoMock) GetActiveByTokenHash(tokenHash string) (*domain.EmailVerificationToken, error) {
+	if m.getActiveByTokenHash != nil {
+		return m.getActiveByTokenHash(tokenHash)
+	}
+	return nil, repository.ErrEmailVerificationTokenNotFound
+}
+
+func (m *authEmailVerificationRepoMock) GetLatestByUserID(userID string) (*domain.EmailVerificationToken, error) {
+	if m.getLatestByUserIDFn != nil {
+		return m.getLatestByUserIDFn(userID)
+	}
+	return nil, repository.ErrEmailVerificationTokenNotFound
+}
+
+func (m *authEmailVerificationRepoMock) InvalidateActiveByUserID(userID string) error {
+	if m.invalidateActiveFn != nil {
+		return m.invalidateActiveFn(userID)
+	}
+	return nil
+}
+
+func (m *authEmailVerificationRepoMock) MarkUsed(id string) error {
+	if m.markUsedFn != nil {
+		return m.markUsedFn(id)
+	}
+	return nil
+}
+
+func (m *authEmailVerificationRepoMock) Delete(id string) error {
+	if m.deleteFn != nil {
+		return m.deleteFn(id)
+	}
+	return nil
+}
+
 func (m *authPasswordResetRepoMock) Create(request *domain.PasswordResetRequest) error {
 	if m.createFn != nil {
 		return m.createFn(request)
@@ -156,19 +207,23 @@ func TestAuthService_RegisterLoginValidate(t *testing.T) {
 
 	svc, err := NewAuthService(repo, &config.Config{JWTSecret: "secret-key"})
 	require.NoError(t, err)
+	svc.SetEmailService(&authEmailServiceMock{})
+	svc.SetEmailVerificationRepository(&authEmailVerificationRepoMock{})
 
 	token, err := svc.Register("Agent@Example.com", "password123", "Agent", string(domain.ForeignAgent), "Agency")
 	require.NoError(t, err)
-	assert.NotEmpty(t, token)
+	assert.Empty(t, token)
 
 	_, err = svc.Register("agent@example.com", "password123", "Agent", string(domain.ForeignAgent), "Agency")
 	require.ErrorIs(t, err, ErrUserExists)
 
+	registeredUser := usersByEmail["agent@example.com"]
+	require.NotNil(t, registeredUser)
+	registeredUser.EmailVerified = true
+
 	loginToken, err := svc.Login("agent@example.com", "password123")
 	require.ErrorIs(t, err, ErrAccountPendingApproval)
 
-	registeredUser := usersByEmail["agent@example.com"]
-	require.NotNil(t, registeredUser)
 	registeredUser.AccountStatus = domain.AccountStatusActive
 
 	loginToken, err = svc.Login("agent@example.com", "password123")
@@ -232,6 +287,7 @@ func TestAuthService_RequestPasswordResetCreatesOtpAndEmailsUser(t *testing.T) {
 	user := &domain.User{
 		ID:            "user-1",
 		Email:         "agent@example.com",
+		EmailVerified: true,
 		FullName:      "Agent",
 		Role:          domain.ForeignAgent,
 		AccountStatus: domain.AccountStatusActive,
@@ -316,6 +372,7 @@ func TestAuthService_ResetPasswordUpdatesPasswordAndConsumesRequest(t *testing.T
 	user := &domain.User{
 		ID:            "user-1",
 		Email:         "agent@example.com",
+		EmailVerified: true,
 		PasswordHash:  string(passwordHash),
 		Role:          domain.ForeignAgent,
 		AccountStatus: domain.AccountStatusActive,
@@ -365,6 +422,7 @@ func TestAuthService_ResetPasswordInvalidCodeIncrementsAttempts(t *testing.T) {
 	user := &domain.User{
 		ID:            "user-1",
 		Email:         "agent@example.com",
+		EmailVerified: true,
 		Role:          domain.ForeignAgent,
 		AccountStatus: domain.AccountStatusActive,
 		IsActive:      true,

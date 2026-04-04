@@ -31,6 +31,14 @@ type ForgotPasswordRequest struct {
 	Email string `json:"email" validate:"required,email"`
 }
 
+type VerifyEmailRequest struct {
+	Token string `json:"token" validate:"required"`
+}
+
+type ResendVerificationRequest struct {
+	Email string `json:"email" validate:"required,email"`
+}
+
 type ResetPasswordRequest struct {
 	Email       string `json:"email" validate:"required,email"`
 	Code        string `json:"code" validate:"required,len=6"`
@@ -38,7 +46,7 @@ type ResetPasswordRequest struct {
 }
 
 type AuthResponse struct {
-	User  AuthUserView `json:"user"`
+	User AuthUserView `json:"user"`
 }
 
 type RegisterResponse struct {
@@ -53,6 +61,7 @@ type AuthUserView struct {
 	Role                    string  `json:"role"`
 	CompanyName             string  `json:"company_name,omitempty"`
 	AvatarURL               string  `json:"avatar_url,omitempty"`
+	EmailVerified           bool    `json:"email_verified"`
 	AutoShareCandidates     bool    `json:"auto_share_candidates"`
 	DefaultForeignPairingID *string `json:"default_foreign_pairing_id,omitempty"`
 	AccountStatus           string  `json:"account_status"`
@@ -107,15 +116,8 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load user"})
 		return
 	}
-	if h.approvalService != nil {
-		if err := h.approvalService.RegisterPendingAgency(user); err != nil {
-			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to create approval request"})
-			return
-		}
-	}
-
 	_ = utils.WriteJSON(w, http.StatusAccepted, RegisterResponse{
-		Message: "Registration submitted and pending approval",
+		Message: "Registration created. Please verify your email to continue.",
 		User:    mapUserToAuthUserView(user, ""),
 	})
 }
@@ -143,6 +145,9 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 			return
 		case errors.Is(err, service.ErrAccountPendingApproval):
 			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "account pending approval", "account_status": string(domain.AccountStatusPendingApproval)})
+			return
+		case errors.Is(err, service.ErrEmailNotVerified):
+			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "email not verified"})
 			return
 		case errors.Is(err, service.ErrAccountRejected):
 			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "account rejected", "account_status": string(domain.AccountStatusRejected)})
@@ -172,6 +177,68 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 	_ = utils.WriteJSON(w, http.StatusOK, AuthResponse{
 		User: mapUserToAuthUserView(user, sessionID),
 	})
+}
+
+func (h *AuthHandler) VerifyEmail(w http.ResponseWriter, r *http.Request) {
+	var req VerifyEmailRequest
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	user, err := h.authService.VerifyEmail(req.Token)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrEmailVerificationInvalid), errors.Is(err, service.ErrEmailVerificationExpired):
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "The verification link is invalid or has expired."})
+		case errors.Is(err, service.ErrEmailVerificationMissing):
+			_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "email verification is not available right now"})
+		default:
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
+		return
+	}
+
+	if h.approvalService != nil {
+		if err := h.approvalService.RegisterPendingAgency(user); err != nil {
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to continue registration after verification"})
+			return
+		}
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{
+		"message": "Email verified. Your agency is now pending admin approval.",
+		"user":    mapUserToAuthUserView(user, ""),
+	})
+}
+
+func (h *AuthHandler) ResendVerification(w http.ResponseWriter, r *http.Request) {
+	var req ResendVerificationRequest
+	if err := decodeJSONBody(w, r, &req, 8<<10); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	message, err := h.authService.ResendEmailVerification(req.Email)
+	if err != nil {
+		switch {
+		case errors.Is(err, service.ErrEmailVerificationMissing):
+			_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "email verification is not available right now"})
+		default:
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		}
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": message})
 }
 
 func (h *AuthHandler) RequestPasswordReset(w http.ResponseWriter, r *http.Request) {
@@ -268,6 +335,7 @@ func mapUserToAuthUserView(user *domain.User, currentSessionID string) AuthUserV
 		Role:                    string(user.Role),
 		CompanyName:             user.CompanyName,
 		AvatarURL:               user.AvatarURL,
+		EmailVerified:           user.EmailVerified,
 		AutoShareCandidates:     user.AutoShareCandidates,
 		DefaultForeignPairingID: user.DefaultForeignPairingID,
 		AccountStatus:           string(user.AccountStatus),

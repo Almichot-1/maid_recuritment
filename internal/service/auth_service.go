@@ -26,6 +26,10 @@ var (
 	ErrInvalidCredentials          = errors.New("invalid credentials")
 	ErrUserExists                  = errors.New("user already exists")
 	ErrInvalidToken                = errors.New("invalid token")
+	ErrEmailNotVerified            = errors.New("email address is not verified")
+	ErrEmailVerificationInvalid    = errors.New("invalid email verification link")
+	ErrEmailVerificationExpired    = errors.New("email verification link has expired")
+	ErrEmailVerificationMissing    = errors.New("email verification service is not configured")
 	ErrAccountPendingApproval      = errors.New("account pending approval")
 	ErrAccountRejected             = errors.New("account rejected")
 	ErrAccountSuspended            = errors.New("account suspended")
@@ -44,12 +48,15 @@ const (
 	passwordResetGenericNotice = "If an active account exists for that email, we sent a reset code."
 	authLoginAttemptLimit      = 8
 	authLoginAttemptWindow     = 15 * time.Minute
+	emailVerificationExpiry    = 24 * time.Hour
+	emailVerificationCooldown  = 60 * time.Second
 )
 
 type AuthService struct {
 	userRepository          domain.UserRepository
 	sessionRepository       domain.UserSessionRepository
 	passwordResetRepository domain.PasswordResetRequestRepository
+	emailVerificationRepo   domain.EmailVerificationTokenRepository
 	emailService            EmailService
 	jwtSecret               []byte
 	appBaseURL              string
@@ -102,6 +109,10 @@ func (s *AuthService) SetPasswordResetRepository(passwordResetRepository domain.
 	s.passwordResetRepository = passwordResetRepository
 }
 
+func (s *AuthService) SetEmailVerificationRepository(emailVerificationRepo domain.EmailVerificationTokenRepository) {
+	s.emailVerificationRepo = emailVerificationRepo
+}
+
 func (s *AuthService) Register(email, password, fullName, role, companyName string) (string, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if err := validateAuthEmail(email); err != nil {
@@ -130,6 +141,7 @@ func (s *AuthService) Register(email, password, fullName, role, companyName stri
 
 	user := &domain.User{
 		Email:         email,
+		EmailVerified: false,
 		PasswordHash:  string(hashedPassword),
 		FullName:      strings.TrimSpace(fullName),
 		Role:          parsedRole,
@@ -145,12 +157,11 @@ func (s *AuthService) Register(email, password, fullName, role, companyName stri
 		return "", fmt.Errorf("create user: %w", err)
 	}
 
-	token, err := s.generateToken(user.ID, user.Email, string(user.Role), "", time.Now().Add(24*time.Hour))
-	if err != nil {
+	if err := s.sendEmailVerification(user, true); err != nil {
 		return "", err
 	}
 
-	return token, nil
+	return "", nil
 }
 
 func (s *AuthService) Login(email, password string) (string, error) {
@@ -310,6 +321,82 @@ func (s *AuthService) RequestPasswordReset(email string) (string, error) {
 	}
 
 	return passwordResetGenericNotice, nil
+}
+
+func (s *AuthService) VerifyEmail(token string) (*domain.User, error) {
+	token = strings.TrimSpace(token)
+	if token == "" {
+		return nil, ErrEmailVerificationInvalid
+	}
+	if s.emailVerificationRepo == nil || s.emailService == nil {
+		return nil, ErrEmailVerificationMissing
+	}
+
+	tokenHash := s.hashEmailVerificationToken(token)
+	record, err := s.emailVerificationRepo.GetActiveByTokenHash(tokenHash)
+	if err != nil {
+		if errors.Is(err, repository.ErrEmailVerificationTokenNotFound) {
+			return nil, ErrEmailVerificationExpired
+		}
+		return nil, fmt.Errorf("get active email verification token: %w", err)
+	}
+
+	user, err := s.userRepository.GetByID(record.UserID)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return nil, ErrEmailVerificationInvalid
+		}
+		return nil, fmt.Errorf("get user for email verification: %w", err)
+	}
+
+	if user.EmailVerified {
+		_ = s.emailVerificationRepo.MarkUsed(record.ID)
+		return user, nil
+	}
+
+	user.EmailVerified = true
+	if err := s.userRepository.Update(user); err != nil {
+		return nil, fmt.Errorf("mark user email verified: %w", err)
+	}
+	if err := s.emailVerificationRepo.MarkUsed(record.ID); err != nil {
+		return nil, fmt.Errorf("mark email verification token used: %w", err)
+	}
+
+	return user, nil
+}
+
+func (s *AuthService) ResendEmailVerification(email string) (string, error) {
+	email = strings.TrimSpace(strings.ToLower(email))
+	if err := validateAuthEmail(email); err != nil {
+		return "", err
+	}
+	if s.emailVerificationRepo == nil || s.emailService == nil {
+		return "", ErrEmailVerificationMissing
+	}
+
+	user, err := s.userRepository.GetByEmail(email)
+	if err != nil {
+		if errors.Is(err, repository.ErrUserNotFound) {
+			return "If that account exists, a verification email has been sent.", nil
+		}
+		return "", fmt.Errorf("get user by email for verification resend: %w", err)
+	}
+	if user.EmailVerified {
+		return "That email is already verified.", nil
+	}
+
+	if latest, err := s.emailVerificationRepo.GetLatestByUserID(user.ID); err == nil {
+		if time.Since(latest.CreatedAt.UTC()) < emailVerificationCooldown {
+			return "A verification email was sent recently. Please check your inbox.", nil
+		}
+	} else if !errors.Is(err, repository.ErrEmailVerificationTokenNotFound) {
+		return "", fmt.Errorf("get latest email verification token: %w", err)
+	}
+
+	if err := s.sendEmailVerification(user, false); err != nil {
+		return "", err
+	}
+	return "A fresh verification email has been sent.", nil
 }
 
 func (s *AuthService) ResetPassword(email, code, newPassword string) error {
@@ -506,6 +593,9 @@ func validateUserAccess(user *domain.User) error {
 	if !user.IsActive {
 		return ErrAccountInactive
 	}
+	if !user.EmailVerified {
+		return ErrEmailNotVerified
+	}
 	switch user.AccountStatus {
 	case domain.AccountStatusActive:
 		return nil
@@ -518,6 +608,83 @@ func validateUserAccess(user *domain.User) error {
 	default:
 		return ErrAccountInactive
 	}
+}
+
+func (s *AuthService) sendEmailVerification(user *domain.User, invalidateExisting bool) error {
+	if user == nil {
+		return ErrEmailVerificationInvalid
+	}
+	if s.emailVerificationRepo == nil || s.emailService == nil {
+		return ErrEmailVerificationMissing
+	}
+	if invalidateExisting {
+		if err := s.emailVerificationRepo.InvalidateActiveByUserID(user.ID); err != nil {
+			return fmt.Errorf("invalidate active email verification tokens: %w", err)
+		}
+	}
+
+	rawToken, err := generateSecureHexToken(32)
+	if err != nil {
+		return fmt.Errorf("generate email verification token: %w", err)
+	}
+
+	record := &domain.EmailVerificationToken{
+		UserID:    user.ID,
+		TokenHash: s.hashEmailVerificationToken(rawToken),
+		ExpiresAt: time.Now().UTC().Add(emailVerificationExpiry),
+	}
+	if err := s.emailVerificationRepo.Create(record); err != nil {
+		return fmt.Errorf("create email verification token: %w", err)
+	}
+
+	if err := s.emailService.Send(
+		user.Email,
+		"Verify your email address",
+		s.buildEmailVerificationBody(user, rawToken),
+	); err != nil {
+		_ = s.emailVerificationRepo.Delete(record.ID)
+		return fmt.Errorf("send verification email: %w", err)
+	}
+
+	return nil
+}
+
+func (s *AuthService) hashEmailVerificationToken(token string) string {
+	sum := sha256.Sum256([]byte(strings.TrimSpace(token)))
+	return hex.EncodeToString(sum[:])
+}
+
+func (s *AuthService) buildEmailVerificationBody(user *domain.User, token string) string {
+	var builder strings.Builder
+	builder.WriteString("Hello ")
+	if strings.TrimSpace(user.FullName) != "" {
+		builder.WriteString(strings.TrimSpace(user.FullName))
+	} else {
+		builder.WriteString("there")
+	}
+	builder.WriteString(",\n\n")
+	builder.WriteString("Please verify your email address before your agency registration can continue.\n\n")
+	if s.appBaseURL != "" {
+		builder.WriteString("Verification link: ")
+		builder.WriteString(s.appBaseURL)
+		builder.WriteString("/register/verify?token=")
+		builder.WriteString(url.QueryEscape(token))
+		builder.WriteString("\n\n")
+	}
+	builder.WriteString("This verification link expires in 24 hours.\n")
+	builder.WriteString("If you did not create this account, you can ignore this email.\n")
+	return builder.String()
+}
+
+func generateSecureHexToken(byteLength int) (string, error) {
+	if byteLength <= 0 {
+		return "", fmt.Errorf("byte length must be positive")
+	}
+	buffer := make([]byte, byteLength)
+	if _, err := rand.Read(buffer); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(buffer), nil
 }
 
 func generateNumericResetCode(length int) (string, error) {

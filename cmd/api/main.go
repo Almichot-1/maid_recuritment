@@ -59,6 +59,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize password reset repository: %v", err)
 	}
+	emailVerificationRepository, err := repository.NewGormEmailVerificationTokenRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize email verification repository: %v", err)
+	}
 	userSessionRepository, err := repository.NewGormUserSessionRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize user session repository: %v", err)
@@ -129,6 +133,7 @@ func main() {
 	authService.SetEmailService(emailService)
 	authService.SetSessionRepository(userSessionRepository)
 	authService.SetPasswordResetRepository(passwordResetRepository)
+	authService.SetEmailVerificationRepository(emailVerificationRepository)
 	agencyApprovalService, err := service.NewAgencyApprovalService(userRepository, adminRepository, agencyApprovalRepository, auditLogRepository, emailService)
 	if err != nil {
 		log.Fatalf("failed to initialize agency approval service: %v", err)
@@ -232,6 +237,8 @@ func main() {
 		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-login", 10, 10*time.Minute)).Post("/login", authHandler.Login)
 		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-forgot-password", 5, 10*time.Minute)).Post("/forgot-password/request", authHandler.RequestPasswordReset)
 		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-reset-password", 10, 10*time.Minute)).Post("/forgot-password/reset", authHandler.ResetPassword)
+		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-verify-email", 20, 10*time.Minute)).Post("/verify-email", authHandler.VerifyEmail)
+		r.With(appmiddleware.NewIPRateLimitMiddleware("auth-resend-verification", 5, 10*time.Minute)).Post("/resend-verification", authHandler.ResendVerification)
 
 		r.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.AuthMiddleware(authService))

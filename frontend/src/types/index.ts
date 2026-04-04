@@ -13,6 +13,7 @@ export enum AccountStatus {
 export interface User {
   id: string;
   email: string;
+  email_verified: boolean;
   full_name: string;
   role: UserRole;
   company_name?: string;

@@ -19,6 +19,7 @@ interface RegisterResponse {
 
 interface GenericMessageResponse {
   message: string
+  user?: User
 }
 
 interface ApiErrorResponse {
@@ -35,6 +36,9 @@ export function getLoginErrorMessage(error: unknown): string {
   }
 
   if (response?.status === 401 || response?.status === 403) {
+    if (response?.data?.error === "email not verified") {
+      return "Please verify your email first. Check your inbox for the verification link."
+    }
     return "The email or password you entered is not correct. Please check it and try again."
   }
 
@@ -86,13 +90,56 @@ export function useRegister() {
       return response.data
     },
     onSuccess: (_, variables) => {
-      toast.success("Registration submitted for admin review")
+      toast.success("Registration created. Please verify your email to continue.")
       const params = new URLSearchParams({
         email: variables.email,
         company_name: variables.company_name,
         role: variables.role,
       })
       router.push(`/register/pending?${params.toString()}`)
+    },
+  })
+}
+
+export function useVerifyEmail() {
+  const router = useRouter()
+
+  return useMutation({
+    mutationFn: async (token: string) => {
+      const response = await api.post<GenericMessageResponse>("/auth/verify-email", { token })
+      return response.data
+    },
+    onSuccess: (data) => {
+      toast.success(data.message)
+      router.replace("/login")
+    },
+    onError: (error: unknown) => {
+      const response = (error as AxiosError<ApiErrorResponse>).response
+      toast.error(
+        response?.data?.error ||
+        response?.data?.message ||
+        "We could not verify your email right now. Please try again."
+      )
+    },
+  })
+}
+
+export function useResendVerification() {
+  return useMutation({
+    mutationFn: async (email: string) => {
+      const response = await api.post<GenericMessageResponse>("/auth/resend-verification", { email })
+      return response.data
+    },
+    onSuccess: (data) => {
+      toast.success(data.message)
+    },
+    onError: (error: unknown) => {
+      const response = (error as AxiosError<ApiErrorResponse>).response
+      toast.error(
+        response?.data?.error ||
+        response?.data?.message ||
+        "We could not resend the verification email right now. Please try again."
+      )
     },
   })
 }
