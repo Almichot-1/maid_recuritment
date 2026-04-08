@@ -18,6 +18,24 @@
 
 ---
 
+## Live Deployment
+
+Production surfaces:
+
+- Frontend: [maid-recruitment-frontend.vercel.app](https://maid-recruitment-frontend.vercel.app)
+- Admin portal: [maid-recruitment-frontend.vercel.app/admin/login](https://maid-recruitment-frontend.vercel.app/admin/login)
+- API health: [maid-recruitment-api-frankfurt.onrender.com/api/v1/health](https://maid-recruitment-api-frankfurt.onrender.com/api/v1/health)
+
+This repository is not just source code. It is the deployed operating system behind a real multi-agency workflow with:
+
+- pairing-scoped collaboration
+- OCR-assisted candidate intake
+- signed document delivery
+- auditability and active session visibility
+- real-time chat and notifications
+
+---
+
 ## Overview
 
 This repository powers a multi-actor recruitment workflow where:
@@ -179,6 +197,20 @@ stateDiagram-v2
 
 ---
 
+## Showcase Highlights
+
+| Capability | Business Outcome | Engineering Depth |
+|---|---|---|
+| Agency onboarding with verification and approval | Stops untrusted agencies from entering the workflow | Email verification, approval gates, session control, audit visibility |
+| OCR-assisted intake | Reduces repetitive candidate data entry | Tesseract OCR, MRZ parsing, fallback extraction, bounded preview caching |
+| Pairing-scoped sharing | Prevents flat marketplace-style data leakage | Role-aware access checks, workspace context, share rules, signed access |
+| Dual selection approval | Keeps Ethiopian and foreign agencies aligned | Selection state machine, employer package validation, expiry handling |
+| Tracking and alerts | Reduces missed deadlines and blind spots | Smart warning jobs, medical/passport expiry extraction, notification delivery |
+| Real-time chat | Keeps discussion tied to partner workspace and candidate context | WebSocket events, unread tracking, pairing-bound chat authorization |
+| Admin oversight | Gives the platform owner operational control | Audit logs, pairings governance, approvals queue, secure admin setup |
+
+---
+
 ## Architecture at a Glance
 
 ```mermaid
@@ -294,6 +326,38 @@ flowchart LR
 
 ---
 
+## Key Workflow: Real-Time Agency Collaboration
+
+```mermaid
+sequenceDiagram
+    participant EA as Ethiopian Agency
+    participant FE1 as Frontend
+    participant API as Go API
+    participant WS as Chat WebSocket Hub
+    participant DB as Postgres
+    participant FE2 as Foreign Agency Frontend
+    participant FA as Foreign Agency
+
+    EA->>FE1: Open partner chat
+    FE1->>API: Resolve workspace or candidate thread
+    API->>DB: Load or create pairing-scoped thread
+    API-->>FE1: Thread context + unread state
+    FE1->>WS: Connect with cookie auth + pairing context
+    FA->>FE2: Open same workspace
+    FE2->>WS: Connect to same pairing chat
+    EA->>FE1: Send message
+    FE1->>API: POST /api/v1/chat/threads/{id}/messages
+    API->>DB: Persist message + update thread preview
+    API-->>WS: Broadcast message.created
+    WS-->>FE1: Realtime update
+    WS-->>FE2: Realtime update
+    FE2->>API: POST /api/v1/chat/threads/{id}/read
+    API->>DB: Update read cursor
+    API-->>WS: Broadcast thread.read
+```
+
+---
+
 ## Repository Layout
 
 ```text
@@ -371,6 +435,13 @@ This repo includes meaningful production hardening, not just application feature
 - admin setup tokens instead of loose temporary credentials
 - audit logging for admin and agency access patterns
 - cookie-based authenticated sessions instead of browser-stored bearer tokens
+
+Security posture highlights:
+
+- sensitive documents are served through backend-controlled access rather than open public object URLs
+- chat, notifications, and session activity are scoped to authenticated users with origin and rate-limit protections
+- agency workflow continuation is blocked until the email owner verifies control of the address
+- public-facing routes are hardened with request-size limits, unknown-field rejection, and abuse throttling
 
 ---
 
@@ -536,6 +607,12 @@ This project is a strong showcase because it demonstrates more than CRUD:
 - real-time chat and notifications in a business workflow context
 
 It tells a system-design story, not only a UI story.
+
+If you are presenting this project to recruiters, clients, or collaborators, the strongest differentiators are:
+
+- it solves a real operational coordination problem instead of a toy dashboard problem
+- it combines workflow design, security, OCR, PDF generation, realtime systems, and admin tooling in one coherent product
+- it shows system thinking across actors, not just frontend polish or backend endpoints in isolation
 
 ---
 
