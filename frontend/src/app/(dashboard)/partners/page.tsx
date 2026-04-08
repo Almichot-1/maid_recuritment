@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Building2, CheckSquare, Link2, Loader2, Route, Share2, Users } from "lucide-react"
+import { ArrowRight, Building2, CheckSquare, Link2, Loader2, MessageSquare, Route, Share2, Users } from "lucide-react"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidates } from "@/hooks/use-candidates"
@@ -111,12 +111,20 @@ export default function PartnersPage() {
         heading="Partner Workspaces"
         text={headerText}
         action={
-          <Button variant="outline" asChild>
-            <Link href="/candidates">
-              <Users className="mr-2 h-4 w-4" />
-              {isEthiopianAgent ? "Open Candidate Library" : "Browse Candidates"}
-            </Link>
-          </Button>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button variant="outline" asChild>
+              <Link href="/partners/chat">
+                <MessageSquare className="mr-2 h-4 w-4" />
+                Open Chat
+              </Link>
+            </Button>
+            <Button variant="outline" asChild>
+              <Link href="/candidates">
+                <Users className="mr-2 h-4 w-4" />
+                {isEthiopianAgent ? "Open Candidate Library" : "Browse Candidates"}
+              </Link>
+            </Button>
+          </div>
         }
       />
 

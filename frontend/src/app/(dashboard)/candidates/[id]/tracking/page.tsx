@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { useParams } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
+import { AxiosError } from "axios"
 import {
   AlertTriangle,
   ArrowLeft,
@@ -11,10 +12,12 @@ import {
   Gauge,
   Home,
   Loader2,
+  MessageSquare,
   ShieldCheck,
   Sparkles,
   XCircle,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { StatusTimeline } from "@/components/candidates/status-timeline"
 import { Button } from "@/components/ui/button"
@@ -22,11 +25,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidate, useDeleteCandidateDocument, useUploadDocument } from "@/hooks/use-candidates"
+import { resolveCandidateChatThread } from "@/hooks/use-chat"
 import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
 import { CandidateStatus } from "@/types"
 
 export default function CandidateTrackingPage() {
   const params = useParams()
+  const router = useRouter()
   const candidateId = String(params.id || "")
   const { user, isEthiopianAgent } = useCurrentUser()
   const { data: candidate, isLoading: isCandidateLoading, error } = useCandidate(candidateId)
@@ -36,6 +41,7 @@ export default function CandidateTrackingPage() {
   const medicalDocument = candidate?.documents?.find((document) => document.document_type === "medical")
   const { mutateAsync: removeDocument, isPending: isRemovingMedicalDocument } = useDeleteCandidateDocument(candidateId)
   const canUpdateProgress = isEthiopianAgent && candidate?.created_by === user?.id
+  const [isOpeningChat, setIsOpeningChat] = React.useState(false)
 
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
     if (!canUpdateProgress) {
@@ -50,6 +56,29 @@ export default function CandidateTrackingPage() {
     }
 
     await removeDocument({ documentId: medicalDocument.id })
+  }
+
+  const handleOpenCandidateChat = async () => {
+    if (!candidateId) {
+      return
+    }
+
+    setIsOpeningChat(true)
+    try {
+      await resolveCandidateChatThread(candidateId)
+      router.push(`/partners/chat?candidate_id=${candidateId}`)
+    } catch (error) {
+      const status = (error as AxiosError<{ error?: string; message?: string }>).response?.status
+      if (status === 403 || status === 404) {
+        toast.error("Candidate chat is not accessible in this workspace.")
+      } else if (status === 401) {
+        toast.error("Your session has expired. Please sign in again.")
+      } else {
+        toast.error("Could not open candidate chat right now.")
+      }
+    } finally {
+      setIsOpeningChat(false)
+    }
   }
 
   if (isCandidateLoading || isProgressLoading) {
@@ -130,6 +159,15 @@ export default function CandidateTrackingPage() {
                   <Sparkles className="mr-2 h-4 w-4" />
                   Open selections
                 </Link>
+              </Button>
+              <Button
+                variant="outline"
+                className="border-white/20 bg-white/10 text-white hover:bg-white/15 hover:text-white"
+                onClick={() => void handleOpenCandidateChat()}
+                disabled={isOpeningChat}
+              >
+                {isOpeningChat ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquare className="mr-2 h-4 w-4" />}
+                Open chat
               </Button>
             </div>
           </div>

@@ -14,13 +14,15 @@ import {
   Route,
   Link2,
   LogOut,
-  Menu
+  Menu,
+  MessageSquare
 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetHeader, SheetTitle } from "@/components/ui/sheet"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
 import { useUnreadCount } from "@/hooks/use-notifications"
+import { useChatSummary } from "@/hooks/use-chat"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useProfileAvatar } from "@/hooks/use-profile-avatar"
 import { NavItem } from "./sidebar"
@@ -54,6 +56,7 @@ export function MobileNav() {
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const { avatarDataURL } = useProfileAvatar()
   const { count: unreadCount } = useUnreadCount()
+  const { count: chatUnreadCount } = useChatSummary()
   const { hasActivePairs, isReady } = usePairingContext()
   const logout = useLogout()
   const hasWorkspaceAccess = !isReady || hasActivePairs
@@ -66,6 +69,7 @@ export function MobileNav() {
     { name: "Candidates", href: "/candidates", icon: Users },
     { name: "Add Candidate", href: "/candidates/new", icon: UserPlus },
     { name: "Selections", href: "/selections", icon: CheckSquare },
+    { name: "Chat", href: "/partners/chat", icon: MessageSquare },
     { name: "Process Tracking", href: "/tracking", icon: Route },
     { name: "Notifications", href: "/notifications", icon: Bell },
     { name: "Settings", href: "/settings", icon: Settings },
@@ -76,6 +80,7 @@ export function MobileNav() {
     { name: "Partner Workspaces", href: "/partners", icon: Link2 },
     { name: "Browse Candidates", href: "/candidates", icon: Search },
     { name: "My Selections", href: "/selections", icon: CheckSquare },
+    { name: "Chat", href: "/partners/chat", icon: MessageSquare },
     { name: "Process Tracking", href: "/tracking", icon: Route },
     { name: "Notifications", href: "/notifications", icon: Bell },
     { name: "Settings", href: "/settings", icon: Settings },
@@ -111,6 +116,7 @@ export function MobileNav() {
           {links.map((link) => {
             const isActive = activeHref === link.href
             const isNotification = link.name === "Notifications"
+            const isChat = link.name === "Chat"
             return (
               <Link
                 key={link.name}
@@ -131,6 +137,14 @@ export function MobileNav() {
                     isActive ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
                   )}>
                     {unreadCount}
+                  </span>
+                )}
+                {isChat && chatUnreadCount > 0 && (
+                  <span className={cn(
+                    "ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                    isActive ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
+                  )}>
+                    {chatUnreadCount}
                   </span>
                 )}
               </Link>

@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import { AxiosError } from "axios"
 import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { format } from "date-fns"
@@ -15,10 +16,12 @@ import {
   FileText,
   Home,
   Loader2,
+  MessageSquare,
   Sparkles,
   User,
   XCircle,
 } from "lucide-react"
+import { toast } from "sonner"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidate, useDeleteCandidateDocument, useUploadDocument } from "@/hooks/use-candidates"
@@ -30,6 +33,7 @@ import {
   useUploadSelectionDocument,
 } from "@/hooks/use-selections"
 import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
+import { resolveCandidateChatThread } from "@/hooks/use-chat"
 import { SelectionStatus } from "@/types"
 import { ApprovalDialog } from "@/components/selections/approval-dialog"
 import { StatusTimeline } from "@/components/candidates/status-timeline"
@@ -59,6 +63,7 @@ export default function SelectionDetailPage() {
 
   const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
+  const [isOpeningChat, setIsOpeningChat] = React.useState(false)
   const [replacingDocumentType, setReplacingDocumentType] = React.useState<"contract" | "employer_id" | null>(null)
   const [activeUploadType, setActiveUploadType] = React.useState<"contract" | "employer_id" | null>(null)
   const [uploadProgress, setUploadProgress] = React.useState<Record<"contract" | "employer_id", number>>({
@@ -149,6 +154,29 @@ export default function SelectionDetailPage() {
         onSuccess: () => setRejectDialogOpen(false),
       }
     )
+  }
+
+  const handleOpenCandidateChat = async () => {
+    if (!selection.candidate_id) {
+      return
+    }
+
+    setIsOpeningChat(true)
+    try {
+      await resolveCandidateChatThread(selection.candidate_id)
+      router.push(`/partners/chat?candidate_id=${selection.candidate_id}`)
+    } catch (error) {
+      const status = (error as AxiosError<{ error?: string; message?: string }>).response?.status
+      if (status === 403 || status === 404) {
+        toast.error("Candidate chat is not accessible in this workspace.")
+      } else if (status === 401) {
+        toast.error("Your session has expired. Please sign in again.")
+      } else {
+        toast.error("Could not open candidate chat right now.")
+      }
+    } finally {
+      setIsOpeningChat(false)
+    }
   }
 
   return (
@@ -502,6 +530,16 @@ export default function SelectionDetailPage() {
                   <Eye className="mr-2 h-4 w-4" />
                   Open Candidate
                 </Link>
+              </Button>
+
+              <Button
+                variant="outline"
+                className="w-full"
+                onClick={() => void handleOpenCandidateChat()}
+                disabled={isOpeningChat}
+              >
+                {isOpeningChat ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <MessageSquare className="mr-2 h-4 w-4" />}
+                Open chat about this candidate
               </Button>
 
               {(isApproved || showTrackingTimeline) ? (

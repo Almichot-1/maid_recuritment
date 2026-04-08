@@ -428,3 +428,87 @@ export interface DashboardSmartAlerts {
   flight_updates: SmartAlertFlightUpdate[];
   recently_arrived: SmartAlertFlightUpdate[];
 }
+
+export type ChatThreadScope = "workspace" | "candidate";
+
+export interface ChatParticipantSummary {
+  id: string;
+  full_name: string;
+  role?: UserRole | string;
+  company_name?: string;
+  email?: string;
+  avatar_url?: string;
+}
+
+export interface ChatThreadSummary {
+  id: string;
+  scope_type: ChatThreadScope;
+  pairing_id: string;
+  candidate_id?: string | null;
+  candidate_name?: string | null;
+  partner_agency?: PairingAgencySummary | null;
+  last_message_preview?: string | null;
+  last_message_at?: string | null;
+  unread_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ChatMessage {
+  id: string;
+  thread_id: string;
+  sender_user_id: string;
+  sender_name: string;
+  sender_role?: UserRole | string;
+  body: string;
+  created_at: string;
+  is_mine?: boolean;
+}
+
+export interface ChatThreadReadState {
+  thread_id: string;
+  unread_count: number;
+  last_read_at?: string;
+}
+
+export interface ChatSummary {
+  total_unread: number;
+  workspace_unread: number;
+  candidate_unread: number;
+  threads_with_unread?: number;
+}
+
+export interface ChatMessageEvent {
+  type: "message.created";
+  pairing_id?: string;
+  thread_id: string;
+  message: ChatMessage;
+  thread?: ChatThreadSummary;
+  summary?: ChatSummary;
+}
+
+export interface ChatReadEvent {
+  type: "thread.read";
+  pairing_id?: string;
+  thread_id: string;
+  read_state?: ChatThreadReadState;
+  summary?: ChatSummary;
+}
+
+export type ChatSocketEvent =
+  | {
+      type: "connected";
+      pairing_id?: string;
+    }
+  | ChatMessageEvent
+  | ChatReadEvent
+  | {
+      type: "thread.summary_updated";
+      pairing_id?: string;
+      thread?: ChatThreadSummary;
+      summary?: ChatSummary;
+    }
+  | {
+      type: "unknown";
+      raw: unknown;
+    };

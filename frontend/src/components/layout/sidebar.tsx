@@ -3,12 +3,13 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { LayoutDashboard, Users, UserPlus, CheckSquare, Bell, Settings, Search, ChevronLeft, ChevronRight, LogOut, Route, Link2 } from "lucide-react"
+import { LayoutDashboard, Users, UserPlus, CheckSquare, Bell, Settings, Search, ChevronLeft, ChevronRight, LogOut, Route, Link2, MessageSquare } from "lucide-react"
 
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { useCurrentUser, useLogout } from "@/hooks/use-auth"
 import { useUnreadCount } from "@/hooks/use-notifications"
+import { useChatSummary } from "@/hooks/use-chat"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useLayoutStore } from "@/stores/layout-store"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
@@ -47,6 +48,7 @@ export function Sidebar() {
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const { avatarDataURL } = useProfileAvatar()
   const { count: unreadCount } = useUnreadCount()
+  const { count: chatUnreadCount } = useChatSummary()
   const { hasActivePairs, isReady } = usePairingContext()
   const logout = useLogout()
   const { isSidebarCollapsed, toggleSidebar, setSidebarCollapsed } = useLayoutStore()
@@ -67,6 +69,7 @@ export function Sidebar() {
     { name: "Candidates", href: "/candidates", icon: Users },
     { name: "Add Candidate", href: "/candidates/new", icon: UserPlus },
     { name: "Selections", href: "/selections", icon: CheckSquare },
+    { name: "Chat", href: "/partners/chat", icon: MessageSquare },
     { name: "Process Tracking", href: "/tracking", icon: Route },
     { name: "Notifications", href: "/notifications", icon: Bell },
     { name: "Settings", href: "/settings", icon: Settings },
@@ -77,6 +80,7 @@ export function Sidebar() {
     { name: "Partner Workspaces", href: "/partners", icon: Link2 },
     { name: "Browse Candidates", href: "/candidates", icon: Search },
     { name: "My Selections", href: "/selections", icon: CheckSquare },
+    { name: "Chat", href: "/partners/chat", icon: MessageSquare },
     { name: "Process Tracking", href: "/tracking", icon: Route },
     { name: "Notifications", href: "/notifications", icon: Bell },
     { name: "Settings", href: "/settings", icon: Settings },
@@ -125,6 +129,7 @@ export function Sidebar() {
         {links.map((link) => {
           const isActive = activeHref === link.href
           const isNotification = link.name === "Notifications"
+          const isChat = link.name === "Chat"
           return (
             <Link
               key={link.name}
@@ -141,6 +146,9 @@ export function Sidebar() {
                 {isNotification && isSidebarCollapsed && unreadCount > 0 && (
                   <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-slate-950" />
                 )}
+                {isChat && isSidebarCollapsed && chatUnreadCount > 0 && (
+                  <span className="absolute -top-1 -right-1 h-2.5 w-2.5 rounded-full bg-destructive ring-2 ring-slate-950" />
+                )}
               </div>
               {!isSidebarCollapsed && <span className="truncate flex-1">{link.name}</span>}
               {isNotification && !isSidebarCollapsed && unreadCount > 0 && (
@@ -148,6 +156,12 @@ export function Sidebar() {
                   "ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full",
                   isActive ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
                 )}>{unreadCount}</span>
+              )}
+              {isChat && !isSidebarCollapsed && chatUnreadCount > 0 && (
+                <span className={cn(
+                  "ml-auto text-[10px] font-bold px-1.5 py-0.5 rounded-full",
+                  isActive ? "bg-primary-foreground text-primary" : "bg-destructive text-destructive-foreground"
+                )}>{chatUnreadCount}</span>
               )}
               {isSidebarCollapsed && (
                 <div className="absolute left-14 hidden group-hover:flex bg-slate-800 text-white text-xs font-semibold px-2 py-1 rounded shadow-md z-50 whitespace-nowrap">

@@ -3,10 +3,11 @@
 import * as React from "react"
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { Home, Users, CheckSquare, Menu } from "lucide-react"
+import { Home, Users, CheckSquare, Menu, MessageSquare } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
+import { useChatSummary } from "@/hooks/use-chat"
 import { getRoleHomePath, isRoleHomePath } from "@/lib/role-home"
 
 function matchesNavPath(pathname: string, href: string) {
@@ -25,6 +26,7 @@ export function BottomNav() {
   const pathname = usePathname()
   const { user } = useCurrentUser()
   const { hasActivePairs, isReady } = usePairingContext()
+  const { count: chatUnreadCount } = useChatSummary()
   const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false)
   const navItems = [
     {
@@ -41,6 +43,11 @@ export function BottomNav() {
       label: "Selections",
       href: "/selections",
       icon: CheckSquare,
+    },
+    {
+      label: "Chat",
+      href: "/partners/chat",
+      icon: MessageSquare,
     },
     {
       label: "More",
@@ -72,10 +79,11 @@ export function BottomNav() {
 
   return (
     <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t md:hidden">
-      <div className="grid grid-cols-4 h-16">
+      <div className="grid grid-cols-5 h-16">
         {navItems.map((item) => {
           const Icon = item.icon
           const active = matchesNavPath(pathname, item.href)
+          const isChat = item.href === "/partners/chat"
 
           return (
             <Link
@@ -88,7 +96,14 @@ export function BottomNav() {
                   : "text-muted-foreground hover:text-foreground"
               )}
             >
-              <Icon className="h-5 w-5" />
+              <span className="relative">
+                <Icon className="h-5 w-5" />
+                {isChat && chatUnreadCount > 0 ? (
+                  <span className="absolute -top-1.5 -right-2.5 rounded-full bg-destructive px-1 py-0.5 text-[9px] font-semibold leading-none text-destructive-foreground">
+                    {chatUnreadCount > 99 ? "99+" : chatUnreadCount}
+                  </span>
+                ) : null}
+              </span>
               <span className="text-xs font-medium">{item.label}</span>
             </Link>
           )

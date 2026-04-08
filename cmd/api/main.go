@@ -115,6 +115,19 @@ func main() {
 		log.Fatalf("failed to initialize notification repository: %v", err)
 	}
 
+	chatThreadRepository, err := repository.NewGormChatThreadRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize chat thread repository: %v", err)
+	}
+	chatMessageRepository, err := repository.NewGormChatMessageRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize chat message repository: %v", err)
+	}
+	chatReadRepository, err := repository.NewGormChatReadRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize chat read repository: %v", err)
+	}
+
 	statusStepRepository, err := repository.NewGormStatusStepRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize status step repository: %v", err)
@@ -145,6 +158,10 @@ func main() {
 	notificationService, err := service.NewNotificationService(cfg, notificationRepository, emailService, userRepository, candidateRepository, selectionRepository)
 	if err != nil {
 		log.Fatalf("failed to initialize notification service: %v", err)
+	}
+	chatService, err := service.NewChatService(chatThreadRepository, chatMessageRepository, chatReadRepository, candidateRepository, selectionRepository, pairingService)
+	if err != nil {
+		log.Fatalf("failed to initialize chat service: %v", err)
 	}
 
 	candidateService, err := service.NewCandidateService(candidateRepository, documentRepository, storageService, pdfService)
@@ -204,6 +221,8 @@ func main() {
 	approvalHandler := handler.NewApprovalHandler(approvalService, selectionService, candidateRepository, pairingService)
 	statusHandler := handler.NewStatusHandler(statusStepService, candidateRepository, selectionRepository, documentRepository, userRepository, pairingService)
 	notificationHandler := handler.NewNotificationHandler(notificationRepository, cfg.CORSAllowedOrigins)
+	chatHandler := handler.NewChatHandler(chatService, cfg.CORSAllowedOrigins)
+	chatHandler.SetContextRepositories(userRepository, candidateRepository, pairingService)
 	pairingHandler := handler.NewPairingHandler(pairingService, userRepository, candidateRepository)
 	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, adminRepository)
 	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
@@ -213,6 +232,7 @@ func main() {
 	adminSettingsHandler := handler.NewAdminSettingsHandler(platformSettingsService)
 	adminPairingHandler := handler.NewAdminPairingHandler(pairingService, userRepository)
 	notificationService.SetRealtimeNotifier(notificationHandler)
+	chatService.SetRealtimeNotifier(chatHandler)
 
 	if cfg.RunExpiryScheduler {
 		if _, err := jobs.StartExpiryScheduler(selectionService, expiryWarningJob); err != nil {
@@ -293,6 +313,7 @@ func main() {
 		wsProtected.Use(appmiddleware.AuthMiddleware(authService))
 		wsProtected.Use(appmiddleware.NewIPRateLimitMiddleware("notifications-websocket", 20, time.Minute))
 		wsProtected.Get("/ws/notifications", notificationHandler.NotificationsWebSocket)
+		wsProtected.With(appmiddleware.PairingContext, appmiddleware.NewIPRateLimitMiddleware("chat-websocket", 12, time.Minute)).Get("/ws/chat", chatHandler.ChatWebSocket)
 	})
 
 	apiRouter.Group(func(protected chi.Router) {
@@ -340,6 +361,16 @@ func main() {
 			nr.Get("/", notificationHandler.GetNotifications)
 			nr.Patch("/{id}/read", notificationHandler.MarkAsRead)
 			nr.Post("/mark-all-read", notificationHandler.MarkAllAsRead)
+		})
+
+		protected.Route("/chat", func(cr chi.Router) {
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-resolve-workspace", 60, time.Minute)).Post("/threads/resolve-workspace", chatHandler.ResolveWorkspaceThread)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-resolve-candidate", 60, time.Minute)).Post("/threads/resolve-candidate", chatHandler.ResolveCandidateThread)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-list-threads", 120, time.Minute)).Get("/threads", chatHandler.ListThreads)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-list-messages", 120, time.Minute)).Get("/threads/{id}/messages", chatHandler.ListMessages)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-send-message", 30, time.Minute)).Post("/threads/{id}/messages", chatHandler.SendMessage)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-mark-read", 60, time.Minute)).Post("/threads/{id}/read", chatHandler.MarkRead)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-summary", 120, time.Minute)).Get("/summary", chatHandler.GetSummary)
 		})
 
 		protected.Route("/dashboard", func(dr chi.Router) {
