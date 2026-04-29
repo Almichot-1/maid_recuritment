@@ -139,15 +139,19 @@ func main() {
 	}
 
 	pdfService := service.NewPDFService()
+	operationalEmailService := service.EmailService(nil)
 	emailService, err := service.NewSMTPEmailService(cfg)
 	if err != nil {
-		log.Fatalf("failed to initialize email service: %v", err)
+		log.Printf("email service unavailable at startup: %v", err)
+		operationalEmailService = service.NewDisabledEmailService(err)
+	} else {
+		operationalEmailService = emailService
 	}
 	authService.SetEmailService(emailService)
 	authService.SetSessionRepository(userSessionRepository)
 	authService.SetPasswordResetRepository(passwordResetRepository)
 	authService.SetEmailVerificationRepository(emailVerificationRepository)
-	agencyApprovalService, err := service.NewAgencyApprovalService(userRepository, adminRepository, agencyApprovalRepository, auditLogRepository, emailService)
+	agencyApprovalService, err := service.NewAgencyApprovalService(userRepository, adminRepository, agencyApprovalRepository, auditLogRepository, operationalEmailService)
 	if err != nil {
 		log.Fatalf("failed to initialize agency approval service: %v", err)
 	}
@@ -155,7 +159,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize pairing service: %v", err)
 	}
-	notificationService, err := service.NewNotificationService(cfg, notificationRepository, emailService, userRepository, candidateRepository, selectionRepository)
+	notificationService, err := service.NewNotificationService(cfg, notificationRepository, operationalEmailService, userRepository, candidateRepository, selectionRepository)
 	if err != nil {
 		log.Fatalf("failed to initialize notification service: %v", err)
 	}
@@ -228,7 +232,7 @@ func main() {
 	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
 	adminAgencyHandler := handler.NewAdminAgencyHandler(userRepository, agencyApprovalRepository, agencyApprovalService, candidateRepository, selectionRepository)
 	adminReadonlyHandler := handler.NewAdminReadonlyHandler(userRepository, userSessionRepository, adminRepository, candidateRepository, selectionRepository, auditLogRepository)
-	adminManagementHandler := handler.NewAdminManagementHandler(adminRepository, auditLogRepository, adminAuthService, emailService)
+	adminManagementHandler := handler.NewAdminManagementHandler(adminRepository, auditLogRepository, adminAuthService, operationalEmailService)
 	adminSettingsHandler := handler.NewAdminSettingsHandler(platformSettingsService)
 	adminPairingHandler := handler.NewAdminPairingHandler(pairingService, userRepository)
 	notificationService.SetRealtimeNotifier(notificationHandler)

@@ -14,6 +14,14 @@ type EmailService interface {
 	Send(to, subject, body string) error
 }
 
+type DisabledEmailService struct {
+	reason error
+}
+
+func NewDisabledEmailService(reason error) *DisabledEmailService {
+	return &DisabledEmailService{reason: reason}
+}
+
 type SMTPEmailService struct {
 	host        string
 	port        int
@@ -91,4 +99,11 @@ func (s *SMTPEmailService) Send(to, subject, body string) error {
 		return fmt.Errorf("send email: %w", err)
 	}
 	return nil
+}
+
+func (s *DisabledEmailService) Send(to, subject, body string) error {
+	if s == nil || s.reason == nil {
+		return fmt.Errorf("email service is disabled")
+	}
+	return fmt.Errorf("email service is disabled: %w", s.reason)
 }

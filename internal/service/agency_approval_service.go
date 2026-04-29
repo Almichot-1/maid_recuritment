@@ -47,7 +47,6 @@ func NewAgencyApprovalService(
 	if emailService == nil {
 		return nil, fmt.Errorf("email service is nil")
 	}
-
 	return &AgencyApprovalService{
 		userRepository:     userRepository,
 		adminRepository:    adminRepository,
@@ -118,7 +117,7 @@ func (s *AgencyApprovalService) RegisterPendingAgency(user *domain.User) error {
 			return err
 		}
 	}
-	if !settings.EmailNotificationsEnabled {
+	if !settings.EmailNotificationsEnabled || s.emailService == nil {
 		return nil
 	}
 
@@ -324,7 +323,7 @@ func (s *AgencyApprovalService) currentPlatformSettings() *domain.PlatformSettin
 }
 
 func (s *AgencyApprovalService) sendAgencyEmail(to, subject, template string, variables map[string]string, settings *domain.PlatformSettings) {
-	if settings == nil || !settings.EmailNotificationsEnabled || strings.TrimSpace(to) == "" {
+	if settings == nil || !settings.EmailNotificationsEnabled || s.emailService == nil || strings.TrimSpace(to) == "" {
 		return
 	}
 	_ = s.emailService.Send(to, subject, renderTemplate(template, variables))

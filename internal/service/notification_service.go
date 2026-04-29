@@ -116,7 +116,7 @@ func (s *NotificationService) Send(userID, title, message, notificationType, rel
 	}
 
 	settings := s.currentPlatformSettings()
-	if strings.TrimSpace(user.Email) != "" && settings.EmailNotificationsEnabled {
+	if s.emailService != nil && strings.TrimSpace(user.Email) != "" && settings.EmailNotificationsEnabled {
 		body := message
 		variables := map[string]string{
 			"title":          title,
