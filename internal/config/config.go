@@ -67,19 +67,6 @@ func Load() (*Config, error) {
 	if cfg.JWTSecret == "" {
 		missing = append(missing, "JWT_SECRET")
 	}
-	if cfg.AWSAccessKey == "" {
-		missing = append(missing, "AWS_ACCESS_KEY")
-	}
-	if cfg.AWSSecretKey == "" {
-		missing = append(missing, "AWS_SECRET_KEY")
-	}
-	if cfg.AWSRegion == "" {
-		missing = append(missing, "AWS_REGION")
-	}
-	if cfg.S3Bucket == "" {
-		missing = append(missing, "S3_BUCKET")
-	}
-
 	if len(missing) > 0 {
 		return nil, fmt.Errorf("missing required environment variables: %s", strings.Join(missing, ", "))
 	}

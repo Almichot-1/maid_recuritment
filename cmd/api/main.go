@@ -1,6 +1,7 @@
 package main
 
 import (
+	"io"
 	"log"
 	"net/http"
 	"time"
@@ -133,9 +134,17 @@ func main() {
 		log.Fatalf("failed to initialize status step repository: %v", err)
 	}
 
-	storageService, err := service.NewS3StorageService(cfg)
+	type documentStorageService interface {
+		service.StorageService
+		Open(fileURL string) (io.ReadCloser, string, error)
+		SignedURL(fileURL string, options service.ReadURLOptions) (string, error)
+	}
+
+	var storageService documentStorageService
+	storageService, err = service.NewS3StorageService(cfg)
 	if err != nil {
-		log.Fatalf("failed to initialize storage service: %v", err)
+		log.Printf("storage service unavailable at startup: %v", err)
+		storageService = service.NewDisabledStorageService(err)
 	}
 
 	pdfService := service.NewPDFService()

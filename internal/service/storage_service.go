@@ -21,10 +21,19 @@ import (
 )
 
 var ErrUnsupportedContentType = errors.New("unsupported content type")
+var ErrStorageUnavailable = errors.New("storage service is unavailable")
 
 type StorageService interface {
 	Upload(file io.Reader, fileName, contentType string) (url string, err error)
 	Delete(url string) error
+}
+
+type DisabledStorageService struct {
+	reason error
+}
+
+func NewDisabledStorageService(reason error) *DisabledStorageService {
+	return &DisabledStorageService{reason: reason}
 }
 
 type S3StorageService struct {
@@ -258,4 +267,27 @@ func sanitizeDownloadFileName(fileName, objectKey string) string {
 		}
 	}, name)
 	return strings.TrimSpace(name)
+}
+
+func (s *DisabledStorageService) Upload(file io.Reader, fileName, contentType string) (string, error) {
+	return "", s.wrapError()
+}
+
+func (s *DisabledStorageService) Delete(fileURL string) error {
+	return s.wrapError()
+}
+
+func (s *DisabledStorageService) Open(fileURL string) (io.ReadCloser, string, error) {
+	return nil, "", s.wrapError()
+}
+
+func (s *DisabledStorageService) SignedURL(fileURL string, options ReadURLOptions) (string, error) {
+	return "", s.wrapError()
+}
+
+func (s *DisabledStorageService) wrapError() error {
+	if s == nil || s.reason == nil {
+		return ErrStorageUnavailable
+	}
+	return fmt.Errorf("%w: %v", ErrStorageUnavailable, s.reason)
 }
