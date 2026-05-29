@@ -26,10 +26,6 @@ func NewGormMedicalDataRepository(cfg *config.Config) (domain.MedicalDataReposit
 		return nil, err
 	}
 
-	if err := db.AutoMigrate(&domain.MedicalData{}); err != nil {
-		return nil, fmt.Errorf("migrate medical_data: %w", err)
-	}
-
 	return &GormMedicalDataRepository{db: db}, nil
 }
 

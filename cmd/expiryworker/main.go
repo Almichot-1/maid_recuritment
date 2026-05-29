@@ -46,10 +46,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize passport repository: %v", err)
 	}
-	medicalRepository, err := repository.NewGormMedicalDataRepository(cfg)
-	if err != nil {
-		log.Fatalf("failed to initialize medical repository: %v", err)
-	}
+
 
 	platformSettingsRepository, err := repository.NewGormPlatformSettingsRepository(cfg)
 	if err != nil {
@@ -79,7 +76,7 @@ func main() {
 	selectionService.SetPlatformSettingsReader(platformSettingsService)
 	notificationService.SetPlatformSettingsReader(platformSettingsService)
 
-	expiryWarningJob, err := jobs.NewExpiryWarningJob(selectionRepository, candidateRepository, passportRepository, medicalRepository, notificationService)
+	expiryWarningJob, err := jobs.NewExpiryWarningJob(selectionRepository, passportRepository, candidateRepository, notificationService)
 	if err != nil {
 		log.Fatalf("failed to initialize expiry warning job: %v", err)
 	}
