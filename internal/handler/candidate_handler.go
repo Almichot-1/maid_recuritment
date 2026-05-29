@@ -93,6 +93,25 @@ type GenerateCVResponse struct {
 	CVPDFURL string `json:"cv_pdf_url"`
 }
 
+type PassportDataResponse struct {
+	ID               string  `json:"id"`
+	CandidateID      string  `json:"candidate_id"`
+	HolderName       string  `json:"holder_name"`
+	PassportNumber   string  `json:"passport_number"`
+	CountryCode      string  `json:"country_code,omitempty"`
+	Nationality      string  `json:"nationality"`
+	DateOfBirth      string  `json:"date_of_birth"`
+	PlaceOfBirth     string  `json:"place_of_birth,omitempty"`
+	Gender           string  `json:"gender"`
+	IssueDate        *string `json:"issue_date,omitempty"`
+	ExpiryDate       string  `json:"expiry_date"`
+	IssuingAuthority string  `json:"issuing_authority,omitempty"`
+	MRZLine1         string  `json:"mrz_line_1"`
+	MRZLine2         string  `json:"mrz_line_2"`
+	Confidence       float64 `json:"confidence"`
+	ExtractedAt      string  `json:"extracted_at"`
+}
+
 type GenerateCVRequest struct {
 	BrandingLogoDataURL string `json:"branding_logo_data_url"`
 	CompanyName         string `json:"company_name"`
@@ -100,15 +119,17 @@ type GenerateCVRequest struct {
 
 type CandidateHandler struct {
 	candidateService    *service.CandidateService
+	passportOCRService  *service.PassportOCRService
 	candidateRepository *repository.GormCandidateRepository
 	selectionRepository domain.SelectionRepository
 	pairingService      *service.PairingService
 	inputValidator      *validator.Validate
 }
 
-func NewCandidateHandler(candidateService *service.CandidateService, candidateRepository *repository.GormCandidateRepository, selectionRepository domain.SelectionRepository, pairingService *service.PairingService) *CandidateHandler {
+func NewCandidateHandler(candidateService *service.CandidateService, passportOCRService *service.PassportOCRService, candidateRepository *repository.GormCandidateRepository, selectionRepository domain.SelectionRepository, pairingService *service.PairingService) *CandidateHandler {
 	return &CandidateHandler{
 		candidateService:    candidateService,
+		passportOCRService:  passportOCRService,
 		candidateRepository: candidateRepository,
 		selectionRepository: selectionRepository,
 		pairingService:      pairingService,
@@ -364,7 +385,13 @@ func (h *CandidateHandler) UploadCandidateDocument(w http.ResponseWriter, r *htt
 		return
 	}
 
+	r.Body = http.MaxBytesReader(w, r.Body, 52<<20)
 	if err := r.ParseMultipartForm(50 << 20); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			_ = utils.WriteJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "file is too large"})
+			return
+		}
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form"})
 		return
 	}
@@ -436,6 +463,109 @@ func (h *CandidateHandler) GenerateCV(w http.ResponseWriter, r *http.Request) {
 	_ = utils.WriteJSON(w, http.StatusOK, GenerateCVResponse{CVPDFURL: candidate.CVPDFURL})
 }
 
+func (h *CandidateHandler) ParsePassport(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate id is required"})
+		return
+	}
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if h.passportOCRService == nil {
+		_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "passport OCR is not configured"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form"})
+		return
+	}
+
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "file is required"})
+		return
+	}
+	defer file.Close()
+
+	passportData, err := h.passportOCRService.ParseAndStore(id, userID, file, fileHeader.Filename)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+	_ = h.candidateService.ApplyPassportAutofill(id, userID, passportData)
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]PassportDataResponse{
+		"passport": mapPassportDataResponse(passportData),
+	})
+}
+
+func (h *CandidateHandler) ParsePassportPreview(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if h.passportOCRService == nil {
+		_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "passport OCR is not configured"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 12<<20)
+	if err := r.ParseMultipartForm(10 << 20); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form"})
+		return
+	}
+
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "file is required"})
+		return
+	}
+	defer file.Close()
+
+	passportData, err := h.passportOCRService.ParsePreview(file, fileHeader.Filename)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]PassportDataResponse{
+		"passport": mapPassportDataResponse(passportData),
+	})
+}
+
+func (h *CandidateHandler) GetPassport(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate id is required"})
+		return
+	}
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if h.passportOCRService == nil {
+		_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "passport OCR is not configured"})
+		return
+	}
+
+	passportData, err := h.passportOCRService.GetByCandidateID(id, userID)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]PassportDataResponse{
+		"passport": mapPassportDataResponse(passportData),
+	})
+}
+
 func (h *CandidateHandler) DeleteCandidate(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
 	if strings.TrimSpace(id) == "" {
@@ -469,8 +599,22 @@ func (h *CandidateHandler) writeServiceError(w http.ResponseWriter, err error) {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "missing required documents"})
 	case errors.Is(err, service.ErrPDFGenerationFailed):
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "pdf generation failed"})
-	case errors.Is(err, service.ErrInvalidCandidateInput), errors.Is(err, service.ErrInvalidCandidateUpdateState), errors.Is(err, service.ErrInvalidCandidateDeleteState), errors.Is(err, repository.ErrInvalidStatusTransition), errors.Is(err, service.ErrInvalidCandidateDocumentType), errors.Is(err, service.ErrFileTooLarge), errors.Is(err, service.ErrInvalidFileType):
+	case errors.Is(err, service.ErrFileTooLarge):
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "file size exceeds the allowed limit"})
+	case errors.Is(err, service.ErrInvalidFileType):
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "unsupported file type for this upload"})
+	case errors.Is(err, service.ErrInvalidCandidateDocumentType):
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid document type"})
+	case errors.Is(err, service.ErrPassportOCRRequiresImage):
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "passport OCR requires a JPG or PNG image"})
+	case errors.Is(err, service.ErrPassportOCRParseFailed):
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "We could not read that passport image. Use a clear JPG or PNG photo of the passport page."})
+	case errors.Is(err, service.ErrPassportOCRUnavailable):
+		_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "passport OCR is not available right now"})
+	case errors.Is(err, service.ErrInvalidCandidateInput), errors.Is(err, service.ErrInvalidCandidateUpdateState), errors.Is(err, service.ErrInvalidCandidateDeleteState), errors.Is(err, repository.ErrInvalidStatusTransition):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+	case errors.Is(err, service.ErrPassportDataNotFound), errors.Is(err, repository.ErrPassportDataNotFound):
+		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "passport data not found"})
 	default:
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 	}
@@ -730,4 +874,31 @@ func dereferenceInt64(value *int64) int64 {
 		return 0
 	}
 	return *value
+}
+
+func mapPassportDataResponse(passportData *domain.PassportData) PassportDataResponse {
+	var issueDate *string
+	if passportData.IssueDate != nil && !passportData.IssueDate.IsZero() {
+		formatted := passportData.IssueDate.UTC().Format("2006-01-02T15:04:05Z07:00")
+		issueDate = &formatted
+	}
+
+	return PassportDataResponse{
+		ID:               passportData.ID,
+		CandidateID:      passportData.CandidateID,
+		HolderName:       passportData.HolderName,
+		PassportNumber:   passportData.PassportNumber,
+		CountryCode:      passportData.CountryCode,
+		Nationality:      passportData.Nationality,
+		DateOfBirth:      passportData.DateOfBirth.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		PlaceOfBirth:     passportData.PlaceOfBirth,
+		Gender:           passportData.Gender,
+		IssueDate:        issueDate,
+		ExpiryDate:       passportData.ExpiryDate.UTC().Format("2006-01-02T15:04:05Z07:00"),
+		IssuingAuthority: passportData.IssuingAuthority,
+		MRZLine1:         passportData.MRZLine1,
+		MRZLine2:         passportData.MRZLine2,
+		Confidence:       passportData.Confidence,
+		ExtractedAt:      passportData.ExtractedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
+	}
 }

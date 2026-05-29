@@ -45,9 +45,13 @@ type CandidateCVBranding struct {
 type CandidateService struct {
 	candidateRepository domain.CandidateRepository
 	documentRepository  domain.DocumentRepository
+	passportRepository  domain.PassportDataRepository
+	medicalRepository   domain.MedicalDataRepository
 	storageService      StorageService
 	pdfService          *PDFService
 	pairingService      *PairingService
+	medicalService      *MedicalDocumentService
+	passportOCRService  *PassportOCRService
 }
 
 func NewCandidateService(
@@ -79,6 +83,22 @@ func NewCandidateService(
 
 func (s *CandidateService) SetPairingService(pairingService *PairingService) {
 	s.pairingService = pairingService
+}
+
+func (s *CandidateService) SetPassportRepository(passportRepository domain.PassportDataRepository) {
+	s.passportRepository = passportRepository
+}
+
+func (s *CandidateService) SetMedicalDataRepository(medicalRepository domain.MedicalDataRepository) {
+	s.medicalRepository = medicalRepository
+}
+
+func (s *CandidateService) SetMedicalDocumentService(medicalService *MedicalDocumentService) {
+	s.medicalService = medicalService
+}
+
+func (s *CandidateService) SetPassportOCRService(passportOCRService *PassportOCRService) {
+	s.passportOCRService = passportOCRService
 }
 
 func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput) (*domain.Candidate, error) {
@@ -281,7 +301,7 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 		return nil, err
 	}
 
-	contentType, err := detectContentTypeFromFileName(input.FileName)
+	bufferedFile, contentType, err := validateAndBufferUpload(input.File, input.FileName)
 	if err != nil {
 		return nil, err
 	}
@@ -298,7 +318,12 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 		return nil, ErrForbidden
 	}
 
-	fileURL, err := s.storageService.Upload(input.File, input.FileName, contentType)
+	bufferedBytes, err := io.ReadAll(bufferedFile)
+	if err != nil {
+		return nil, fmt.Errorf("buffer validated upload: %w", err)
+	}
+
+	fileURL, err := s.storageService.Upload(bytes.NewReader(bufferedBytes), input.FileName, contentType)
 	if err != nil {
 		return nil, fmt.Errorf("upload file: %w", err)
 	}
@@ -315,6 +340,18 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 	if err := s.documentRepository.Create(document); err != nil {
 		_ = s.storageService.Delete(fileURL)
 		return nil, err
+	}
+
+	if documentType == domain.Passport && s.passportOCRService != nil && (contentType == "image/jpeg" || contentType == "image/png") {
+		if passportData, err := s.passportOCRService.ParseAndStore(candidateID, uploadedBy, bytes.NewReader(bufferedBytes), input.FileName); err == nil {
+			_ = s.applyPassportAutofill(candidateID, uploadedBy, passportData)
+		}
+	}
+
+	if documentType == domain.Medical && s.medicalService != nil {
+		if _, err := s.medicalService.ParseAndStore(candidateID, document, input.FileName, contentType, bufferedBytes); err != nil {
+			return document, nil
+		}
 	}
 
 	return document, nil
@@ -342,7 +379,14 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy string, branding 
 		return err
 	}
 
-	pdfBytes, err := s.pdfService.GenerateCandidateCV(candidate, documents, branding)
+	var passportData *domain.PassportData
+	if s.passportRepository != nil {
+		if storedPassportData, err := s.passportRepository.GetByCandidateID(candidateID); err == nil {
+			passportData = storedPassportData
+		}
+	}
+
+	pdfBytes, err := s.pdfService.GenerateCandidateCV(candidate, documents, branding, passportData)
 	if err != nil {
 		return err
 	}
@@ -383,6 +427,36 @@ func (s *CandidateService) DeleteCandidate(candidateID, deletedBy string) error 
 	}
 
 	return s.candidateRepository.Delete(candidateID)
+}
+
+func (s *CandidateService) ApplyPassportAutofill(candidateID, updatedBy string, passportData *domain.PassportData) error {
+	return s.applyPassportAutofill(candidateID, updatedBy, passportData)
+}
+
+func (s *CandidateService) applyPassportAutofill(candidateID, updatedBy string, passportData *domain.PassportData) error {
+	if passportData == nil {
+		return nil
+	}
+	if strings.TrimSpace(candidateID) == "" || strings.TrimSpace(updatedBy) == "" {
+		return nil
+	}
+
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(updatedBy) {
+		return ErrForbidden
+	}
+
+	if holderName := strings.TrimSpace(passportData.HolderName); holderName != "" {
+		candidate.FullName = holderName
+	}
+	if derivedAge := passportData.Age(); derivedAge > 0 {
+		candidate.Age = &derivedAge
+	}
+
+	return s.candidateRepository.Update(candidate)
 }
 
 func validateCandidateInput(data CandidateInput) error {
@@ -439,6 +513,8 @@ func parseCandidateDocumentType(value string) (domain.DocumentType, error) {
 		return domain.Photo, nil
 	case string(domain.Video):
 		return domain.Video, nil
+	case string(domain.Medical):
+		return domain.Medical, nil
 	default:
 		return "", ErrInvalidCandidateDocumentType
 	}

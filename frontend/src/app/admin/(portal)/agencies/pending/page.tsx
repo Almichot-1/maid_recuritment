@@ -18,7 +18,7 @@ function PendingAgencyCards({ role }: { role: UserRole | "all" }) {
     return (
       <div className="grid gap-4 xl:grid-cols-2">
         {Array.from({ length: 4 }).map((_, index) => (
-          <div key={index} className="h-52 rounded-3xl border border-slate-200 bg-white/70" />
+          <div key={index} className="h-52 rounded-3xl border border-border bg-card/70" />
         ))}
       </div>
     )
@@ -26,7 +26,7 @@ function PendingAgencyCards({ role }: { role: UserRole | "all" }) {
 
   if (!data.length) {
     return (
-      <div className="rounded-3xl border border-dashed border-slate-300 bg-white p-10 text-center text-sm text-slate-500">
+      <div className="rounded-3xl border border-dashed border-border bg-card p-10 text-center text-sm text-muted-foreground">
         No agencies are waiting in this queue right now.
       </div>
     )
@@ -35,12 +35,12 @@ function PendingAgencyCards({ role }: { role: UserRole | "all" }) {
   return (
     <div className="grid gap-4 xl:grid-cols-2">
       {data.map((agency) => (
-        <Card key={agency.id} className="border-slate-200 bg-white/90 shadow-sm">
+        <Card key={agency.id} className="border-border bg-card shadow-sm">
           <CardHeader className="space-y-3">
             <div className="flex flex-wrap items-center justify-between gap-3">
               <div>
-                <CardTitle className="text-xl text-slate-950">{agency.company_name || agency.contact_person}</CardTitle>
-                <p className="mt-1 text-sm text-slate-500">{agency.email}</p>
+                <CardTitle className="text-xl text-foreground">{agency.company_name || agency.contact_person}</CardTitle>
+                <p className="mt-1 text-sm text-muted-foreground">{agency.email}</p>
               </div>
               <AdminStatusBadge status={agency.account_status} />
             </div>
@@ -49,26 +49,26 @@ function PendingAgencyCards({ role }: { role: UserRole | "all" }) {
             <dl className="grid gap-3 sm:grid-cols-2">
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Contact Person</dt>
-                <dd className="mt-1 text-sm text-slate-700">{agency.contact_person}</dd>
+                <dd className="mt-1 text-sm text-muted-foreground">{agency.contact_person}</dd>
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Agency Type</dt>
-                <dd className="mt-1 text-sm text-slate-700">{titleize(agency.role)}</dd>
+                <dd className="mt-1 text-sm text-muted-foreground">{titleize(agency.role)}</dd>
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Registered</dt>
-                <dd className="mt-1 text-sm text-slate-700">{formatRelative(agency.registration_date)}</dd>
+                <dd className="mt-1 text-sm text-muted-foreground">{formatRelative(agency.registration_date)}</dd>
               </div>
               <div>
                 <dt className="text-xs font-semibold uppercase tracking-wide text-slate-400">Verification Docs</dt>
-                <dd className="mt-1 text-sm text-slate-700">Registration docs are not attached yet in the signup flow.</dd>
+                <dd className="mt-1 text-sm text-muted-foreground">Registration docs are not attached yet in the signup flow.</dd>
               </div>
             </dl>
 
-            <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">
+            <div className="flex items-center justify-between rounded-2xl bg-slate-50 px-4 py-3 text-sm text-muted-foreground">
               <span>Review application details and decide whether this agency can access the platform.</span>
               <Link href={`/admin/agencies/${agency.id}`}>
-                <Button className="bg-slate-950 hover:bg-slate-800">Review</Button>
+                <Button>Review</Button>
               </Link>
             </div>
           </CardContent>
@@ -87,7 +87,7 @@ export default function PendingApprovalsPage() {
       />
 
       <Tabs defaultValue="all" className="space-y-4">
-        <TabsList className="rounded-2xl bg-white p-1 shadow-sm">
+        <TabsList className="rounded-2xl bg-card p-1 shadow-sm">
           <TabsTrigger value="all">All Agencies</TabsTrigger>
           <TabsTrigger value="ethiopian_agent">Ethiopian Agencies</TabsTrigger>
           <TabsTrigger value="foreign_agent">Foreign Agencies</TabsTrigger>

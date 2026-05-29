@@ -4,9 +4,11 @@ import * as React from "react"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import { z } from "zod"
-import { AlertCircle, CheckCircle2, Loader2, LogOut, Monitor } from "lucide-react"
+import { formatDistanceToNow } from "date-fns"
+import { AlertCircle, CheckCircle2, Loader2, LogOut, ShieldCheck, Smartphone, Trash2 } from "lucide-react"
 
 import { useChangePassword, useLogoutAllDevices, PasswordChangeData } from "@/hooks/use-settings"
+import { useBrowserSessions } from "@/hooks/use-browser-sessions"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -33,7 +35,8 @@ const passwordSchema = z.object({
 
 export function SecuritySettings() {
   const { mutate: changePassword, isPending: isChangingPassword } = useChangePassword()
-  const { isPending: isLoggingOut } = useLogoutAllDevices()
+  const { mutate: logoutAllSessions, isPending: isLoggingOut } = useLogoutAllDevices()
+  const { sessions, currentSessionID, removeSession } = useBrowserSessions()
 
   const form = useForm<PasswordChangeData & { confirm_password: string }>({
     resolver: zodResolver(passwordSchema),
@@ -48,7 +51,7 @@ export function SecuritySettings() {
 
   const getPasswordStrength = (password: string) => {
     if (!password) return { strength: 0, label: "", color: "" }
-    
+
     let strength = 0
     if (password.length >= 8) strength++
     if (password.length >= 12) strength++
@@ -65,24 +68,26 @@ export function SecuritySettings() {
   const passwordStrength = getPasswordStrength(newPassword)
 
   const onSubmit = (data: PasswordChangeData & { confirm_password: string }) => {
-    changePassword({
-      current_password: data.current_password,
-      new_password: data.new_password,
-    }, {
-      onSuccess: () => {
-        form.reset()
+    changePassword(
+      {
+        current_password: data.current_password,
+        new_password: data.new_password,
       },
-    })
+      {
+        onSuccess: () => {
+          form.reset()
+        },
+      },
+    )
   }
 
   return (
     <div className="space-y-6">
-      <div className="rounded-lg border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900 dark:border-amber-900/60 dark:bg-amber-950/20 dark:text-amber-200">
-        Password changes are now backed by the API. Logging out of all devices is still unavailable because the current JWT auth flow has no token revocation support yet.
+      <div className="rounded-2xl border border-emerald-200 bg-emerald-50 p-4 text-sm text-emerald-900 dark:border-emerald-900/60 dark:bg-emerald-950/20 dark:text-emerald-200">
+        Password changes save through the live API, and the session list below now tracks the active account sessions across your devices.
       </div>
 
-      {/* Change Password */}
-      <Card>
+      <Card className="overflow-hidden border-border/70 shadow-sm">
         <CardHeader>
           <CardTitle>Change Password</CardTitle>
           <CardDescription>
@@ -92,7 +97,6 @@ export function SecuritySettings() {
         <CardContent>
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
-              {/* Current Password */}
               <FormField
                 control={form.control}
                 name="current_password"
@@ -107,7 +111,6 @@ export function SecuritySettings() {
                 )}
               />
 
-              {/* New Password */}
               <FormField
                 control={form.control}
                 name="new_password"
@@ -117,10 +120,10 @@ export function SecuritySettings() {
                     <FormControl>
                       <Input type="password" placeholder="Enter new password" {...field} />
                     </FormControl>
-                    {newPassword && (
-                      <div className="space-y-2 mt-2">
+                    {newPassword ? (
+                      <div className="mt-2 space-y-2">
                         <div className="flex items-center gap-2">
-                          <div className="flex-1 h-2 bg-muted rounded-full overflow-hidden">
+                          <div className="h-2 flex-1 overflow-hidden rounded-full bg-muted">
                             <div
                               className={cn("h-full transition-all", passwordStrength.color)}
                               style={{ width: `${(passwordStrength.strength / 5) * 100}%` }}
@@ -132,13 +135,12 @@ export function SecuritySettings() {
                           Use 8+ characters with a mix of letters, numbers & symbols
                         </p>
                       </div>
-                    )}
+                    ) : null}
                     <FormMessage />
                   </FormItem>
                 )}
               />
 
-              {/* Confirm Password */}
               <FormField
                 control={form.control}
                 name="confirm_password"
@@ -153,9 +155,8 @@ export function SecuritySettings() {
                 )}
               />
 
-              {/* Submit Button */}
               <Button type="submit" disabled={isChangingPassword}>
-                {isChangingPassword && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                {isChangingPassword ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : null}
                 Update Password
               </Button>
             </form>
@@ -163,56 +164,93 @@ export function SecuritySettings() {
         </CardContent>
       </Card>
 
-      {/* Active Sessions */}
-      <Card>
+      <Card className="overflow-hidden border-border/70 shadow-sm">
         <CardHeader>
           <CardTitle>Active Sessions</CardTitle>
           <CardDescription>
-            Manage your active sessions across different devices.
+            Review the active sessions linked to your account and remove the ones you no longer trust.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
-          {/* Current Session */}
-          <div className="flex items-center justify-between p-4 bg-muted/50 rounded-lg border">
-            <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-full bg-green-100 dark:bg-green-950/30">
-                <Monitor className="h-5 w-5 text-green-600 dark:text-green-400" />
+          <div className="grid gap-3">
+            {sessions.length === 0 ? (
+              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 p-4 text-sm text-muted-foreground">
+                No active sessions found.
               </div>
-              <div>
-                <p className="font-medium">Current Session</p>
-                <p className="text-sm text-muted-foreground">This device - Active now</p>
-              </div>
-            </div>
-            <Badge className="bg-green-500 hover:bg-green-600 text-white">
-              <CheckCircle2 className="h-3 w-3 mr-1" />
-              Active
-            </Badge>
+            ) : (
+              sessions.map((session) => {
+                const isCurrent = session.id === currentSessionID
+                const Icon = isCurrent ? ShieldCheck : Smartphone
+
+                return (
+                  <div
+                    key={session.id}
+                    className="flex flex-col gap-4 rounded-2xl border border-border/70 bg-muted/20 p-4 sm:flex-row sm:items-center sm:justify-between"
+                  >
+                    <div className="flex items-start gap-3">
+                      <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-background shadow-sm">
+                        <Icon className="h-5 w-5 text-primary" />
+                      </div>
+                      <div className="space-y-1">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <p className="font-medium">{session.device_label}</p>
+                          {isCurrent ? (
+                            <Badge className="bg-green-500 text-white hover:bg-green-600">
+                              <CheckCircle2 className="mr-1 h-3 w-3" />
+                              Current
+                            </Badge>
+                          ) : null}
+                        </div>
+                        <p className="text-sm text-muted-foreground">
+                          {session.browser_name} • {session.os_name}
+                        </p>
+                        <p className="text-xs text-muted-foreground">
+                          Last active {formatDistanceToNow(new Date(session.last_seen_at), { addSuffix: true })}
+                        </p>
+                      </div>
+                    </div>
+
+                    {!isCurrent ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        className="self-start text-destructive hover:text-destructive sm:self-center"
+                        onClick={() => removeSession(session.id)}
+                      >
+                        <Trash2 className="mr-2 h-4 w-4" />
+                        Remove
+                      </Button>
+                    ) : null}
+                  </div>
+                )
+              })
+            )}
           </div>
 
           <Separator />
 
-          {/* Logout All Devices */}
           <div className="space-y-3">
-            <div className="flex items-start gap-3 p-3 bg-amber-50 dark:bg-amber-950/20 rounded-lg border border-amber-200 dark:border-amber-800">
-              <AlertCircle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+            <div className="flex items-start gap-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 dark:border-amber-800 dark:bg-amber-950/20">
+              <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-amber-600" />
               <div className="text-sm text-amber-800 dark:text-amber-200">
-                <p className="font-medium mb-1">Security Action</p>
+                <p className="mb-1 font-medium">Sign out everywhere</p>
                 <p className="text-xs">
-                  Logging out of all devices will end all active sessions. You will need to log in again on this device.
+                  This revokes all active sessions for your account, including the one you are using right now.
                 </p>
               </div>
             </div>
             <Button
               variant="outline"
-              disabled
               className="w-full sm:w-auto"
+              onClick={() => logoutAllSessions()}
+              disabled={isLoggingOut}
             >
               {isLoggingOut ? (
                 <Loader2 className="mr-2 h-4 w-4 animate-spin" />
               ) : (
                 <LogOut className="mr-2 h-4 w-4" />
               )}
-              Coming Soon
+              Sign Out on All Devices
             </Button>
           </div>
         </CardContent>

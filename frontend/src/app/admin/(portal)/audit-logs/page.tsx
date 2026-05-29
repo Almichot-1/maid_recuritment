@@ -43,11 +43,11 @@ export default function AdminAuditLogsPage() {
         description="Immutable operator activity across approvals, admin access, and sensitive management actions."
       />
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.2fr_0.8fr_0.8fr]">
-          <Input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search admin or action" className="bg-white" />
+          <Input value={adminSearch} onChange={(event) => setAdminSearch(event.target.value)} placeholder="Search admin or action" className="bg-card" />
           <Select value={action} onValueChange={setAction}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-card">
               <SelectValue placeholder="Action type" />
             </SelectTrigger>
             <SelectContent>
@@ -61,7 +61,7 @@ export default function AdminAuditLogsPage() {
             </SelectContent>
           </Select>
           <Select value={targetType} onValueChange={setTargetType}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-card">
               <SelectValue placeholder="Target type" />
             </SelectTrigger>
             <SelectContent>
@@ -73,7 +73,7 @@ export default function AdminAuditLogsPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -88,26 +88,26 @@ export default function AdminAuditLogsPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">Loading audit logs...</TableCell>
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">Loading audit logs...</TableCell>
                 </TableRow>
               ) : null}
               {!isLoading && !filtered.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">No audit logs matched the current filters.</TableCell>
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">No audit logs matched the current filters.</TableCell>
                 </TableRow>
               ) : null}
               {filtered.map((log) => (
                 <TableRow key={log.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium text-slate-950">{log.admin_name || log.admin_id}</p>
-                      <p className="text-xs text-slate-500">{log.admin_id}</p>
+                      <p className="font-medium text-foreground">{log.admin_name || log.admin_id}</p>
+                      <p className="text-xs text-muted-foreground">{log.admin_id}</p>
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-600">{titleize(log.action)}</TableCell>
-                  <TableCell className="text-slate-600">{titleize(log.target_type || "system")}</TableCell>
-                  <TableCell className="text-slate-600">{log.ip_address || "N/A"}</TableCell>
-                  <TableCell className="text-slate-600">{formatDateTime(log.created_at)}</TableCell>
+                  <TableCell className="text-muted-foreground">{titleize(log.action)}</TableCell>
+                  <TableCell className="text-muted-foreground">{titleize(log.target_type || "system")}</TableCell>
+                  <TableCell className="text-muted-foreground">{log.ip_address || "N/A"}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatDateTime(log.created_at)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

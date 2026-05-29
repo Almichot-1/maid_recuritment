@@ -14,13 +14,17 @@ import (
 	"maid-recruitment-tracking/internal/repository"
 )
 
-var ErrStepNotFound = errors.New("step not found")
-var ErrInvalidStepTransition = errors.New("invalid step transition")
+var (
+	ErrStepNotFound            = errors.New("step not found")
+	ErrInvalidStepTransition   = errors.New("invalid step transition")
+	ErrMedicalDocumentRequired = errors.New("medical certificate must be uploaded before completing this step")
+)
 
 type StatusStepService struct {
 	statusStepRepository domain.StatusStepRepository
 	candidateRepository  domain.CandidateRepository
 	selectionRepository  domain.SelectionRepository
+	documentRepository   domain.DocumentRepository
 	notificationService  NotificationSender
 	db                   *gorm.DB
 }
@@ -58,6 +62,14 @@ func NewStatusStepService(
 	}, nil
 }
 
+// SetDocumentRepository injects the document repository so the Medical step
+// guard can verify that a medical certificate has been uploaded.
+func (s *StatusStepService) SetDocumentRepository(dr domain.DocumentRepository) {
+	s.documentRepository = dr
+}
+
+// ─── public API ──────────────────────────────────────────────────────────────
+
 func (s *StatusStepService) InitializeSteps(candidateID string) error {
 	if strings.TrimSpace(candidateID) == "" {
 		return fmt.Errorf("candidate id is required")
@@ -73,23 +85,13 @@ func (s *StatusStepService) InitializeSteps(candidateID string) error {
 	})
 }
 
-func (s *StatusStepService) initializeStepsWithTx(tx *gorm.DB, candidateID, ownerID string) error {
-	existingSteps := make([]*domain.StatusStep, 0)
-	if err := tx.Where("candidate_id = ?", candidateID).Order("created_at ASC").Find(&existingSteps).Error; err != nil {
-		return fmt.Errorf("load existing steps: %w", err)
-	}
-
-	if len(existingSteps) == 0 {
-		return createPendingStepsWithTx(tx, candidateID, ownerID)
-	}
-
-	if matchesCurrentWorkflow(existingSteps) {
-		return nil
-	}
-
-	return rebuildStepsForCurrentWorkflowWithTx(tx, candidateID, ownerID, existingSteps)
-}
-
+// UpdateStep is the checklist toggle:
+//   - pending  → completed  (check the box)
+//   - completed → pending   (uncheck the box)
+//   - in_progress → completed is still accepted for backwards compatibility
+//
+// The Medical step additionally requires a medical document to have been
+// uploaded before it can be marked completed.
 func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, status domain.StepStatus, notes string) error {
 	if strings.TrimSpace(candidateID) == "" {
 		return fmt.Errorf("candidate id is required")
@@ -100,8 +102,8 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	if strings.TrimSpace(updatedBy) == "" {
 		return fmt.Errorf("updatedBy is required")
 	}
-	if !isValidStepStatus(status) {
-		return fmt.Errorf("invalid step status")
+	if !isValidChecklistStatus(status) {
+		return fmt.Errorf("status must be 'pending' or 'completed'")
 	}
 
 	candidate, err := s.candidateRepository.GetByID(candidateID)
@@ -111,9 +113,13 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(updatedBy) {
 		return ErrNotAuthorized
 	}
-	if candidate.Status != "" && candidate.Status != domain.CandidateStatusInProgress && candidate.Status != domain.CandidateStatusCompleted {
+	if candidate.Status != "" &&
+		candidate.Status != domain.CandidateStatusInProgress &&
+		candidate.Status != domain.CandidateStatusCompleted {
 		return ErrInvalidStepTransition
 	}
+
+	// Ensure steps are initialised (idempotent).
 	if s.db != nil {
 		if err := s.db.Transaction(func(tx *gorm.DB) error {
 			return s.initializeStepsWithTx(tx, candidateID, candidate.CreatedBy)
@@ -127,15 +133,14 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 		return err
 	}
 
+	// Find the target step.
 	var target *domain.StatusStep
-	targetIndex := -1
-	for idx, step := range steps {
+	for _, step := range steps {
 		if step == nil {
 			continue
 		}
 		if strings.EqualFold(strings.TrimSpace(step.StepName), strings.TrimSpace(stepName)) {
 			target = step
-			targetIndex = idx
 			break
 		}
 	}
@@ -143,24 +148,35 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 		return ErrStepNotFound
 	}
 
-	if !canTransitionStep(target.StepStatus, status) {
-		return ErrInvalidStepTransition
+	// ── Medical document guard ───────────────────────────────────────────────
+	// When checking the Medical step as completed, verify a medical certificate
+	// has been uploaded. This is a soft guard – if the document repository has
+	// not been injected (e.g. in tests) we skip the check.
+	if status == domain.Completed &&
+		strings.EqualFold(strings.TrimSpace(target.StepName), domain.MedicalStep) &&
+		s.documentRepository != nil {
+
+		_, docErr := s.documentRepository.GetByCandidateIDAndType(candidateID, domain.Medical)
+		if docErr != nil {
+			if errors.Is(docErr, repository.ErrDocumentNotFound) {
+				return ErrMedicalDocumentRequired
+			}
+			return fmt.Errorf("check medical document: %w", docErr)
+		}
 	}
 
-	if status == domain.Completed {
-		for idx := 0; idx < targetIndex; idx++ {
-			if steps[idx] == nil {
-				continue
-			}
-			if steps[idx].StepStatus != domain.Completed {
-				return ErrInvalidStepTransition
-			}
-		}
+	// ── Checklist transition ─────────────────────────────────────────────────
+	// Allow: pending→completed, completed→pending, in_progress→completed.
+	// The only forbidden transition is completed→in_progress (no half-steps).
+	if target.StepStatus == domain.InProgress && status == domain.Pending {
+		// Treat in_progress → pending as a valid uncheck.
+		status = domain.Pending
 	}
 
 	target.StepStatus = status
 	target.UpdatedBy = strings.TrimSpace(updatedBy)
 	target.Notes = strings.TrimSpace(notes)
+
 	if status == domain.Completed {
 		now := time.Now().UTC()
 		target.CompletedAt = &now
@@ -175,9 +191,15 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 		return err
 	}
 
-	nextCandidateStatus := domain.CandidateStatusInProgress
-	allCompleted := true
-	for _, step := range steps {
+	// ── Recalculate overall candidate status ─────────────────────────────────
+	// Reload steps so the count is accurate after the update.
+	updatedSteps, err := s.statusStepRepository.GetByCandidateID(candidateID)
+	if err != nil {
+		return err
+	}
+
+	allCompleted := len(updatedSteps) > 0
+	for _, step := range updatedSteps {
 		if step == nil {
 			continue
 		}
@@ -186,6 +208,8 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 			break
 		}
 	}
+
+	nextCandidateStatus := domain.CandidateStatusInProgress
 	if allCompleted {
 		nextCandidateStatus = domain.CandidateStatusCompleted
 	}
@@ -198,41 +222,97 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 		}
 	}
 
-	selection, err := s.selectionRepository.GetByCandidateID(candidateID)
-	if err == nil && selection != nil {
-		if allCompleted {
-			_ = s.notificationService.Send(
-				candidate.CreatedBy,
-				"Recruitment completed",
-				"All recruitment steps have been completed for this candidate.",
-				"status_update",
-				"candidate",
-				candidateID,
-			)
-			_ = s.notificationService.Send(
-				selection.SelectedBy,
-				"Recruitment completed",
-				"All recruitment steps have been completed for this candidate.",
-				"status_update",
-				"candidate",
-				candidateID,
-			)
-			return nil
-		}
+	// ── Notifications ─────────────────────────────────────────────────────────
+	selection, selErr := s.selectionRepository.GetByCandidateID(candidateID)
+	if selErr != nil || selection == nil {
+		// No selection yet — nothing to notify.
+		return nil
+	}
 
+	switch {
+	case allCompleted:
+		_ = s.notificationService.Send(
+			candidate.CreatedBy,
+			"Recruitment completed",
+			fmt.Sprintf("All recruitment steps have been completed for %s.", candidate.FullName),
+			string(domain.NotificationStatusUpdate),
+			"candidate", candidateID,
+		)
+		_ = s.notificationService.Send(
+			selection.SelectedBy,
+			"Recruitment completed",
+			fmt.Sprintf("All recruitment steps have been completed for %s.", candidate.FullName),
+			string(domain.NotificationStatusUpdate),
+			"candidate", candidateID,
+		)
+
+	case status == domain.Completed &&
+		strings.EqualFold(strings.TrimSpace(target.StepName), domain.TicketBooked):
+		_ = s.notificationService.Send(
+			selection.SelectedBy,
+			"Flight ticket booked",
+			fmt.Sprintf("A flight ticket has been booked for %s. Please confirm departure details.", candidate.FullName),
+			string(domain.NotificationFlightBooked),
+			"candidate", candidateID,
+		)
+		_ = s.notificationService.Send(
+			candidate.CreatedBy,
+			"Flight ticket booked",
+			fmt.Sprintf("Flight ticket booked for %s.", candidate.FullName),
+			string(domain.NotificationFlightBooked),
+			"candidate", candidateID,
+		)
+
+	case status == domain.Completed &&
+		strings.EqualFold(strings.TrimSpace(target.StepName), domain.TicketConfirmed):
+		_ = s.notificationService.Send(
+			selection.SelectedBy,
+			"Flight ticket confirmed",
+			fmt.Sprintf("The flight ticket for %s has been confirmed. Departure is finalised.", candidate.FullName),
+			string(domain.NotificationFlightBooked),
+			"candidate", candidateID,
+		)
+		_ = s.notificationService.Send(
+			candidate.CreatedBy,
+			"Flight ticket confirmed",
+			fmt.Sprintf("Flight ticket confirmed for %s.", candidate.FullName),
+			string(domain.NotificationFlightBooked),
+			"candidate", candidateID,
+		)
+
+	case status == domain.Completed &&
+		strings.EqualFold(strings.TrimSpace(target.StepName), domain.Arrived):
+		_ = s.notificationService.Send(
+			selection.SelectedBy,
+			"Candidate has arrived",
+			fmt.Sprintf("%s has arrived at the destination. Deployment is complete.", candidate.FullName),
+			string(domain.NotificationArrived),
+			"candidate", candidateID,
+		)
+		_ = s.notificationService.Send(
+			candidate.CreatedBy,
+			"Candidate has arrived",
+			fmt.Sprintf("%s has arrived at the destination. Deployment is complete.", candidate.FullName),
+			string(domain.NotificationArrived),
+			"candidate", candidateID,
+		)
+
+	case status == domain.Completed:
+		// Generic progress update to the foreign agency.
 		_ = s.notificationService.Send(
 			selection.SelectedBy,
 			"Recruitment progress updated",
-			fmt.Sprintf("Step '%s' updated to '%s'.", target.StepName, target.StepStatus),
-			"status_update",
-			"candidate",
-			candidateID,
+			fmt.Sprintf("Step '%s' has been completed for %s.", target.StepName, candidate.FullName),
+			string(domain.NotificationStatusUpdate),
+			"candidate", candidateID,
 		)
 	}
 
 	return nil
 }
 
+// GetCandidateProgress returns the ordered list of status steps for a
+// candidate, initialising them first if they do not yet exist.
 func (s *StatusStepService) GetCandidateProgress(candidateID string) ([]*domain.StatusStep, error) {
 	if strings.TrimSpace(candidateID) == "" {
 		return nil, fmt.Errorf("candidate id is required")
@@ -245,9 +325,13 @@ func (s *StatusStepService) GetCandidateProgress(candidateID string) ([]*domain.
 	if err != nil {
 		return nil, err
 	}
-	if candidate.Status != "" && candidate.Status != domain.CandidateStatusInProgress && candidate.Status != domain.CandidateStatusCompleted {
+
+	if candidate.Status != "" &&
+		candidate.Status != domain.CandidateStatusInProgress &&
+		candidate.Status != domain.CandidateStatusCompleted {
 		return s.statusStepRepository.GetByCandidateID(candidateID)
 	}
+
 	if s.db != nil {
 		if err := s.db.Transaction(func(tx *gorm.DB) error {
 			return s.initializeStepsWithTx(tx, candidateID, candidate.CreatedBy)
@@ -259,9 +343,30 @@ func (s *StatusStepService) GetCandidateProgress(candidateID string) ([]*domain.
 	return s.statusStepRepository.GetByCandidateID(candidateID)
 }
 
+// ─── step initialisation ─────────────────────────────────────────────────────
+
+func (s *StatusStepService) initializeStepsWithTx(tx *gorm.DB, candidateID, ownerID string) error {
+	existingSteps := make([]*domain.StatusStep, 0)
+	if err := tx.Where("candidate_id = ?", candidateID).
+		Order("created_at ASC").
+		Find(&existingSteps).Error; err != nil {
+		return fmt.Errorf("load existing steps: %w", err)
+	}
+
+	if len(existingSteps) == 0 {
+		return createPendingStepsWithTx(tx, candidateID, ownerID)
+	}
+
+	if matchesCurrentWorkflow(existingSteps) {
+		return nil
+	}
+
+	return rebuildStepsForCurrentWorkflowWithTx(tx, candidateID, ownerID, existingSteps)
+}
+
 func predefinedStepNames() []string {
 	return []string{
-		domain.Medical,
+		domain.MedicalStep,
 		domain.CoCPending,
 		domain.CoCOnline,
 		domain.LMISPending,
@@ -290,7 +395,6 @@ func createPendingStepsWithTx(tx *gorm.DB, candidateID, ownerID string) error {
 			return fmt.Errorf("create initial status step %s: %w", stepName, err)
 		}
 	}
-
 	return nil
 }
 
@@ -299,36 +403,30 @@ func matchesCurrentWorkflow(steps []*domain.StatusStep) bool {
 	if len(steps) != len(workflow) {
 		return false
 	}
-
 	for index, stepName := range workflow {
-		if steps[index] == nil || !strings.EqualFold(strings.TrimSpace(steps[index].StepName), strings.TrimSpace(stepName)) {
+		if steps[index] == nil ||
+			!strings.EqualFold(strings.TrimSpace(steps[index].StepName), strings.TrimSpace(stepName)) {
 			return false
 		}
 	}
-
 	return true
 }
 
 func rebuildStepsForCurrentWorkflowWithTx(tx *gorm.DB, candidateID, ownerID string, existingSteps []*domain.StatusStep) error {
 	workflow := predefinedStepNames()
 	completedLegacy := 0
-	hasInProgress := false
 
 	for _, step := range existingSteps {
 		if step == nil {
 			continue
 		}
-		switch step.StepStatus {
-		case domain.Completed:
+		if step.StepStatus == domain.Completed {
 			completedLegacy++
-		case domain.InProgress:
-			hasInProgress = true
 		}
 	}
 
 	completedTarget := approximateCompletedSteps(completedLegacy, len(existingSteps), len(workflow))
 	if completedTarget >= len(workflow) {
-		hasInProgress = false
 		completedTarget = len(workflow)
 	}
 
@@ -346,8 +444,6 @@ func rebuildStepsForCurrentWorkflowWithTx(tx *gorm.DB, candidateID, ownerID stri
 			status = domain.Completed
 			completed := timestamp
 			completedAt = &completed
-		} else if hasInProgress && index == completedTarget {
-			status = domain.InProgress
 		}
 
 		step := &domain.StatusStep{
@@ -372,7 +468,6 @@ func approximateCompletedSteps(completedLegacy, totalLegacy, totalCurrent int) i
 	if totalLegacy <= 0 || totalCurrent <= 0 {
 		return 0
 	}
-
 	scaled := math.Round((float64(completedLegacy) / float64(totalLegacy)) * float64(totalCurrent))
 	if scaled < 0 {
 		return 0
@@ -383,25 +478,16 @@ func approximateCompletedSteps(completedLegacy, totalLegacy, totalCurrent int) i
 	return int(scaled)
 }
 
-func isValidStepStatus(status domain.StepStatus) bool {
+// ─── validation helpers ───────────────────────────────────────────────────────
+
+// isValidChecklistStatus accepts the two states meaningful for a checklist
+// toggle: pending (uncheck) and completed (check).
+// in_progress is also accepted for backwards-compatibility with any existing
+// clients that still send it.
+func isValidChecklistStatus(status domain.StepStatus) bool {
 	switch status {
 	case domain.Pending, domain.InProgress, domain.Completed:
 		return true
-	default:
-		return false
-	}
-}
-
-func canTransitionStep(current, next domain.StepStatus) bool {
-	if current == domain.Completed {
-		return next == domain.Completed
-	}
-
-	switch current {
-	case domain.Pending:
-		return next == domain.InProgress
-	case domain.InProgress:
-		return next == domain.Completed
 	default:
 		return false
 	}

@@ -10,12 +10,10 @@ import {
   CheckCheck,
   ClipboardList,
   FileClock,
-  Flag,
   Link2,
   LogOut,
   Menu,
   Settings2,
-  Shield,
   UserCog,
   Users,
 } from "lucide-react"
@@ -25,6 +23,9 @@ import { useAdminLogout, useCurrentAdmin } from "@/hooks/use-admin-auth"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet"
+import { LocaleSwitcher } from "@/components/shared/locale-switcher"
+import { Logo } from "@/components/shared/logo"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 type AdminNavItem = {
@@ -34,19 +35,6 @@ type AdminNavItem = {
   roles?: AdminRole[]
 }
 
-const navItems: AdminNavItem[] = [
-  { href: "/admin/dashboard", label: "Dashboard", icon: BarChart3 },
-  { href: "/admin/agencies/pending", label: "Pending Approvals", icon: FileClock },
-  { href: "/admin/agencies", label: "Agencies", icon: Building2 },
-  { href: "/admin/pairings", label: "Pair Workspaces", icon: Link2 },
-  { href: "/admin/candidates", label: "Candidates", icon: Users },
-  { href: "/admin/selections", label: "Selections", icon: CheckCheck },
-  { href: "/admin/reports", label: "Reports", icon: ClipboardList },
-  { href: "/admin/settings", label: "Platform Settings", icon: Settings2, roles: [AdminRole.SUPER_ADMIN] },
-  { href: "/admin/audit-logs", label: "Audit Logs", icon: BellRing },
-  { href: "/admin/admins", label: "Admin Management", icon: UserCog, roles: [AdminRole.SUPER_ADMIN] },
-]
-
 function isVisible(item: AdminNavItem, role?: AdminRole) {
   if (!item.roles?.length) {
     return true
@@ -54,13 +42,19 @@ function isVisible(item: AdminNavItem, role?: AdminRole) {
   return role ? item.roles.includes(role) : false
 }
 
-function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
+function AdminNavLinks({
+  items,
+  onNavigate,
+}: {
+  items: AdminNavItem[]
+  onNavigate?: () => void
+}) {
   const pathname = usePathname()
   const { admin } = useCurrentAdmin()
 
   return (
     <nav className="space-y-1">
-      {navItems
+      {items
         .filter((item) => isVisible(item, admin?.role))
         .map((item) => {
           const active = pathname === item.href || (item.href !== "/admin/dashboard" && pathname.startsWith(item.href))
@@ -70,10 +64,10 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
               href={item.href}
               onClick={onNavigate}
               className={cn(
-                "group flex items-center gap-3 rounded-2xl px-4 py-3 text-sm font-medium transition-all",
+                "flex items-center gap-3 border border-transparent px-4 py-3 text-sm font-bold uppercase tracking-[0.05em] transition-colors",
                 active
-                  ? "bg-amber-400 text-slate-950 shadow-lg shadow-amber-500/20"
-                  : "text-slate-300 hover:bg-slate-900 hover:text-white"
+                  ? "border-primary bg-primary text-primary-foreground"
+                  : "text-muted-foreground hover:border-border hover:bg-muted/30 hover:text-foreground"
               )}
             >
               <item.icon className="h-4 w-4 shrink-0" />
@@ -88,43 +82,54 @@ function AdminNavLinks({ onNavigate }: { onNavigate?: () => void }) {
 export function AdminShell({ children }: { children: React.ReactNode }) {
   const { admin } = useCurrentAdmin()
   const logout = useAdminLogout()
+  const { isRTL, t } = useI18n()
+
+  const navItems = React.useMemo<AdminNavItem[]>(
+    () => [
+      { href: "/admin/dashboard", label: t("admin.navDashboard"), icon: BarChart3 },
+      { href: "/admin/agencies/pending", label: t("admin.navPending"), icon: FileClock },
+      { href: "/admin/agencies", label: t("admin.navAgencies"), icon: Building2 },
+      { href: "/admin/pairings", label: t("admin.navPairings"), icon: Link2 },
+      { href: "/admin/candidates", label: t("admin.navCandidates"), icon: Users },
+      { href: "/admin/selections", label: t("admin.navSelections"), icon: CheckCheck },
+      { href: "/admin/reports", label: t("admin.navReports"), icon: ClipboardList },
+      { href: "/admin/settings", label: t("admin.navSettings"), icon: Settings2, roles: [AdminRole.SUPER_ADMIN] },
+      { href: "/admin/audit-logs", label: t("admin.navAudit"), icon: BellRing },
+      { href: "/admin/admins", label: t("admin.navAdmins"), icon: UserCog, roles: [AdminRole.SUPER_ADMIN] },
+    ],
+    [t]
+  )
 
   return (
-    <div className="min-h-screen overflow-hidden bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.16),_transparent_24%),radial-gradient(circle_at_bottom_right,_rgba(14,165,233,0.1),_transparent_22%),linear-gradient(180deg,#fff9ef_0%,#f3f6fb_52%,#eff3f9_100%)] text-slate-950">
-      <div className="pointer-events-none absolute inset-x-0 top-0 h-40 bg-[linear-gradient(180deg,rgba(15,23,42,0.06),transparent)]" />
+    <div className="min-h-screen bg-background text-foreground">
       <div className="relative mx-auto flex min-h-screen max-w-[1760px]">
-        <aside className="hidden w-[290px] flex-col border-r border-slate-800 bg-slate-950 px-5 py-6 text-slate-50 lg:flex">
-          <div className="rounded-3xl border border-slate-800 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.22),_transparent_30%),linear-gradient(135deg,#0f172a,#111827_55%,#020617)] p-5 shadow-2xl shadow-black/25">
-            <div className="flex items-center gap-3">
-              <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-400 text-slate-950">
-                <Shield className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-300">Operator Console</div>
-                <p className="text-xs text-slate-400">Platform administration portal</p>
-              </div>
+        <aside className={cn("hidden w-[300px] flex-col border-r border-border bg-card px-5 py-6 lg:flex", isRTL && "order-2 border-r-0 border-l")}>
+          <div className="space-y-4 border border-border bg-background p-5">
+            <Logo size="sm" />
+            <div className="space-y-1">
+              <p className="section-kicker">{t("admin.mode")}</p>
+              <p className="text-sm text-muted-foreground">{t("admin.controlBody")}</p>
             </div>
+            <LocaleSwitcher />
           </div>
 
           <div className="mt-6">
-            <AdminNavLinks />
+            <AdminNavLinks items={navItems} />
           </div>
 
-          <div className="mt-auto rounded-3xl border border-slate-800 bg-slate-900/80 p-4 shadow-xl shadow-black/20">
+          <div className="mt-auto border border-border bg-background p-4">
             <div className="flex items-start gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-slate-800 text-sm font-semibold text-amber-300">
+              <div className="flex h-10 w-10 items-center justify-center border border-foreground bg-foreground text-sm font-bold text-background">
                 {admin?.full_name?.charAt(0) || "A"}
               </div>
               <div className="min-w-0 flex-1">
-                <p className="truncate text-sm font-semibold text-white">{admin?.full_name || "Admin"}</p>
-                <p className="truncate text-xs text-slate-400">{admin?.email}</p>
+                <p className="truncate text-sm font-bold text-foreground">{admin?.full_name || "Admin"}</p>
+                <p className="truncate text-xs text-muted-foreground">{admin?.email}</p>
               </div>
             </div>
             <div className="mt-3 flex items-center justify-between gap-3">
-              <Badge className="rounded-full bg-slate-800 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] text-amber-300 hover:bg-slate-800">
-                {(admin?.role || "admin").replace("_", " ")}
-              </Badge>
-              <Button variant="ghost" size="icon" className="text-slate-400 hover:bg-slate-800 hover:text-white" onClick={logout}>
+              <Badge variant="outline">{(admin?.role || "admin").replace("_", " ")}</Badge>
+              <Button variant="ghost" size="icon" onClick={logout} aria-label={t("common.logout")}>
                 <LogOut className="h-4 w-4" />
               </Button>
             </div>
@@ -132,44 +137,47 @@ export function AdminShell({ children }: { children: React.ReactNode }) {
         </aside>
 
         <div className="flex min-h-screen flex-1 flex-col">
-          <header className="sticky top-0 z-30 border-b border-slate-200/70 bg-white/78 backdrop-blur-xl">
+          <header className="sticky top-0 z-30 border-b border-border bg-background">
             <div className="flex items-center justify-between gap-4 px-4 py-4 sm:px-6 lg:px-8">
               <div className="flex items-center gap-3">
                 <Sheet>
                   <SheetTrigger asChild>
-                    <Button variant="outline" size="icon" className="lg:hidden">
+                    <Button variant="outline" size="icon" className="lg:hidden" aria-label="Open navigation menu">
                       <Menu className="h-4 w-4" />
                     </Button>
                   </SheetTrigger>
-                  <SheetContent side="left" className="w-[300px] border-slate-800 bg-slate-950 px-5 py-6 text-slate-50">
-                    <div className="mb-6 flex items-center gap-3">
-                      <div className="flex h-10 w-10 items-center justify-center rounded-2xl bg-amber-400 text-slate-950">
-                        <Flag className="h-5 w-5" />
-                      </div>
-                      <div>
-                        <div className="text-sm font-semibold uppercase tracking-[0.2em] text-amber-300">Admin Mode</div>
-                        <p className="text-xs text-slate-400">Platform operators only</p>
-                      </div>
+                  <SheetContent
+                    side={isRTL ? "right" : "left"}
+                    className="w-full max-w-none border-0 bg-background px-5 py-6"
+                  >
+                    <div className="space-y-4 border-b border-border pb-4">
+                      <Logo size="sm" />
+                      <LocaleSwitcher />
                     </div>
-                    <AdminNavLinks />
+                    <div className="mt-4">
+                      <AdminNavLinks items={navItems} />
+                    </div>
                   </SheetContent>
                 </Sheet>
                 <div className="space-y-1">
-                  <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-700">Control Center</div>
-                  <p className="text-sm text-slate-500">Oversight across Ethiopian and Foreign agencies</p>
+                  <p className="route-stamp text-[10px] text-muted-foreground">{t("header.adminStamp")}</p>
+                  <h1 className="font-display text-3xl text-foreground">{t("admin.controlCenter")}</h1>
                 </div>
               </div>
               <div className="flex items-center gap-3">
-                <Badge variant="outline" className="hidden rounded-full border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-amber-700 sm:inline-flex">
-                  Admin Mode
+                <div className="hidden lg:block">
+                  <LocaleSwitcher compact />
+                </div>
+                <Badge variant="outline" className="hidden sm:inline-flex">
+                  {t("admin.mode")}
                 </Badge>
                 <div className="hidden text-right sm:block">
-                  <p className="text-sm font-semibold text-slate-900">{admin?.full_name}</p>
-                  <p className="text-xs text-slate-500">{admin?.role?.replace("_", " ")}</p>
+                  <p className="text-sm font-bold text-foreground">{admin?.full_name}</p>
+                  <p className="text-xs text-muted-foreground">{admin?.role?.replace("_", " ")}</p>
                 </div>
                 <Button variant="outline" size="sm" className="gap-2" onClick={logout}>
                   <LogOut className="h-4 w-4" />
-                  <span className="hidden sm:inline">Logout</span>
+                  <span className="hidden sm:inline">{t("common.logout")}</span>
                 </Button>
               </div>
             </div>

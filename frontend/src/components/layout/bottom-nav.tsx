@@ -6,32 +6,46 @@ import { usePathname } from "next/navigation"
 import { Home, Users, CheckSquare, Menu } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { useCurrentUser } from "@/hooks/use-auth"
+import { useI18n } from "@/lib/i18n"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { getRoleHomePath, isRoleHomePath } from "@/lib/role-home"
+
+function matchesNavPath(pathname: string, href: string) {
+  if (isRoleHomePath(href)) {
+    return isRoleHomePath(pathname)
+  }
+
+  if (pathname === href) {
+    return true
+  }
+
+  return pathname.startsWith(`${href}/`)
+}
 
 export function BottomNav() {
   const pathname = usePathname()
   const { user } = useCurrentUser()
   const { hasActivePairs, isReady } = usePairingContext()
+  const { t } = useI18n()
   const [isKeyboardOpen, setIsKeyboardOpen] = React.useState(false)
   const navItems = [
     {
-      label: "Home",
+      label: t("nav.dashboard"),
       href: getRoleHomePath(user?.role),
       icon: Home,
     },
     {
-      label: "Candidates",
+      label: t("nav.candidates"),
       href: "/candidates",
       icon: Users,
     },
     {
-      label: "Selections",
+      label: t("nav.selections"),
       href: "/selections",
       icon: CheckSquare,
     },
     {
-      label: "More",
+      label: t("nav.more"),
       href: "/settings",
       icon: Menu,
     },
@@ -54,32 +68,25 @@ export function BottomNav() {
     }
   }, [])
 
-  const isActive = (href: string) => {
-    if (isRoleHomePath(href)) {
-      return isRoleHomePath(pathname)
-    }
-    return pathname.startsWith(href)
-  }
-
   if (isKeyboardOpen || (isReady && !hasActivePairs)) {
     return null
   }
 
   return (
-    <nav className="fixed bottom-0 left-0 right-0 z-50 bg-background border-t md:hidden">
+    <nav className="fixed bottom-0 left-0 right-0 z-50 border-t bg-background md:hidden">
       <div className="grid grid-cols-4 h-16">
         {navItems.map((item) => {
           const Icon = item.icon
-          const active = isActive(item.href)
+          const active = matchesNavPath(pathname, item.href)
 
           return (
             <Link
               key={item.href}
               href={item.href}
               className={cn(
-                "flex flex-col items-center justify-center gap-1 transition-colors min-h-[44px]",
+                "flex min-h-[44px] flex-col items-center justify-center gap-1 border-b-2 border-transparent transition-colors",
                 active
-                  ? "text-primary"
+                  ? "border-primary text-primary"
                   : "text-muted-foreground hover:text-foreground"
               )}
             >

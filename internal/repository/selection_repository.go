@@ -178,6 +178,40 @@ func (r *GormSelectionRepository) GetExpiredSelections() ([]*domain.Selection, e
 	return selections, nil
 }
 
+func (r *GormSelectionRepository) UpdateWarningSentFlags(id string, flags int) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("update warning sent flags: id is required")
+	}
+	result := r.db.Model(&domain.Selection{}).
+		Where("id = ?", id).
+		Update("warning_sent_flags", flags)
+	if result.Error != nil {
+		return fmt.Errorf("update warning sent flags: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrSelectionNotFound
+	}
+	return nil
+}
+
+// GetPendingExpiringSoon returns pending selections whose expires_at falls
+// within the next windowHours hours and whose warning_sent_flags does NOT yet
+// have flagBit set.
+func (r *GormSelectionRepository) GetPendingExpiringSoon(windowHours int, flagBit int) ([]*domain.Selection, error) {
+	if windowHours <= 0 {
+		windowHours = 24
+	}
+	selections := make([]*domain.Selection, 0)
+	cutoff := time.Now().UTC().Add(time.Duration(windowHours) * time.Hour)
+	if err := r.db.
+		Where("status = ? AND expires_at > NOW() AND expires_at <= ? AND (warning_sent_flags & ?) = 0",
+			domain.SelectionPending, cutoff, flagBit).
+		Find(&selections).Error; err != nil {
+		return nil, fmt.Errorf("get pending expiring soon: %w", err)
+	}
+	return selections, nil
+}
+
 func isValidSelectionStatus(status domain.SelectionStatus) bool {
 	switch status {
 	case domain.SelectionPending, domain.SelectionApproved, domain.SelectionRejected, domain.SelectionExpired:

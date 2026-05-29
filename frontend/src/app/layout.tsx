@@ -1,23 +1,33 @@
 import type { Metadata } from "next";
-import localFont from "next/font/local";
+import { Fraunces, Noto_Sans, Noto_Sans_Arabic, Noto_Sans_Ethiopic } from "next/font/google";
 import "./globals.css";
 import { ThemeProvider, QueryProvider } from "@/components/providers";
 import { Toaster } from "sonner";
 
-const geistSans = localFont({
-  src: "./fonts/GeistVF.woff",
-  variable: "--font-geist-sans",
-  weight: "100 900",
+const fraunces = Fraunces({
+  subsets: ["latin"],
+  variable: "--font-fraunces",
+  weight: ["400", "700"],
 });
-const geistMono = localFont({
-  src: "./fonts/GeistMonoVF.woff",
-  variable: "--font-geist-mono",
-  weight: "100 900",
+const notoSans = Noto_Sans({
+  subsets: ["latin"],
+  variable: "--font-noto-sans",
+  weight: ["400", "700"],
+});
+const notoSansArabic = Noto_Sans_Arabic({
+  subsets: ["arabic"],
+  variable: "--font-noto-sans-arabic",
+  weight: ["400", "700"],
+});
+const notoSansEthiopic = Noto_Sans_Ethiopic({
+  subsets: ["ethiopic"],
+  variable: "--font-noto-sans-ethiopic",
+  weight: ["400", "700"],
 });
 
 export const metadata: Metadata = {
-  title: "Maid Recruitment Platform",
-  description: "Track and manage maid recruitment",
+  title: "RecruitMatch | Agency Recruitment Workspaces",
+  description: "Track candidate sharing, approvals, and recruitment progress across agency workspaces.",
 };
 
 export default function RootLayout({
@@ -28,12 +38,12 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body
-        className={`${geistSans.variable} ${geistMono.variable} antialiased`}
+        className={`${fraunces.variable} ${notoSans.variable} ${notoSansArabic.variable} ${notoSansEthiopic.variable} antialiased`}
       >
         <QueryProvider>
           <ThemeProvider
             attribute="class"
-            defaultTheme="system"
+            defaultTheme="dark"
             enableSystem
             disableTransitionOnChange
           >

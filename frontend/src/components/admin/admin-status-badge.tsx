@@ -3,26 +3,26 @@ import { cn } from "@/lib/utils"
 import { titleize } from "@/lib/admin-utils"
 
 const toneByStatus: Record<string, string> = {
-  pending: "border-amber-200 bg-amber-100 text-amber-800",
-  pending_approval: "border-amber-200 bg-amber-100 text-amber-800",
-  active: "border-emerald-200 bg-emerald-100 text-emerald-800",
-  approved: "border-emerald-200 bg-emerald-100 text-emerald-800",
-  available: "border-emerald-200 bg-emerald-100 text-emerald-800",
-  locked: "border-orange-200 bg-orange-100 text-orange-800",
-  suspended: "border-rose-200 bg-rose-100 text-rose-800",
-  rejected: "border-rose-200 bg-rose-100 text-rose-800",
-  expired: "border-slate-200 bg-slate-100 text-slate-700",
-  under_review: "border-sky-200 bg-sky-100 text-sky-800",
-  in_progress: "border-indigo-200 bg-indigo-100 text-indigo-800",
-  completed: "border-violet-200 bg-violet-100 text-violet-800",
+  pending: "border-[color:var(--color-warning)] text-[color:var(--color-warning)]",
+  pending_approval: "border-[color:var(--color-warning)] text-[color:var(--color-warning)]",
+  active: "border-[color:var(--color-success)] text-[color:var(--color-success)]",
+  approved: "border-[color:var(--color-success)] text-[color:var(--color-success)]",
+  available: "border-[color:var(--color-success)] text-[color:var(--color-success)]",
+  locked: "border-primary text-primary",
+  suspended: "border-[color:var(--color-danger)] text-[color:var(--color-danger)]",
+  rejected: "border-[color:var(--color-danger)] text-[color:var(--color-danger)]",
+  expired: "border-border text-muted-foreground",
+  under_review: "border-[color:var(--color-info)] text-[color:var(--color-info)]",
+  in_progress: "border-[color:var(--color-info)] text-[color:var(--color-info)]",
+  completed: "border-foreground text-foreground",
 }
 
 export function AdminStatusBadge({ status, className }: { status: string; className?: string }) {
   const normalized = status.trim().toLowerCase()
-  const tone = toneByStatus[normalized] ?? "border-slate-200 bg-slate-100 text-slate-700"
+  const tone = toneByStatus[normalized] ?? "border-border bg-muted text-muted-foreground"
 
   return (
-    <Badge variant="outline" className={cn("rounded-full px-2.5 py-1 text-[11px] font-semibold uppercase tracking-wide", tone, className)}>
+    <Badge variant="outline" className={cn("px-2.5 py-1 text-[11px] font-bold uppercase tracking-[0.08em]", tone, className)}>
       {titleize(normalized)}
     </Badge>
   )

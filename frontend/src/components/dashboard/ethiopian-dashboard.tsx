@@ -2,140 +2,118 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Users, CheckCircle, Lock, Loader, CircleAlert, ArrowRight, UserPlus, FileCheck, CheckSquare, Sparkles } from "lucide-react"
+import { formatDistanceToNowStrict } from "date-fns"
+import { ArrowRight, CheckSquare, CircleAlert, FileCheck, PlaneLanding, UserPlus } from "lucide-react"
 
-import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Badge } from "@/components/ui/badge"
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { useCandidates } from "@/hooks/use-candidates"
-import { useDashboardStats } from "@/hooks/use-dashboard"
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
+import { useDashboardHome, useSmartAlerts } from "@/hooks/use-dashboard"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 export function EthiopianDashboard() {
   const { user } = useCurrentUser()
   const { activeWorkspace } = usePairingContext()
-  const { data: stats, isLoading } = useDashboardStats()
-  const { data: candidateData, isLoading: isCandidatesLoading } = useCandidates({ page: 1, page_size: 5 })
+  const { t } = useI18n()
+  const { data: home, isLoading } = useDashboardHome()
+  const { data: smartAlerts, isLoading: isSmartAlertsLoading } = useSmartAlerts()
 
   if (!user) return null
 
-  const recentCandidates = candidateData?.data || []
-  const incompleteProfiles = (candidateData?.data || []).filter((candidate) => {
-    const documentTypes = new Set(candidate.documents.map((document) => document.document_type))
-    return !documentTypes.has("passport") || !documentTypes.has("photo")
-  }).length
+  const stats = home?.stats
+  const recentCandidates = home?.recent_candidates || []
+  const incompleteProfiles = home?.pending_actions?.incompleteProfiles ?? 0
 
   return (
-    <div className="space-y-6 animate-in fade-in duration-500">
-      <Card className="overflow-hidden border-0 bg-[radial-gradient(circle_at_top_left,_rgba(16,185,129,0.16),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(245,158,11,0.24),_transparent_24%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.98))] text-white shadow-xl">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_280px]">
+    <div className="space-y-6 animate-in">
+      <Card>
+        <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_300px]">
           <div className="space-y-4">
-            <Badge className="w-fit rounded-full border-0 bg-white/15 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-emerald-200 hover:bg-white/15">
-              Agency control room
-            </Badge>
-            <div className="space-y-2">
-              <h2 className="text-3xl font-semibold tracking-tight">
-                Manage candidates, approvals, and recruitment progress from one page
-              </h2>
-              <p className="max-w-2xl text-sm text-slate-200/90">
-          Build polished candidate profiles in your master library, share them into the right private partner workspace, and keep every approved recruitment step visible from medical through arrival.
-              </p>
-            </div>
+            <p className="section-kicker">{t("dashboard.ethiopianLabel")}</p>
+            <h2 className="font-display text-5xl leading-none text-foreground">{t("dashboard.ethiopianTitle")}</h2>
+            <p className="max-w-3xl text-sm text-muted-foreground sm:text-base">{t("dashboard.ethiopianBody")}</p>
             {activeWorkspace ? (
-              <Badge className="w-fit rounded-full border-0 bg-white/10 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-slate-100 hover:bg-white/10">
-                Active partner: {activeWorkspace.partner_agency.company_name || activeWorkspace.partner_agency.full_name}
-              </Badge>
+              <Badge variant="outline">{t("dashboard.activePartner", { name: activeWorkspace.partner_agency.company_name || activeWorkspace.partner_agency.full_name })}</Badge>
             ) : null}
             <div className="flex flex-wrap gap-3">
-              <Button className="bg-white text-slate-950 hover:bg-slate-100" asChild>
+              <Button asChild>
                 <Link href="/candidates/new">
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Add a new candidate
+                  <UserPlus className="h-4 w-4" />
+                  {t("dashboard.addCandidate")}
                 </Link>
               </Button>
-              <Button variant="outline" className="border-white/20 bg-white/10 text-white hover:bg-white/15 hover:text-white" asChild>
+              <Button variant="outline" asChild>
                 <Link href="/selections">
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  Review selections
+                  <CheckSquare className="h-4 w-4" />
+                  {t("dashboard.reviewSelections")}
                 </Link>
               </Button>
             </div>
           </div>
 
-          <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-            <p className="text-xs uppercase tracking-[0.24em] text-emerald-200">Today at a glance</p>
-            <div className="mt-4 space-y-4">
-              <MiniMetric label="Shared in this workspace" value={stats?.totalCandidates ?? 0} />
-              <MiniMetric label="Profiles in tracking" value={stats?.inProgress ?? 0} />
-              <MiniMetric label="Approval queue" value={stats?.activeSelections ?? 0} />
-            </div>
+          <div className="space-y-3 border-l border-border pl-0 lg:pl-6">
+            <p className="section-kicker">{t("dashboard.todayAtGlance")}</p>
+            <MiniMetric label={t("dashboard.sharedWorkspace")} value={stats?.totalCandidates ?? 0} />
+            <MiniMetric label={t("dashboard.profilesTracking")} value={stats?.inProgress ?? 0} />
+            <MiniMetric label={t("dashboard.approvalQueue")} value={stats?.activeSelections ?? 0} />
           </div>
         </CardContent>
       </Card>
 
-      <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-        <StatCard title="Total Candidates" icon={<Users className="h-5 w-5 text-blue-600 dark:text-blue-400" />} bg="bg-blue-100 dark:bg-blue-900/30" value={stats?.totalCandidates} isLoading={isLoading} trend={{ value: "+12%", label: "from last month", positive: true }} />
-        <StatCard title="Available Candidates" icon={<CheckCircle className="h-5 w-5 text-green-600 dark:text-green-400" />} bg="bg-green-100 dark:bg-green-900/30" value={stats?.availableCandidates} isLoading={isLoading} trend={{ value: "+4", label: "new this week", positive: true }} />
-        <StatCard title="Selected Candidates" icon={<Lock className="h-5 w-5 text-purple-600 dark:text-purple-400" />} bg="bg-purple-100 dark:bg-purple-900/30" value={stats?.selectedCandidates} isLoading={isLoading} trend={{ value: "-2%", label: "from last month", positive: false }} />
-        <StatCard title="In Progress" icon={<Loader className="h-5 w-5 text-amber-600 dark:text-amber-400" />} bg="bg-amber-100 dark:bg-amber-900/30" value={stats?.inProgress} isLoading={isLoading} trend={{ value: "5", label: "awaiting docs", positive: false }} />
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <StatCard title="Total candidates" value={stats?.totalCandidates} isLoading={isLoading} detail="Agency library size" />
+        <StatCard title="Available now" value={stats?.availableCandidates} isLoading={isLoading} detail="Ready to share" />
+        <StatCard title="Selected" value={stats?.selectedCandidates} isLoading={isLoading} detail="Held by partner selection" />
+        <StatCard title="In progress" value={stats?.inProgress} isLoading={isLoading} detail="Cases already moving" />
       </div>
 
-      <div className="grid gap-6 md:grid-cols-7">
-        <Card className="md:col-span-4 lg:col-span-5 flex flex-col shadow-sm">
-          <CardHeader className="flex flex-row items-center justify-between pb-2 space-y-0">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1.35fr)_360px]">
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between gap-4 space-y-0">
             <div>
-              <CardTitle>Recent Activity</CardTitle>
-              <CardDescription>Latest updates to candidate profiles.</CardDescription>
+              <CardTitle>Recent activity</CardTitle>
+              <CardDescription>Latest updates to candidate records.</CardDescription>
             </div>
             <Button variant="outline" size="sm" asChild>
               <Link href="/candidates">
-                View All <ArrowRight className="ml-2 h-4 w-4" />
+                {t("common.viewAll")}
+                <ArrowRight className="h-4 w-4" />
               </Link>
             </Button>
           </CardHeader>
-          <CardContent className="flex-1">
-            <div className="rounded-md border mt-2">
+          <CardContent>
+            <div className="border border-border">
               <Table>
-                <TableHeader className="bg-muted/50">
+                <TableHeader className="bg-muted/30">
                   <TableRow>
-                    <TableHead>Candidate Name</TableHead>
+                    <TableHead>Candidate</TableHead>
                     <TableHead>Status</TableHead>
-                    <TableHead className="text-right">Created Date</TableHead>
+                    <TableHead className="text-right">Created</TableHead>
                   </TableRow>
                 </TableHeader>
                 <TableBody>
-                  {isCandidatesLoading ? (
+                  {isLoading ? (
                     <TableRow>
                       <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
-                        Loading recent candidates...
+                        {t("common.loading")}
                       </TableCell>
                     </TableRow>
-                  ) : recentCandidates.length > 0 ? recentCandidates.map((candidate) => (
-                    <TableRow key={candidate.id}>
-                      <TableCell className="font-medium">{candidate.full_name}</TableCell>
-                      <TableCell>
-                        <Badge variant={
-                          candidate.status === "available" ? "default" :
-                          candidate.status === "locked" ? "secondary" :
-                          candidate.status === "approved" ? "outline" : "destructive"
-                        } className={candidate.status === 'available' ? "bg-green-100 text-green-800 hover:bg-green-100 dark:bg-green-900 dark:text-green-300 pointer-events-none" : "pointer-events-none"}>
-                          {candidate.status.replace("_", " ")}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-right text-muted-foreground">{new Date(candidate.created_at).toLocaleDateString()}</TableCell>
-                    </TableRow>
-                  )) : (
+                  ) : recentCandidates.length > 0 ? (
+                    recentCandidates.map((candidate) => (
+                      <TableRow key={candidate.id}>
+                        <TableCell className="font-medium">{candidate.full_name}</TableCell>
+                        <TableCell>
+                          <Badge variant="outline">{candidate.status.replace("_", " ")}</Badge>
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">{new Date(candidate.created_at).toLocaleDateString()}</TableCell>
+                      </TableRow>
+                    ))
+                  ) : (
                     <TableRow>
                       <TableCell colSpan={3} className="py-6 text-center text-muted-foreground">
                         No recent candidates yet.
@@ -148,93 +126,141 @@ export function EthiopianDashboard() {
           </CardContent>
         </Card>
 
-        <div className="space-y-6 md:col-span-3 lg:col-span-2">
-          <Card className="shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle>Pending Actions</CardTitle>
-              <CardDescription>Tasks that need your attention</CardDescription>
+        <div className="space-y-6">
+          <Card>
+            <CardHeader>
+              <CardTitle>Pending actions</CardTitle>
+              <CardDescription>Tasks that still need attention.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
-              <PendingActionLink
-                href="/selections"
-                icon={<FileCheck className="h-5 w-5 text-amber-600 dark:text-amber-500" />}
-                iconWrapperClassName="bg-amber-100 dark:bg-amber-900/40"
-                title={`${stats?.activeSelections ?? 0} Selections`}
-                description="Awaiting your approval"
-              />
-              <PendingActionLink
-                href="/candidates"
-                icon={<CircleAlert className="h-5 w-5 text-destructive dark:text-red-400" />}
-                iconWrapperClassName="bg-destructive/10 dark:bg-destructive/20"
-                title={`${incompleteProfiles} Profiles`}
-                description="Missing required documents"
-              />
+              <PendingActionLink href="/selections" icon={<FileCheck className="h-5 w-5" />} title={`${stats?.activeSelections ?? 0} selections`} description="Waiting for your review" />
+              <PendingActionLink href="/candidates" icon={<CircleAlert className="h-5 w-5" />} title={`${incompleteProfiles} profiles`} description="Missing required documents" />
             </CardContent>
           </Card>
 
-          <Card className="shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle>Quick Actions</CardTitle>
+          <Card>
+            <CardHeader>
+              <CardTitle>Quick actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-2">
               <Button className="w-full justify-start" asChild>
                 <Link href="/candidates/new">
-                  <UserPlus className="mr-2 h-4 w-4" />
-                  Add New Candidate
-                </Link>
-              </Button>
-              <Button variant="secondary" className="w-full justify-start" asChild>
-                <Link href="/selections">
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  View All Selections
+                  <UserPlus className="h-4 w-4" />
+                  {t("dashboard.addCandidate")}
                 </Link>
               </Button>
               <Button variant="outline" className="w-full justify-start" asChild>
-                <Link href="/candidates">
-                  <Sparkles className="mr-2 h-4 w-4" />
-                  Open candidate workspace
+                <Link href="/selections">
+                  <CheckSquare className="h-4 w-4" />
+                  {t("dashboard.reviewSelections")}
                 </Link>
               </Button>
             </CardContent>
           </Card>
         </div>
       </div>
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Smart alerts</CardTitle>
+          <CardDescription>Expiring selections, document deadlines, and flight-stage activity in the active workspace.</CardDescription>
+        </CardHeader>
+        <CardContent className="grid gap-4 xl:grid-cols-4">
+          <SmartAlertColumn
+            title="Passport expiry"
+            emptyText="No passports are near expiry in this workspace."
+            loading={isSmartAlertsLoading}
+            items={(smartAlerts?.expiring_passports ?? []).map((passport) => ({
+              id: passport.candidate_id,
+              href: `/candidates/${passport.candidate_id}`,
+              title: passport.candidate_name,
+              meta: `Passport ${passport.passport_number || "not stored"}`,
+              detail: `Expires ${formatRelativeDate(passport.expiry_date)}`,
+              tone: passport.warning_level,
+            }))}
+          />
+          <SmartAlertColumn
+            title="Medical expiry"
+            emptyText="No medical files are near expiry in this workspace."
+            loading={isSmartAlertsLoading}
+            items={(smartAlerts?.expiring_medicals ?? []).map((medical) => ({
+              id: `${medical.candidate_id}-medical`,
+              href: `/candidates/${medical.candidate_id}/tracking`,
+              title: medical.candidate_name,
+              meta: "Medical document",
+              detail: `Expires ${formatRelativeDate(medical.expiry_date)}`,
+              tone: medical.warning_level,
+            }))}
+          />
+          <SmartAlertColumn
+            title="Selection expiry"
+            emptyText="No selections are nearing expiry right now."
+            loading={isSmartAlertsLoading}
+            items={(smartAlerts?.expiring_selections ?? []).map((selection) => ({
+              id: selection.selection_id,
+              href: `/selections/${selection.selection_id}`,
+              title: selection.candidate_name,
+              meta: selection.remaining_label,
+              detail: `Lock expires ${formatRelativeDate(selection.expires_at)}`,
+              tone: selection.warning_level,
+            }))}
+          />
+          <SmartAlertColumn
+            title="Flight updates"
+            emptyText="No candidates are in the flight stages yet."
+            loading={isSmartAlertsLoading}
+            items={[
+              ...(smartAlerts?.flight_updates ?? []).map((item) => ({
+                id: `${item.candidate_id}-${item.stage}`,
+                href: `/candidates/${item.candidate_id}/tracking`,
+                title: item.candidate_name,
+                meta: item.stage,
+                detail: `Updated ${formatRelativeDate(item.updated_at)}`,
+                tone: "medium",
+              })),
+              ...(smartAlerts?.recently_arrived ?? []).map((item) => ({
+                id: `${item.candidate_id}-${item.stage}-arrived`,
+                href: `/candidates/${item.candidate_id}/tracking`,
+                title: item.candidate_name,
+                meta: "Arrived",
+                detail: `Arrived ${formatRelativeDate(item.updated_at)}`,
+                tone: "low",
+                arrived: true,
+              })),
+            ]}
+          />
+        </CardContent>
+      </Card>
     </div>
   )
 }
 
 function MiniMetric({ label, value }: { label: string; value: number }) {
   return (
-    <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
-      <p className="text-xs uppercase tracking-[0.2em] text-slate-300">{label}</p>
-      <p className="mt-2 text-2xl font-semibold text-white">{value}</p>
+    <div className="border border-border bg-background p-4">
+      <p className="route-stamp text-[11px] text-muted-foreground">{label}</p>
+      <p className="mt-2 font-display text-4xl text-foreground">{value}</p>
     </div>
   )
 }
 
-function StatCard({ title, icon, bg, value, isLoading, trend }: { title: string, icon: React.ReactNode, bg: string, value?: number, isLoading: boolean, trend: { value: string, label: string, positive: boolean } }) {
+function StatCard({
+  title,
+  value,
+  isLoading,
+  detail,
+}: {
+  title: string
+  value?: number
+  isLoading: boolean
+  detail: string
+}) {
   return (
-    <Card className="hover:shadow-md transition-shadow">
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
-        <CardTitle className="text-sm font-medium text-muted-foreground">
-          {title}
-        </CardTitle>
-        <div className={cn("flex h-9 w-9 items-center justify-center rounded-full", bg)}>
-          {icon}
-        </div>
-      </CardHeader>
-      <CardContent>
-        {isLoading ? (
-          <Skeleton className="h-8 w-16 mb-1" />
-        ) : (
-          <div className="text-3xl font-bold">{value ?? 0}</div>
-        )}
-        <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
-          <span className={cn("font-medium", trend.positive ? "text-green-600 dark:text-green-400" : "text-amber-600 dark:text-amber-400")}>
-            {trend.value}
-          </span>
-          <span className="truncate">{" "}{trend.label}</span>
-        </p>
+    <Card>
+      <CardContent className="space-y-2 p-5">
+        <p className="route-stamp text-[11px] text-muted-foreground">{title}</p>
+        {isLoading ? <Skeleton className="h-10 w-20" /> : <p className="font-display text-5xl text-foreground">{value ?? 0}</p>}
+        <p className="text-sm text-muted-foreground">{detail}</p>
       </CardContent>
     </Card>
   )
@@ -243,29 +269,95 @@ function StatCard({ title, icon, bg, value, isLoading, trend }: { title: string,
 function PendingActionLink({
   href,
   icon,
-  iconWrapperClassName,
   title,
   description,
 }: {
   href: string
   icon: React.ReactNode
-  iconWrapperClassName: string
   title: string
   description: string
 }) {
   return (
-    <Link
-      href={href}
-      className="group flex items-center gap-3 rounded-lg border p-3 text-sm transition-all duration-200 hover:-translate-y-0.5 hover:bg-slate-50 hover:shadow-sm dark:hover:bg-slate-800/50"
-    >
-      <div className={cn("flex h-9 w-9 shrink-0 items-center justify-center rounded-full", iconWrapperClassName)}>
-        {icon}
+    <Link href={href} className="grid grid-cols-[40px_minmax(0,1fr)_20px] items-center gap-4 border border-border bg-background p-4 transition-colors hover:bg-muted/20">
+      <div className="flex h-10 w-10 items-center justify-center border border-border text-primary">{icon}</div>
+      <div className="min-w-0">
+        <p className="text-sm font-bold uppercase tracking-[0.06em] text-foreground">{title}</p>
+        <p className="text-xs text-muted-foreground">{description}</p>
       </div>
-      <div className="flex flex-1 flex-col">
-        <span className="font-semibold text-foreground">{title}</span>
-        <span className="text-xs text-muted-foreground">{description}</span>
-      </div>
-      <ArrowRight className="h-4 w-4 text-muted-foreground transition-transform duration-200 group-hover:translate-x-0.5" />
+      <ArrowRight className="h-4 w-4 text-muted-foreground" />
     </Link>
   )
+}
+
+function SmartAlertColumn({
+  title,
+  loading,
+  emptyText,
+  items,
+}: {
+  title: string
+  loading: boolean
+  emptyText: string
+  items: Array<{
+    id: string
+    href: string
+    title: string
+    meta: string
+    detail: string
+    tone: string
+    arrived?: boolean
+  }>
+}) {
+  return (
+    <div className="border border-border bg-background p-4">
+      <p className="route-stamp text-[11px] text-muted-foreground">{title}</p>
+      <div className="mt-4 space-y-3">
+        {loading ? (
+          <>
+            <Skeleton className="h-20 w-full" />
+            <Skeleton className="h-20 w-full" />
+          </>
+        ) : items.length > 0 ? (
+          items.map((item) => (
+            <Link key={item.id} href={item.href} className="block border border-border bg-card p-4 transition-colors hover:bg-muted/20">
+              <div className="flex items-start justify-between gap-3">
+                <div className="min-w-0">
+                  <p className="truncate text-sm font-bold uppercase tracking-[0.06em] text-foreground">{item.title}</p>
+                  <p className="mt-1 text-xs text-muted-foreground">{item.meta}</p>
+                </div>
+                <Badge variant="outline" className={cn(alertTone(item.tone), item.arrived && "border-[color:var(--color-success)] text-[color:var(--color-success)]")}>
+                  {item.arrived ? <PlaneLanding className="h-3.5 w-3.5" /> : null}
+                  {item.arrived ? "Arrived" : item.tone}
+                </Badge>
+              </div>
+              <p className="mt-3 text-sm text-muted-foreground">{item.detail}</p>
+            </Link>
+          ))
+        ) : (
+          <div className="border border-dashed border-border px-4 py-6 text-sm text-muted-foreground">{emptyText}</div>
+        )}
+      </div>
+    </div>
+  )
+}
+
+function alertTone(level: string) {
+  switch (level) {
+    case "critical":
+      return "border-[color:var(--color-danger)] text-[color:var(--color-danger)]"
+    case "high":
+      return "border-[color:var(--color-warning)] text-[color:var(--color-warning)]"
+    case "medium":
+      return "border-[color:var(--color-info)] text-[color:var(--color-info)]"
+    default:
+      return "border-[color:var(--color-success)] text-[color:var(--color-success)]"
+  }
+}
+
+function formatRelativeDate(value: string) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) {
+    return "soon"
+  }
+  return formatDistanceToNowStrict(date, { addSuffix: true })
 }

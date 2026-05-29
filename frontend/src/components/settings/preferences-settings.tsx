@@ -6,6 +6,7 @@ import { Globe, Loader2, Moon, Sun } from "lucide-react"
 import { useTheme } from "next-themes"
 
 import { useUpdatePreferences, PreferencesData } from "@/hooks/use-settings"
+import { localeOptions, useI18n } from "@/lib/i18n"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import {
@@ -30,16 +31,23 @@ import {
 export function PreferencesSettings() {
   const { theme, setTheme } = useTheme()
   const { mutate: updatePreferences, isPending } = useUpdatePreferences()
+  const { locale, setLocale, t } = useI18n()
+  const [mounted, setMounted] = React.useState(false)
 
   const form = useForm<PreferencesData>({
     defaultValues: {
       theme: (theme as PreferencesData["theme"]) || "system",
+      language: locale,
       email_notifications: true,
       selection_alerts: true,
       status_update_alerts: true,
       approval_alerts: true,
     },
   })
+
+  React.useEffect(() => {
+    setMounted(true)
+  }, [])
 
   React.useEffect(() => {
     if (typeof window === "undefined") {
@@ -50,6 +58,7 @@ export function PreferencesSettings() {
     if (!saved) {
       form.reset({
         ...form.getValues(),
+        language: locale,
         theme: (theme as PreferencesData["theme"]) || "system",
       })
       return
@@ -60,30 +69,28 @@ export function PreferencesSettings() {
     } catch {
       form.reset({
         ...form.getValues(),
+        language: locale,
         theme: (theme as PreferencesData["theme"]) || "system",
       })
     }
-  }, [form, theme])
+  }, [form, locale, theme])
 
   const onSubmit = (data: PreferencesData) => {
-    // Update theme immediately
     setTheme(data.theme)
-    
-    // Save preferences to backend
+    setLocale(data.language)
     updatePreferences(data)
   }
 
   return (
     <div className="space-y-6">
-      {/* Theme Settings */}
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
-          <CardTitle>Appearance</CardTitle>
+          <CardTitle>{t("preferences.appearanceTitle")}</CardTitle>
           <CardDescription>
-            Customize how the application looks on your device.
+            {t("preferences.appearanceBody")}
           </CardDescription>
         </CardHeader>
-        <CardContent>
+        <CardContent className="space-y-4">
           <Form {...form}>
             <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
               <FormField
@@ -91,12 +98,12 @@ export function PreferencesSettings() {
                 name="theme"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Theme</FormLabel>
+                    <FormLabel>{t("preferences.theme")}</FormLabel>
                     <FormControl>
                       <RadioGroup
                         onValueChange={field.onChange}
                         value={field.value}
-                        className="grid grid-cols-3 gap-4"
+                        className="grid gap-3 sm:grid-cols-3"
                       >
                         <div>
                           <RadioGroupItem
@@ -109,7 +116,7 @@ export function PreferencesSettings() {
                             className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                           >
                             <Sun className="mb-3 h-6 w-6" />
-                            <span className="text-sm font-medium">Light</span>
+                            <span className="text-sm font-bold">{t("preferences.themeLight")}</span>
                           </Label>
                         </div>
                         <div>
@@ -123,7 +130,7 @@ export function PreferencesSettings() {
                             className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                           >
                             <Moon className="mb-3 h-6 w-6" />
-                            <span className="text-sm font-medium">Dark</span>
+                            <span className="text-sm font-bold">{t("preferences.themeDark")}</span>
                           </Label>
                         </div>
                         <div>
@@ -137,28 +144,71 @@ export function PreferencesSettings() {
                             className="flex flex-col items-center justify-between rounded-md border-2 border-muted bg-popover p-4 hover:bg-accent hover:text-accent-foreground peer-data-[state=checked]:border-primary [&:has([data-state=checked])]:border-primary cursor-pointer"
                           >
                             <Globe className="mb-3 h-6 w-6" />
-                            <span className="text-sm font-medium">System</span>
+                            <span className="text-sm font-bold">{t("preferences.themeSystem")}</span>
                           </Label>
                         </div>
                       </RadioGroup>
                     </FormControl>
                     <FormDescription>
-                      Select the theme for the application interface.
+                      {t("preferences.themeHelp")}
                     </FormDescription>
                   </FormItem>
                 )}
               />
+
+              <div className="grid gap-3 md:grid-cols-3">
+                {[
+                  {
+                    key: "light",
+                    label: t("preferences.themeLight"),
+                    description: "Bright surfaces and sharp borders for daytime use.",
+                  },
+                  {
+                    key: "dark",
+                    label: t("preferences.themeDark"),
+                    description: "Muted contrast for long review sessions.",
+                  },
+                  {
+                    key: "system",
+                    label: t("preferences.themeSystem"),
+                    description: "Automatically follows the device appearance.",
+                  },
+                ].map((option) => {
+                  const isActive = form.watch("theme") === option.key
+                  return (
+                    <div
+                      key={option.key}
+                      className={`border p-4 transition-colors ${
+                        isActive
+                          ? "border-primary bg-primary/5"
+                          : "border-border bg-muted/20"
+                      }`}
+                    >
+                      <p className="text-sm font-bold">{option.label}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">
+                        {option.description}
+                      </p>
+                    </div>
+                  )
+                })}
+              </div>
+
+              <div className="border border-border bg-muted/25 p-4 text-sm text-muted-foreground">
+                {t("preferences.currentTheme")}:{" "}
+                <span className="font-semibold text-foreground">
+                  {mounted ? ((theme as string) || form.getValues("theme")) : form.getValues("theme")}
+                </span>
+              </div>
             </form>
           </Form>
         </CardContent>
       </Card>
 
-      {/* Notification Preferences */}
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
-          <CardTitle>Notifications</CardTitle>
+          <CardTitle>{t("preferences.notificationsTitle")}</CardTitle>
           <CardDescription>
-            Configure how you want to receive notifications.
+            {t("preferences.notificationsBody")}
           </CardDescription>
         </CardHeader>
         <CardContent>
@@ -170,11 +220,11 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="email_notifications"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 border border-border bg-muted/20 p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Email Notifications</FormLabel>
+                        <FormLabel className="text-base">{t("preferences.emailNotifications")}</FormLabel>
                         <FormDescription>
-                          Receive email notifications for important updates
+                          {t("preferences.emailNotificationsBody")}
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -192,11 +242,11 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="selection_alerts"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 border border-border bg-muted/20 p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Selection Alerts</FormLabel>
+                        <FormLabel className="text-base">{t("preferences.selectionAlerts")}</FormLabel>
                         <FormDescription>
-                          Get notified when candidates are selected
+                          {t("preferences.selectionAlertsBody")}
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -214,11 +264,11 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="status_update_alerts"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 border border-border bg-muted/20 p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Status Update Alerts</FormLabel>
+                        <FormLabel className="text-base">{t("preferences.statusAlerts")}</FormLabel>
                         <FormDescription>
-                          Get notified about recruitment status changes
+                          {t("preferences.statusAlertsBody")}
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -236,11 +286,11 @@ export function PreferencesSettings() {
                   control={form.control}
                   name="approval_alerts"
                   render={({ field }) => (
-                    <FormItem className="flex items-center justify-between rounded-lg border p-4">
+                    <FormItem className="flex items-center justify-between gap-4 border border-border bg-muted/20 p-4">
                       <div className="space-y-0.5">
-                        <FormLabel className="text-base">Approval Alerts</FormLabel>
+                        <FormLabel className="text-base">{t("preferences.approvalAlerts")}</FormLabel>
                         <FormDescription>
-                          Get notified when approvals are needed or received
+                          {t("preferences.approvalAlertsBody")}
                         </FormDescription>
                       </div>
                       <FormControl>
@@ -258,41 +308,47 @@ export function PreferencesSettings() {
         </CardContent>
       </Card>
 
-      {/* Language Preference */}
-      <Card>
+      <Card className="overflow-hidden">
         <CardHeader>
-          <CardTitle>Language</CardTitle>
+          <CardTitle>{t("preferences.languageTitle")}</CardTitle>
           <CardDescription>
-            Select your preferred language for the application.
+            {t("preferences.languageBody")}
           </CardDescription>
         </CardHeader>
         <CardContent>
-          <div className="space-y-4">
+          <Form {...form}>
             <div className="space-y-2">
-              <Label>Application Language</Label>
-              <Select defaultValue="en" disabled>
-                <SelectTrigger>
-                  <SelectValue placeholder="Select language" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="en">English</SelectItem>
-                  <SelectItem value="ar" disabled>Arabic (Coming Soon)</SelectItem>
-                  <SelectItem value="am" disabled>Amharic (Coming Soon)</SelectItem>
-                </SelectContent>
-              </Select>
+              <Label>{t("preferences.languageField")}</Label>
+              <FormField
+                control={form.control}
+                name="language"
+                render={({ field }) => (
+                  <Select value={field.value} onValueChange={field.onChange}>
+                    <SelectTrigger>
+                      <SelectValue placeholder={t("preferences.selectLanguage")} />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {localeOptions.map((option) => (
+                        <SelectItem key={option.value} value={option.value}>
+                          {option.nativeLabel}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                )}
+              />
               <p className="text-xs text-muted-foreground">
-                Additional languages will be available in future updates.
+                {localeOptions.find((option) => option.value === form.watch("language"))?.nativeLabel}
               </p>
             </div>
-          </div>
+          </Form>
         </CardContent>
       </Card>
 
-      {/* Save Button */}
       <div className="flex justify-end">
-        <Button onClick={form.handleSubmit(onSubmit)} disabled={isPending}>
+        <Button onClick={form.handleSubmit(onSubmit)} disabled={isPending} className="min-w-[180px]">
           {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save Preferences
+          {t("common.savePreferences")}
         </Button>
       </div>
     </div>

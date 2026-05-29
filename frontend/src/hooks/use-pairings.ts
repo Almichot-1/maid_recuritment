@@ -24,7 +24,8 @@ export function usePairingContext() {
       return response.data.context
     },
     enabled: Boolean(user),
-    staleTime: 30_000,
+    staleTime: 300_000,
+    refetchOnWindowFocus: false,
   })
 
   React.useEffect(() => {
@@ -36,8 +37,13 @@ export function usePairingContext() {
   React.useEffect(() => {
     if (!user) {
       setContext(null)
+      return
     }
-  }, [setContext, user])
+
+    if (query.isError) {
+      setContext(null, user.id)
+    }
+  }, [query.isError, setContext, user])
 
   const activeWorkspace = React.useMemo(
     () => context?.workspaces.find((workspace) => workspace.id === activePairingId) || null,

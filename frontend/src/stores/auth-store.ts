@@ -1,6 +1,14 @@
 import { create } from 'zustand';
 import { User } from '@/types';
 import { usePairingStore } from '@/stores/pairing-store';
+import { getApiBaseUrl } from '@/lib/api-base-url';
+import { clearPersistedAgencyUser, persistAgencyUser } from '@/lib/auth-storage';
+import { clearQueryCache } from '@/lib/query-client';
+import { clearCandidateDraft } from '@/lib/candidate-draft';
+
+interface AuthMeResponse {
+  user: User;
+}
 
 interface AuthState {
   user: User | null;
@@ -10,18 +18,24 @@ interface AuthState {
   setAuth: (user: User, token: string) => void;
   updateUser: (updates: Partial<User>) => void;
   logout: () => void;
-  loadFromStorage: () => void;
+  loadFromStorage: () => Promise<void>;
+}
+
+function clearSessionState() {
+  clearPersistedAgencyUser();
+  usePairingStore.getState().clear();
+  clearQueryCache();
+  void clearCandidateDraft();
 }
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   token: null,
   isAuthenticated: false,
-  isLoading: true, // Start true until hydrated
-  
+  isLoading: true,
+
   setAuth: (user: User, token: string) => {
-    localStorage.setItem('auth_token', token);
-    localStorage.setItem('auth_user', JSON.stringify(user));
+    persistAgencyUser(user);
     usePairingStore.getState().clear();
     set({ user, token, isAuthenticated: true, isLoading: false });
   },
@@ -33,33 +47,44 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const user = { ...state.user, ...updates };
-      localStorage.setItem('auth_user', JSON.stringify(user));
+      persistAgencyUser(user);
       return { user };
     }),
-  
+
   logout: () => {
-    localStorage.removeItem('auth_token');
-    localStorage.removeItem('auth_user');
-    usePairingStore.getState().clear();
+    clearSessionState();
     set({ user: null, token: null, isAuthenticated: false, isLoading: false });
   },
-  
-  loadFromStorage: () => {
+
+  loadFromStorage: async () => {
+    if (typeof window === 'undefined') {
+      return;
+    }
+
+    set({ isLoading: true });
+
     try {
-      if (typeof window !== 'undefined') {
-        const token = localStorage.getItem('auth_token');
-        const userStr = localStorage.getItem('auth_user');
-        
-        if (token && userStr) {
-          const user = JSON.parse(userStr) as User;
-          set({ user, token, isAuthenticated: true, isLoading: false });
-        } else {
-          set({ user: null, token: null, isAuthenticated: false, isLoading: false });
-        }
+      const response = await fetch(`${getApiBaseUrl()}/auth/me`, {
+        credentials: 'include',
+      });
+
+      if (response.status === 401 || response.status === 403) {
+        clearPersistedAgencyUser();
+        set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+        return;
       }
+
+      if (!response.ok) {
+        set({ isLoading: false });
+        return;
+      }
+
+      const data = (await response.json()) as AuthMeResponse;
+      persistAgencyUser(data.user);
+      set({ user: data.user, token: null, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.error('Failed to load auth state from storage', error);
-      set({ user: null, token: null, isAuthenticated: false, isLoading: false });
+      set({ isLoading: false });
     }
   }
 }));

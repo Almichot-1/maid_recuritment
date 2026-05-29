@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Link from "next/link"
 import { useRouter } from "next/navigation"
 import { CheckCircle2, Clock, User, Eye, Loader2, Route } from "lucide-react"
 import { format } from "date-fns"
@@ -9,7 +10,7 @@ import { Selection, SelectionStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useApproveSelection, useRejectSelection } from "@/hooks/use-selections"
 import { LockCountdown } from "./lock-countdown"
-import { ApprovalDialog } from "./approval-dialog"
+import { RejectSelectionDialog } from "./approval-dialog"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -21,7 +22,6 @@ interface SelectionCardProps {
 export function SelectionCard({ selection }: SelectionCardProps) {
   const router = useRouter()
   const { isEthiopianAgent } = useCurrentUser()
-  const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
 
   const { mutate: approveSelection, isPending: isApproving } = useApproveSelection(selection.id, selection.candidate_id)
@@ -44,6 +44,8 @@ export function SelectionCard({ selection }: SelectionCardProps) {
   const isApproved = selection.status === SelectionStatus.APPROVED
   const isRejected = selection.status === SelectionStatus.REJECTED
   const isExpired = selection.status === SelectionStatus.EXPIRED
+  const hasRequiredEmployerDocuments = !!selection.employer_contract?.file_url && !!selection.employer_id?.file_url
+  const approvalBlockedByEmployerPackage = isEthiopianAgent && isPending && !hasRequiredEmployerDocuments
 
   const getStatusBadge = () => {
     switch (selection.status) {
@@ -77,11 +79,7 @@ export function SelectionCard({ selection }: SelectionCardProps) {
   }
 
   const handleApprove = () => {
-    approveSelection(undefined, {
-      onSuccess: () => {
-        setApproveDialogOpen(false)
-      },
-    })
+    approveSelection()
   }
 
   const handleReject = (reason?: string) => {
@@ -92,9 +90,7 @@ export function SelectionCard({ selection }: SelectionCardProps) {
     })
   }
 
-  const handleViewDetails = () => {
-    router.push(`/selections/${selection.id}`)
-  }
+  const selectionHref = `/selections/${selection.id}`
 
   return (
     <>
@@ -106,12 +102,13 @@ export function SelectionCard({ selection }: SelectionCardProps) {
               {/* Photo */}
               <div className="shrink-0">
                 {photoUrl ? (
-                  <img
-                    src={photoUrl}
-                    alt={candidate.full_name}
-                    className="h-16 w-16 rounded-lg object-cover border-2 border-border cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={handleViewDetails}
-                  />
+                  <Link href={selectionHref} className="block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring">
+                    <img
+                      src={photoUrl}
+                      alt={candidate.full_name}
+                      className="h-16 w-16 rounded-lg object-cover border-2 border-border hover:opacity-90 transition-opacity"
+                    />
+                  </Link>
                 ) : (
                   <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center border-2 border-dashed">
                     <User className="h-8 w-8 text-muted-foreground" />
@@ -121,11 +118,10 @@ export function SelectionCard({ selection }: SelectionCardProps) {
 
               {/* Info */}
               <div className="flex-1 min-w-0">
-                <h3 
-                  className="font-semibold text-lg leading-tight truncate cursor-pointer hover:text-primary transition-colors"
-                  onClick={handleViewDetails}
-                >
-                  {candidate.full_name}
+                <h3 className="font-semibold text-lg leading-tight truncate">
+                  <Link href={selectionHref} className="hover:text-primary transition-colors">
+                    {candidate.full_name}
+                  </Link>
                 </h3>
                 <div className="flex items-center gap-2 text-sm text-muted-foreground mt-1">
                   <span>{candidate.age ?? "N/A"} years</span>
@@ -182,11 +178,21 @@ export function SelectionCard({ selection }: SelectionCardProps) {
               <div className="flex flex-wrap gap-2">
                 {isPending && !userHasApproved && (
                   <>
+                    {approvalBlockedByEmployerPackage && (
+                      <div className="w-full rounded-md border border-amber-300/50 bg-amber-50/80 px-3 py-2 text-center text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
+                        Waiting for the foreign agency to upload the contract package.
+                      </div>
+                    )}
+                    {!isEthiopianAgent && !hasRequiredEmployerDocuments && (
+                      <Button size="sm" variant="outline" asChild className="w-full">
+                        <Link href={selectionHref}>Upload contract package</Link>
+                      </Button>
+                    )}
                     <Button
                       size="sm"
-                      onClick={() => setApproveDialogOpen(true)}
-                      className="bg-green-600 hover:bg-green-700 flex-1"
-                      disabled={isApproving || isRejecting}
+                      onClick={handleApprove}
+                      className="flex-1"
+                      disabled={isApproving || isRejecting || approvalBlockedByEmployerPackage}
                     >
                       {isApproving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
                       Approve
@@ -226,11 +232,13 @@ export function SelectionCard({ selection }: SelectionCardProps) {
                   <Button
                     size="sm"
                     variant="outline"
-                    onClick={handleViewDetails}
+                    asChild
                     className="w-full"
                   >
-                    <Eye className="mr-2 h-4 w-4" />
-                    View Details
+                    <Link href={selectionHref}>
+                      <Eye className="mr-2 h-4 w-4" />
+                      View Details
+                    </Link>
                   </Button>
                 )}
               </div>
@@ -239,21 +247,9 @@ export function SelectionCard({ selection }: SelectionCardProps) {
         </CardContent>
       </Card>
 
-      {/* Approval Dialogs */}
-      <ApprovalDialog
-        open={approveDialogOpen}
-        onOpenChange={setApproveDialogOpen}
-        candidateName={candidate.full_name}
-        type="approve"
-        onConfirm={handleApprove}
-        isLoading={isApproving}
-      />
-
-      <ApprovalDialog
+      <RejectSelectionDialog
         open={rejectDialogOpen}
         onOpenChange={setRejectDialogOpen}
-        candidateName={candidate.full_name}
-        type="reject"
         onConfirm={handleReject}
         isLoading={isRejecting}
       />

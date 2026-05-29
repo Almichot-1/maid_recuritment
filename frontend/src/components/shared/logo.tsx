@@ -1,5 +1,4 @@
 import Link from "next/link"
-import { Users } from "lucide-react"
 import { APP_NAME } from "@/constants/branding"
 import { cn } from "@/lib/utils"
 
@@ -14,19 +13,19 @@ interface LogoProps {
 
 const sizeConfig = {
   sm: {
-    icon: "h-6 w-6",
+    mark: "h-9 w-9 text-xs",
     text: "text-lg",
-    container: "gap-2",
+    container: "gap-3",
   },
   md: {
-    icon: "h-8 w-8",
+    mark: "h-11 w-11 text-sm",
     text: "text-xl",
-    container: "gap-2",
+    container: "gap-3",
   },
   lg: {
-    icon: "h-10 w-10",
+    mark: "h-12 w-12 text-sm",
     text: "text-2xl",
-    container: "gap-3",
+    container: "gap-4",
   },
 }
 
@@ -35,13 +34,14 @@ export function Logo({ size = "md", showText = true, href = "/", className }: Lo
 
   const content = (
     <div className={cn("flex items-center", config.container, className)}>
-      <div className="flex items-center justify-center rounded-lg bg-primary p-1.5">
-        <Users className={cn(config.icon, "text-primary-foreground")} />
+      <div className={cn("flex items-center justify-center border border-foreground bg-foreground text-background", config.mark)}>
+        <span className="route-stamp tracking-[0.24em] text-background">RM</span>
       </div>
       {showText && (
-        <span className={cn("font-bold text-foreground", config.text)}>
-          {APP_NAME}
-        </span>
+        <div className="flex flex-col">
+          <span className={cn("font-display leading-none text-foreground", config.text)}>{APP_NAME}</span>
+          <span className="route-stamp text-[10px] tracking-[0.22em] text-muted-foreground">AGENCY WORKSPACE</span>
+        </div>
       )}
     </div>
   )

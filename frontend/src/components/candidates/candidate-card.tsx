@@ -1,19 +1,25 @@
 "use client"
 
 import * as React from "react"
+import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { User, Lock, PencilLine } from "lucide-react"
+import { Lock, PencilLine, User } from "lucide-react"
 
 import { Candidate, CandidateStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
-import { CandidateShareDialog } from "@/components/candidates/candidate-share-dialog"
-import { SelectCandidateDialog } from "@/components/selections/select-candidate-dialog"
 import { LockCountdown } from "@/components/selections/lock-countdown"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
 import { cn } from "@/lib/utils"
+
+const CandidateShareDialog = dynamic(
+  () => import("@/components/candidates/candidate-share-dialog").then((module) => module.CandidateShareDialog)
+)
+const SelectCandidateDialog = dynamic(
+  () => import("@/components/selections/select-candidate-dialog").then((module) => module.SelectCandidateDialog)
+)
 
 interface CandidateCardProps {
   candidate: Candidate
@@ -25,148 +31,122 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
   const [selectDialogOpen, setSelectDialogOpen] = React.useState(false)
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
 
-  const handleCardClick = () => {
+  const photoUrl = candidate.documents?.find((doc) => doc.document_type === "photo")?.file_url
+  const displaySkills = candidate.skills.slice(0, 3)
+  const remainingSkills = candidate.skills.length - 3
+  const isLockedByCurrentUser = candidate.status === CandidateStatus.LOCKED && candidate.locked_by === user?.id
+  const isLockedByOther = candidate.status === CandidateStatus.LOCKED && candidate.locked_by !== user?.id
+  const isOwner = isEthiopianAgent && candidate.created_by === user?.id
+  const canEdit = isOwner && (candidate.status === CandidateStatus.DRAFT || candidate.status === CandidateStatus.AVAILABLE)
+
+  const openCandidate = () => {
     router.push(`/candidates/${candidate.id}`)
   }
 
-  const handleSelectClick = (e: React.MouseEvent) => {
-    e.stopPropagation()
-    setSelectDialogOpen(true)
+  const handleCardKeyDown = (event: React.KeyboardEvent<HTMLDivElement>) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault()
+      openCandidate()
+    }
   }
-
-  // Get photo URL from documents
-  const photoUrl = candidate.documents?.find((doc) => doc.document_type === "photo")?.file_url
-
-  // Display first 3 skills
-  const displaySkills = candidate.skills.slice(0, 3)
-  const remainingSkills = candidate.skills.length - 3
-
-  // Check if this candidate is locked by current user
-  const isLockedByCurrentUser = candidate.status === CandidateStatus.LOCKED &&
-    candidate.locked_by === user?.id
-
-  // Check if locked by someone else
-  const isLockedByOther = candidate.status === CandidateStatus.LOCKED &&
-    candidate.locked_by !== user?.id
-
-  const isOwner = isEthiopianAgent && candidate.created_by === user?.id
-  const canEdit = isOwner && (candidate.status === CandidateStatus.DRAFT || candidate.status === CandidateStatus.AVAILABLE)
 
   return (
     <>
       <Card
-        className="group cursor-pointer transition-all duration-200 hover:shadow-lg hover:scale-[1.02] overflow-hidden"
-        onClick={handleCardClick}
+        role="button"
+        tabIndex={0}
+        className="cursor-pointer card-lift overflow-hidden"
+        onClick={openCandidate}
+        onKeyDown={handleCardKeyDown}
       >
         <CardContent className="p-0">
-          {/* Photo */}
-          <div className="relative w-full aspect-square bg-muted overflow-hidden">
+          <div className="relative aspect-square w-full overflow-hidden border-b border-border bg-muted/20">
             {photoUrl ? (
-              <img
-                src={photoUrl}
-                alt={candidate.full_name}
-                className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-              />
+              <img src={photoUrl} alt={candidate.full_name} className="h-full w-full object-cover" loading="lazy" />
             ) : (
-              <div className="w-full h-full flex items-center justify-center bg-gradient-to-br from-primary/10 to-primary/5">
+              <div className="flex h-full w-full items-center justify-center bg-background">
                 <User className="h-20 w-20 text-muted-foreground/40" />
               </div>
             )}
-            
-            {/* Status Badge */}
-            <div className="absolute top-3 right-3">
+
+            <div className="absolute right-3 top-3">
               <StatusBadge status={candidate.status} />
             </div>
 
-            {/* Lock Indicator */}
             {(candidate.status === CandidateStatus.LOCKED || candidate.status === CandidateStatus.IN_PROGRESS) && (
-              <div className="absolute top-3 left-3">
-                <div className="flex items-center gap-1.5 bg-purple-500/90 text-white px-2 py-1 rounded-md text-xs font-semibold shadow-md">
+              <div className="absolute left-3 top-3">
+                <Badge variant="outline" className="border-primary text-primary">
                   <Lock className="h-3 w-3" />
-                  <span>Locked</span>
-                </div>
+                  Locked
+                </Badge>
               </div>
             )}
           </div>
 
-          {/* Content */}
-          <div className="p-4 space-y-3">
-            {/* Name */}
-            <h3 className="font-semibold text-lg leading-tight line-clamp-1">
-              {candidate.full_name}
-            </h3>
-
-            {/* Age & Experience */}
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
-              <span>{candidate.age ?? "N/A"} years old</span>
-              <span>-</span>
-              <span>{candidate.experience_years ?? 0} years exp.</span>
+          <div className="space-y-4 p-4">
+            <div className="space-y-2">
+              <p className="font-display text-3xl leading-none text-foreground">{candidate.full_name}</p>
+              <p className="text-sm text-muted-foreground">
+                {candidate.age ?? "N/A"} years old · {candidate.experience_years ?? 0} years experience
+              </p>
             </div>
 
-            {/* Languages */}
-            {candidate.languages.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+            {candidate.languages.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
                 {candidate.languages.map((lang) => (
-                  <Badge key={lang} variant="outline" className="text-xs">
+                  <Badge key={lang} variant="outline">
                     {lang}
                   </Badge>
                 ))}
               </div>
-            )}
+            ) : null}
 
-            {/* Skills */}
-            {candidate.skills.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
-                {displaySkills.map((skill) => (
-                  <Badge key={skill} variant="secondary" className="text-xs">
-                    {skill}
-                  </Badge>
-                ))}
-                {remainingSkills > 0 && (
-                  <Badge variant="secondary" className="text-xs">
-                    +{remainingSkills} more
-                  </Badge>
-                )}
+            {candidate.skills.length > 0 ? (
+              <div className="space-y-2">
+                <p className="route-stamp text-[11px] text-muted-foreground">Skills</p>
+                <div className="flex flex-wrap gap-2">
+                  {displaySkills.map((skill) => (
+                    <Badge key={skill} variant="outline">
+                      {skill}
+                    </Badge>
+                  ))}
+                  {remainingSkills > 0 ? <Badge variant="outline">+{remainingSkills}</Badge> : null}
+                </div>
               </div>
-            )}
+            ) : null}
 
-            {/* Action Button for Foreign Agent */}
-            {isForeignAgent && candidate.status === CandidateStatus.AVAILABLE && (
+            {isForeignAgent && candidate.status === CandidateStatus.AVAILABLE ? (
               <Button
-                onClick={handleSelectClick}
-                className="w-full mt-2 bg-green-600 hover:bg-green-700"
+                onClick={(event) => {
+                  event.stopPropagation()
+                  setSelectDialogOpen(true)
+                }}
+                className="w-full"
                 size="sm"
               >
-                Select Candidate
+                Select candidate
               </Button>
-            )}
+            ) : null}
 
-            {/* Locked by Current User - Show Countdown */}
-            {isForeignAgent && isLockedByCurrentUser && candidate.lock_expires_at && (
-              <div className="mt-2 p-3 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                <p className="text-xs font-medium text-purple-900 dark:text-purple-100 mb-2">
-                  Selected by you
-                </p>
-                <LockCountdown 
-                  expiresAt={candidate.lock_expires_at}
-                  className="text-xs"
-                  showIcon={true}
-                />
+            {isForeignAgent && isLockedByCurrentUser && candidate.lock_expires_at ? (
+              <div className="border border-border bg-muted/20 p-3">
+                <p className="text-xs font-bold uppercase tracking-[0.06em] text-foreground">Selected by you</p>
+                <div className="mt-2">
+                  <LockCountdown expiresAt={candidate.lock_expires_at} className="text-xs" showIcon />
+                </div>
               </div>
-            )}
+            ) : null}
 
-            {/* Locked by Another Agent */}
-            {isForeignAgent && isLockedByOther && (
-              <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground mt-2 p-2 bg-muted/50 rounded-md">
-                <Lock className="h-4 w-4" />
-                <span>Locked by another agency</span>
+            {isForeignAgent && isLockedByOther ? (
+              <div className="border border-border bg-muted/20 p-3 text-sm text-muted-foreground">
+                Locked by another agency
               </div>
-            )}
+            ) : null}
 
-            {isOwner && (
-              <div className="mt-2 flex gap-2">
+            {isOwner ? (
+              <div className="flex gap-2">
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   className="flex-1"
                   size="sm"
                   onClick={(event) => {
@@ -179,32 +159,22 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
                 {canEdit ? (
                   <Button variant="outline" className="flex-1" size="sm" asChild onClick={(event) => event.stopPropagation()}>
                     <Link href={`/candidates/${candidate.id}/edit`}>
-                      <PencilLine className="mr-2 h-4 w-4" />
+                      <PencilLine className="h-4 w-4" />
                       Edit
                     </Link>
                   </Button>
                 ) : null}
-                <Button variant="outline" className="flex-1" size="sm" asChild onClick={(event) => event.stopPropagation()}>
+                <Button variant="ghost" className="flex-1" size="sm" asChild onClick={(event) => event.stopPropagation()}>
                   <Link href={`/candidates/${candidate.id}`}>Open</Link>
                 </Button>
               </div>
-            )}
+            ) : null}
           </div>
         </CardContent>
       </Card>
 
-      {/* Selection Dialog */}
-      <SelectCandidateDialog
-        candidate={candidate}
-        open={selectDialogOpen}
-        onOpenChange={setSelectDialogOpen}
-      />
-
-      <CandidateShareDialog
-        candidate={candidate}
-        open={shareDialogOpen}
-        onOpenChange={setShareDialogOpen}
-      />
+      <SelectCandidateDialog candidate={candidate} open={selectDialogOpen} onOpenChange={setSelectDialogOpen} />
+      <CandidateShareDialog candidate={candidate} open={shareDialogOpen} onOpenChange={setShareDialogOpen} />
     </>
   )
 }
@@ -213,43 +183,39 @@ function StatusBadge({ status }: { status: CandidateStatus }) {
   const variants: Record<CandidateStatus, { label: string; className: string }> = {
     [CandidateStatus.DRAFT]: {
       label: "Draft",
-      className: "bg-gray-500 text-white border-gray-600",
+      className: "border-border text-muted-foreground",
     },
     [CandidateStatus.AVAILABLE]: {
       label: "Available",
-      className: "bg-green-500 text-white border-green-600",
+      className: "border-[color:var(--color-success)] text-[color:var(--color-success)]",
     },
     [CandidateStatus.LOCKED]: {
       label: "Locked",
-      className: "bg-amber-500 text-white border-amber-600",
+      className: "border-[color:var(--color-warning)] text-[color:var(--color-warning)]",
     },
     [CandidateStatus.UNDER_REVIEW]: {
-      label: "Under Review",
-      className: "bg-blue-500 text-white border-blue-600",
+      label: "Under review",
+      className: "border-[color:var(--color-info)] text-[color:var(--color-info)]",
     },
     [CandidateStatus.APPROVED]: {
       label: "Approved",
-      className: "bg-emerald-500 text-white border-emerald-600",
+      className: "border-[color:var(--color-success)] text-[color:var(--color-success)]",
     },
     [CandidateStatus.IN_PROGRESS]: {
-      label: "In Process",
-      className: "bg-purple-500 text-white border-purple-600",
+      label: "In progress",
+      className: "border-primary text-primary",
     },
     [CandidateStatus.COMPLETED]: {
       label: "Completed",
-      className: "bg-slate-700 text-white border-slate-800",
+      className: "border-foreground text-foreground",
     },
     [CandidateStatus.REJECTED]: {
       label: "Rejected",
-      className: "bg-red-500 text-white border-red-600",
+      className: "border-[color:var(--color-danger)] text-[color:var(--color-danger)]",
     },
   }
 
   const variant = variants[status] || variants[CandidateStatus.AVAILABLE]
 
-  return (
-    <Badge className={cn("shadow-md font-semibold", variant.className)}>
-      {variant.label}
-    </Badge>
-  )
+  return <Badge variant="outline" className={cn(variant.className)}>{variant.label}</Badge>
 }

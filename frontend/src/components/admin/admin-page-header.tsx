@@ -1,5 +1,6 @@
 import * as React from "react"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/lib/i18n"
 
 interface AdminPageHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
   title: string
@@ -8,21 +9,22 @@ interface AdminPageHeaderProps extends React.HTMLAttributes<HTMLDivElement> {
 }
 
 export function AdminPageHeader({ title, description, action, className, ...props }: AdminPageHeaderProps) {
+  const { t } = useI18n()
+
   return (
     <div
       className={cn(
-        "relative overflow-hidden rounded-[28px] border border-slate-200/80 bg-white/80 p-6 shadow-sm backdrop-blur",
-        "before:absolute before:inset-x-0 before:top-0 before:h-px before:bg-gradient-to-r before:from-transparent before:via-amber-300 before:to-transparent",
+        "border border-border bg-card p-6",
         className
       )}
       {...props}
     >
-      <div className="relative flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
         <div className="space-y-2">
-          <div className="text-xs font-semibold uppercase tracking-[0.24em] text-amber-700">Admin Mode</div>
+          <div className="section-kicker">{t("admin.mode")}</div>
           <div className="space-y-1">
-            <h1 className="text-2xl font-semibold tracking-tight text-slate-950 sm:text-3xl">{title}</h1>
-            {description ? <p className="max-w-3xl text-sm text-slate-600 sm:text-base">{description}</p> : null}
+            <h1 className="font-display text-4xl text-foreground">{title}</h1>
+            {description ? <p className="max-w-3xl text-sm text-muted-foreground sm:text-base">{description}</p> : null}
           </div>
         </div>
         {action ? <div className="flex items-center gap-3">{action}</div> : null}

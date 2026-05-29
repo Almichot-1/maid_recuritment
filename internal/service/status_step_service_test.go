@@ -295,6 +295,12 @@ func (m *statusStepSelectionRepoMock) UpdateStatus(id string, status domain.Sele
 func (m *statusStepSelectionRepoMock) GetExpiredSelections() ([]*domain.Selection, error) {
 	return nil, nil
 }
+func (m *statusStepSelectionRepoMock) UpdateWarningSentFlags(id string, flags int) error {
+	return nil
+}
+func (m *statusStepSelectionRepoMock) GetPendingExpiringSoon(windowHours int, flagBit int) ([]*domain.Selection, error) {
+	return nil, nil
+}
 
 func TestStatusStepService_UpdateStepRules(t *testing.T) {
 	updated := false
@@ -319,6 +325,7 @@ func TestStatusStepService_UpdateStepRules(t *testing.T) {
 			},
 		},
 		selectionRepository: &statusStepSelectionRepoMock{},
+		documentRepository:  nil,
 		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
 	}
 
@@ -341,6 +348,7 @@ func TestStatusStepService_UpdateStepAuthorizationAndTransitions(t *testing.T) {
 			},
 		},
 		selectionRepository: &statusStepSelectionRepoMock{},
+		documentRepository:  nil,
 		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
 	}
 
@@ -352,18 +360,14 @@ func TestStatusStepService_UpdateStepAuthorizationAndTransitions(t *testing.T) {
 }
 
 func TestStatusStepHelpers(t *testing.T) {
-	assert.True(t, isValidStepStatus(domain.Pending))
-	assert.False(t, isValidStepStatus(domain.StepStatus("invalid")))
-
-	assert.True(t, canTransitionStep(domain.Pending, domain.InProgress))
-	assert.True(t, canTransitionStep(domain.InProgress, domain.Completed))
-	assert.False(t, canTransitionStep(domain.Pending, domain.Completed))
-	assert.True(t, canTransitionStep(domain.Completed, domain.Completed))
-	assert.False(t, canTransitionStep(domain.Completed, domain.InProgress))
+	assert.True(t, isValidChecklistStatus(domain.Pending))
+	assert.True(t, isValidChecklistStatus(domain.Completed))
+	assert.True(t, isValidChecklistStatus(domain.InProgress))
+	assert.False(t, isValidChecklistStatus(domain.StepStatus("invalid")))
 
 	steps := predefinedStepNames()
 	assert.Len(t, steps, len(predefinedStepNames()))
-	assert.Equal(t, domain.MedicalTest, steps[0])
+	assert.Equal(t, domain.MedicalStep, steps[0])
 }
 
 func TestStatusStepService_UpdateStepMarksCandidateCompletedWhenFinalStepFinishes(t *testing.T) {
@@ -380,7 +384,7 @@ func TestStatusStepService_UpdateStepMarksCandidateCompletedWhenFinalStepFinishe
 
 	now := time.Now().UTC()
 	steps := []statusStepTestStep{
-		{ID: "step-1", CandidateID: "cand-1", StepName: domain.Medical, StepStatus: string(domain.Completed), UpdatedBy: "owner-1", CreatedAt: now.Add(-9 * time.Minute), UpdatedAt: now.Add(-9 * time.Minute)},
+		{ID: "step-1", CandidateID: "cand-1", StepName: domain.MedicalStep, StepStatus: string(domain.Completed), UpdatedBy: "owner-1", CreatedAt: now.Add(-9 * time.Minute), UpdatedAt: now.Add(-9 * time.Minute)},
 		{ID: "step-2", CandidateID: "cand-1", StepName: domain.CoCPending, StepStatus: string(domain.Completed), UpdatedBy: "owner-1", CreatedAt: now.Add(-8 * time.Minute), UpdatedAt: now.Add(-8 * time.Minute)},
 		{ID: "step-3", CandidateID: "cand-1", StepName: domain.CoCOnline, StepStatus: string(domain.Completed), UpdatedBy: "owner-1", CreatedAt: now.Add(-7 * time.Minute), UpdatedAt: now.Add(-7 * time.Minute)},
 		{ID: "step-4", CandidateID: "cand-1", StepName: domain.LMISPending, StepStatus: string(domain.Completed), UpdatedBy: "owner-1", CreatedAt: now.Add(-6 * time.Minute), UpdatedAt: now.Add(-6 * time.Minute)},

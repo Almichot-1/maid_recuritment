@@ -1,52 +1,38 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { useForm } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
-import { Eye, EyeOff, Loader2, Globe, Users } from "lucide-react"
+import { AlertCircle, Eye, EyeOff, Globe, Loader2, Users } from "lucide-react"
 
 import { registerSchema, type RegisterFormInput } from "@/lib/validations"
-import { useRegister } from "@/hooks/use-auth"
-import { useAuthStore } from "@/stores/auth-store"
+import { getRegisterErrorMessage, useRegister } from "@/hooks/use-auth"
 import { UserRole } from "@/types"
+import { AgencyAuthSessionGate } from "@/components/auth/agency-auth-session-gate"
 import { Button } from "@/components/ui/button"
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Checkbox } from "@/components/ui/checkbox"
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from "@/components/ui/form"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/lib/i18n"
 
 function calculateStrength(password: string): number {
-  if (!password) return 0;
-  let strength = 0;
-  if (password.length >= 8) strength += 1;
-  if (/\d/.test(password)) strength += 1;
-  if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) strength += 1;
-  return strength;
+  if (!password) return 0
+  let strength = 0
+  if (password.length >= 8) strength += 1
+  if (/\d/.test(password)) strength += 1
+  if (/[!@#$%^&*(),.?":{}|<>]/.test(password)) strength += 1
+  return strength
 }
 
 export default function RegisterPage() {
-  const router = useRouter();
-  const { mutate: register, isPending } = useRegister();
-  const isAuthenticated = useAuthStore((state) => state.isAuthenticated);
-  
-  const [showPassword, setShowPassword] = React.useState(false);
-  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false);
+  const { mutate: register, isPending } = useRegister()
+  const { t } = useI18n()
 
-  React.useEffect(() => {
-    if (isAuthenticated) {
-      router.push("/dashboard");
-    }
-  }, [isAuthenticated, router]);
+  const [showPassword, setShowPassword] = React.useState(false)
+  const [showConfirmPassword, setShowConfirmPassword] = React.useState(false)
 
   const form = useForm<RegisterFormInput>({
     resolver: zodResolver(registerSchema),
@@ -59,233 +45,258 @@ export default function RegisterPage() {
       company_name: "",
       acceptTerms: false,
     },
-  });
+  })
 
-  const passwordVal = form.watch("password");
-  const strength = calculateStrength(passwordVal);
+  const passwordValue = form.watch("password")
+  const watchedEmail = form.watch("email")
+  const strength = calculateStrength(passwordValue)
+
+  React.useEffect(() => {
+    if (form.formState.errors.root?.message) {
+      form.clearErrors("root")
+    }
+  }, [watchedEmail, form])
 
   function onSubmit(data: RegisterFormInput) {
-    register(data);
+    form.clearErrors("root")
+    register(data, {
+      onError: (error) => {
+        form.setError("root", {
+          type: "server",
+          message: getRegisterErrorMessage(error),
+        })
+      },
+    })
   }
 
-  if (isAuthenticated) return null;
+  const strengthLabel =
+    strength === 1
+      ? t("auth.passwordWeak")
+      : strength === 2
+        ? t("auth.passwordMedium")
+        : strength === 3
+          ? t("auth.passwordStrong")
+          : ""
 
   return (
-    <Card className="w-full max-w-2xl shadow-lg border-muted my-8">
-      <CardHeader className="space-y-2 text-center pb-6">
-        <CardTitle className="text-2xl font-bold tracking-tight">Create an Account</CardTitle>
-        <CardDescription>Register your agency and submit it for admin approval</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
-            
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <AgencyAuthSessionGate>
+      <Card className="my-8 w-full max-w-3xl">
+        <CardHeader className="space-y-2 border-b border-border pb-5">
+          <CardTitle className="font-display text-4xl">{t("auth.registerTitle")}</CardTitle>
+          <CardDescription>{t("auth.registerBody")}</CardDescription>
+        </CardHeader>
+        <CardContent className="pt-6">
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-5">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="full_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("auth.fullName")}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={t("auth.fullNamePlaceholder")} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
+                  name="company_name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("auth.companyName")}</FormLabel>
+                      <FormControl>
+                        <Input placeholder={t("auth.companyNamePlaceholder")} {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
               <FormField
                 control={form.control}
-                name="full_name"
+                name="email"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Full Name</FormLabel>
+                    <FormLabel>{t("auth.email")}</FormLabel>
                     <FormControl>
-                      <Input placeholder="John Doe" {...field} />
+                      <Input placeholder={t("auth.emailPlaceholder")} type="email" {...field} />
                     </FormControl>
                     <FormMessage />
                   </FormItem>
                 )}
               />
-              <FormField
-                control={form.control}
-                name="company_name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Company Name</FormLabel>
-                    <FormControl>
-                      <Input placeholder="Agency LLC" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
 
-            <FormField
-              control={form.control}
-              name="email"
-              render={({ field }) => (
-                <FormItem>
-                  <FormLabel>Email Address</FormLabel>
-                  <FormControl>
-                    <Input placeholder="name@example.com" type="email" {...field} />
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <FormField
-                control={form.control}
-                name="password"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          type={showPassword ? "text" : "password"}
-                          placeholder="••••••••"
-                          className="pr-10"
-                          {...field}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground"
-                          onClick={() => setShowPassword(!showPassword)}
-                        >
-                          {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </FormControl>
-                    {/* Password Strength Indicator */}
-                    <div className="mt-2 flex h-1.5 w-full gap-1 overflow-hidden rounded-full bg-slate-100 dark:bg-slate-800">
-                      <div className={cn("h-full flex-1 transition-all", strength >= 1 ? (strength === 1 ? "bg-red-500" : strength === 2 ? "bg-yellow-500" : "bg-green-500") : "bg-transparent")} />
-                      <div className={cn("h-full flex-1 transition-all", strength >= 2 ? (strength === 2 ? "bg-yellow-500" : "bg-green-500") : "bg-transparent")} />
-                      <div className={cn("h-full flex-1 transition-all", strength >= 3 ? "bg-green-500" : "bg-transparent")} />
-                    </div>
-                    <p className="text-xs text-muted-foreground mt-1 min-h-[16px]">
-                      {strength === 0 && ""}
-                      {strength === 1 && "Weak - Add numbers and special characters"}
-                      {strength === 2 && "Medium - Add special characters"}
-                      {strength === 3 && "Strong password"}
-                    </p>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-
-              <FormField
-                control={form.control}
-                name="confirmPassword"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Confirm Password</FormLabel>
-                    <FormControl>
-                      <div className="relative">
-                        <Input
-                          type={showConfirmPassword ? "text" : "password"}
-                          placeholder="••••••••"
-                          className="pr-10"
-                          {...field}
-                        />
-                        <Button
-                          type="button"
-                          variant="ghost"
-                          size="icon"
-                          className="absolute right-0 top-0 h-full px-3 py-2 hover:bg-transparent text-muted-foreground"
-                          onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                        >
-                          {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </Button>
-                      </div>
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-
-            <FormField
-              control={form.control}
-              name="role"
-              render={({ field }) => (
-                <FormItem className="space-y-3 pt-2">
-                  <FormLabel>Account Type</FormLabel>
-                  <FormControl>
-                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                      {/* Ethiopian Agency Card */}
-                      <div
-                        className={cn(
-                          "relative flex cursor-pointer rounded-lg border bg-card p-4 shadow-sm hover:border-primary transition-all",
-                          field.value === UserRole.ETHIOPIAN_AGENT ? "border-primary ring-1 ring-primary" : "border-muted"
-                        )}
-                        onClick={() => field.onChange(UserRole.ETHIOPIAN_AGENT)}
-                      >
-                        <div className="flex items-start space-x-3">
-                          <Users className={cn("mt-0.5 h-5 w-5", field.value === UserRole.ETHIOPIAN_AGENT ? "text-primary" : "text-muted-foreground")} />
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium leading-none">Ethiopian Agency</p>
-                            <p className="text-xs text-muted-foreground">I manage and recruit candidates</p>
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Foreign Agency Card */}
-                      <div
-                        className={cn(
-                          "relative flex cursor-pointer rounded-lg border bg-card p-4 shadow-sm hover:border-primary transition-all",
-                          field.value === UserRole.FOREIGN_AGENT ? "border-primary ring-1 ring-primary" : "border-muted"
-                        )}
-                        onClick={() => field.onChange(UserRole.FOREIGN_AGENT)}
-                      >
-                        <div className="flex items-start space-x-3">
-                          <Globe className={cn("mt-0.5 h-5 w-5", field.value === UserRole.FOREIGN_AGENT ? "text-primary" : "text-muted-foreground")} />
-                          <div className="space-y-1">
-                            <p className="text-sm font-medium leading-none">Foreign Agency (Jordan)</p>
-                            <p className="text-xs text-muted-foreground">I browse and select candidates</p>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  </FormControl>
-                  <FormMessage />
-                </FormItem>
-              )}
-            />
-
-            <FormField
-              control={form.control}
-              name="acceptTerms"
-              render={({ field }) => (
-                <FormItem className="flex flex-row items-start space-x-3 space-y-0 pt-4">
-                  <FormControl>
-                    <Checkbox
-                      checked={field.value}
-                      onCheckedChange={field.onChange}
-                    />
-                  </FormControl>
-                  <div className="space-y-1 leading-none">
-                    <FormLabel className="cursor-pointer font-normal">
-                      I accept the terms and conditions
-                    </FormLabel>
+              {form.formState.errors.root?.message ? (
+                <div className="border border-destructive bg-destructive/10 px-4 py-3 text-sm text-destructive" role="alert">
+                  <div className="flex items-start gap-3">
+                    <AlertCircle className="mt-0.5 h-4 w-4 shrink-0" />
+                    <span>{form.formState.errors.root.message}</span>
                   </div>
-                </FormItem>
-              )}
-            />
+                </div>
+              ) : null}
 
-            <Button type="submit" className="w-full" disabled={isPending}>
-              {isPending ? (
-                <>
-                  <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                  Submitting registration...
-                </>
-              ) : (
-                "Submit For Review"
-              )}
-            </Button>
-          </form>
-        </Form>
-      </CardContent>
-      <CardFooter className="flex flex-col space-y-4 text-center text-sm text-muted-foreground border-t pt-4">
-        <div>
-          Already have an account?{" "}
-          <Link href="/login" className="font-semibold text-primary hover:underline transition-colors">
-            Login
-          </Link>
-        </div>
-      </CardFooter>
-    </Card>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <FormField
+                  control={form.control}
+                  name="password"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("auth.password")}</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            type={showPassword ? "text" : "password"}
+                            placeholder={t("auth.passwordPlaceholder")}
+                            className="pr-10"
+                            {...field}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-0 top-0 h-full px-3 py-2"
+                            onClick={() => setShowPassword((value) => !value)}
+                          >
+                            {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      </FormControl>
+                      <div className="mt-2 flex h-1.5 w-full gap-1 overflow-hidden bg-muted">
+                        <div className={cn("h-full flex-1", strength >= 1 ? "bg-destructive" : "bg-transparent")} />
+                        <div className={cn("h-full flex-1", strength >= 2 ? "bg-[color:var(--color-warning)]" : "bg-transparent")} />
+                        <div className={cn("h-full flex-1", strength >= 3 ? "bg-[color:var(--color-success)]" : "bg-transparent")} />
+                      </div>
+                      <p className="min-h-[16px] text-xs text-muted-foreground">{strengthLabel}</p>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+
+                <FormField
+                  control={form.control}
+                  name="confirmPassword"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t("auth.confirmPassword")}</FormLabel>
+                      <FormControl>
+                        <div className="relative">
+                          <Input
+                            type={showConfirmPassword ? "text" : "password"}
+                            placeholder={t("auth.passwordPlaceholder")}
+                            className="pr-10"
+                            {...field}
+                          />
+                          <Button
+                            type="button"
+                            variant="ghost"
+                            size="icon"
+                            className="absolute right-0 top-0 h-full px-3 py-2"
+                            onClick={() => setShowConfirmPassword((value) => !value)}
+                          >
+                            {showConfirmPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
+                          </Button>
+                        </div>
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+
+              <FormField
+                control={form.control}
+                name="role"
+                render={({ field }) => (
+                  <FormItem className="space-y-3 pt-2">
+                    <FormLabel>{t("auth.accountType")}</FormLabel>
+                    <FormControl>
+                      <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                        <button
+                          type="button"
+                          aria-pressed={field.value === UserRole.ETHIOPIAN_AGENT}
+                          aria-label={t("auth.ethiopianAgency")}
+                          className={cn(
+                            "border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                            field.value === UserRole.ETHIOPIAN_AGENT ? "border-primary bg-primary/5" : "border-border bg-card"
+                          )}
+                          onClick={() => field.onChange(UserRole.ETHIOPIAN_AGENT)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <Users className="mt-0.5 h-5 w-5 text-primary" />
+                            <div className="space-y-1">
+                              <p className="text-sm font-bold uppercase tracking-[0.06em]">{t("auth.ethiopianAgency")}</p>
+                              <p className="text-xs text-muted-foreground">{t("auth.ethiopianAgencyBody")}</p>
+                            </div>
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          aria-pressed={field.value === UserRole.FOREIGN_AGENT}
+                          aria-label={t("auth.foreignAgency")}
+                          className={cn(
+                            "border p-4 text-left transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary focus-visible:ring-offset-2",
+                            field.value === UserRole.FOREIGN_AGENT ? "border-primary bg-primary/5" : "border-border bg-card"
+                          )}
+                          onClick={() => field.onChange(UserRole.FOREIGN_AGENT)}
+                        >
+                          <div className="flex items-start gap-3">
+                            <Globe className="mt-0.5 h-5 w-5 text-primary" />
+                            <div className="space-y-1">
+                              <p className="text-sm font-bold uppercase tracking-[0.06em]">{t("auth.foreignAgency")}</p>
+                              <p className="text-xs text-muted-foreground">{t("auth.foreignAgencyBody")}</p>
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+                    </FormControl>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name="acceptTerms"
+                render={({ field }) => (
+                  <FormItem className="flex flex-row items-start space-x-3 space-y-0 pt-2">
+                    <FormControl>
+                      <Checkbox checked={field.value} onCheckedChange={field.onChange} />
+                    </FormControl>
+                    <div className="space-y-1 leading-none">
+                      <FormLabel className="cursor-pointer font-normal">{t("auth.acceptTerms")}</FormLabel>
+                    </div>
+                  </FormItem>
+                )}
+              />
+
+              <Button type="submit" className="w-full" disabled={isPending}>
+                {isPending ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    {t("auth.submittingRegistration")}
+                  </>
+                ) : (
+                  t("auth.submitRegistration")
+                )}
+              </Button>
+            </form>
+          </Form>
+        </CardContent>
+        <CardFooter className="border-t border-border pt-4 text-sm text-muted-foreground">
+          <div>
+            {t("auth.haveAccount")}{" "}
+            <Link href="/login" className="text-primary hover:underline">
+              {t("common.login")}
+            </Link>
+          </div>
+        </CardFooter>
+      </Card>
+    </AgencyAuthSessionGate>
   )
 }

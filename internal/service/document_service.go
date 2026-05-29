@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -98,9 +99,33 @@ func parseDocumentType(value string) (domain.DocumentType, error) {
 		return domain.Photo, nil
 	case string(domain.Video):
 		return domain.Video, nil
+	case string(domain.Medical):
+		return domain.Medical, nil
 	default:
 		return "", ErrInvalidDocumentType
 	}
+}
+
+func validateAndBufferUpload(file io.Reader, fileName string) (io.Reader, string, error) {
+	if file == nil {
+		return nil, "", fmt.Errorf("file is required")
+	}
+
+	limited := io.LimitReader(file, maxDocumentFileSizeBytes+1)
+	data, err := io.ReadAll(limited)
+	if err != nil {
+		return nil, "", fmt.Errorf("read upload: %w", err)
+	}
+	if int64(len(data)) > maxDocumentFileSizeBytes {
+		return nil, "", ErrFileTooLarge
+	}
+
+	contentType, err := detectContentTypeFromFileName(fileName)
+	if err != nil {
+		return nil, "", err
+	}
+
+	return bytes.NewReader(data), contentType, nil
 }
 
 func detectContentTypeFromFileName(fileName string) (string, error) {
@@ -131,6 +156,11 @@ func validateDocumentTypeContentType(documentType domain.DocumentType, contentTy
 		}
 	case domain.Video:
 		if contentType != "video/mp4" {
+			return ErrInvalidFileType
+		}
+	case domain.Medical:
+		// Medical certificates may be submitted as PDF or image scans.
+		if contentType != "application/pdf" && contentType != "image/jpeg" && contentType != "image/png" {
 			return ErrInvalidFileType
 		}
 	default:

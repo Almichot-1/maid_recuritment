@@ -3,6 +3,7 @@
 import * as React from "react"
 import { useParams, useRouter } from "next/navigation"
 import { format, formatDistanceToNow } from "date-fns"
+import { toast } from "sonner"
 import { 
   Calendar, 
   CheckCircle2, 
@@ -23,7 +24,7 @@ import {
 } from "lucide-react"
 import Link from "next/link"
 
-import { useCandidate, useDeleteCandidate, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
+import { downloadCandidateCVFile, useCandidate, useDeleteCandidate, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidateShares, usePairingContext, useUnshareCandidateFromWorkspace } from "@/hooks/use-pairings"
 import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
@@ -63,7 +64,7 @@ export default function CandidateDetailPage() {
   
   const { mutate: deleteCandidate, isPending: isDeleting } = useDeleteCandidate(candidateId)
   const { mutate: publishCandidate, isPending: isPublishing } = usePublishCandidate(candidateId)
-  const { mutate: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
+  const { mutateAsync: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId)
   const { mutate: unshareFromWorkspace, isPending: isRemovingFromWorkspace } = useUnshareCandidateFromWorkspace()
 
@@ -72,6 +73,7 @@ export default function CandidateDetailPage() {
   const [publishDialogOpen, setPublishDialogOpen] = React.useState(false)
   const [imagePreview, setImagePreview] = React.useState<string | null>(null)
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
+  const [isDownloadingCV, setIsDownloadingCV] = React.useState(false)
 
   // Show loading skeleton
   if (isLoading) {
@@ -185,6 +187,21 @@ export default function CandidateDetailPage() {
     setPublishDialogOpen(false)
   }
 
+  const handleDownloadCV = async () => {
+    if (!candidate.cv_pdf_url) {
+      return
+    }
+
+    try {
+      setIsDownloadingCV(true)
+      await downloadCandidateCVFile(candidate.id, candidate.full_name)
+    } catch {
+      toast.error("Failed to download CV")
+    } finally {
+      setIsDownloadingCV(false)
+    }
+  }
+
   const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
     updateStep({ step_name: stepName, status, notes })
   }
@@ -290,6 +307,34 @@ export default function CandidateDetailPage() {
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Age</p>
                   <p className="text-base font-semibold">{candidate.age} years</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Nationality</p>
+                  <p className="text-base font-semibold">{candidate.nationality || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Date of birth</p>
+                  <p className="text-base font-semibold">{candidate.date_of_birth || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Place of birth</p>
+                  <p className="text-base font-semibold">{candidate.place_of_birth || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Religion</p>
+                  <p className="text-base font-semibold">{candidate.religion || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Marital status</p>
+                  <p className="text-base font-semibold">{candidate.marital_status || "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Children</p>
+                  <p className="text-base font-semibold">{candidate.children_count ?? "N/A"}</p>
+                </div>
+                <div className="space-y-1">
+                  <p className="text-sm font-medium text-muted-foreground">Education level</p>
+                  <p className="text-base font-semibold">{candidate.education_level || "N/A"}</p>
                 </div>
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Experience</p>
@@ -479,14 +524,20 @@ export default function CandidateDetailPage() {
                     <span className="text-sm font-medium text-green-800 dark:text-green-300">CV Generated</span>
                   </div>
                   <p className="text-sm text-muted-foreground">
-                    Open the dedicated CV page to preview the final PDF and download it cleanly.
+                    Download the final PDF directly, or open the preview page only when you want to inspect the layout.
                   </p>
-                  <Button variant="outline" asChild>
-                    <Link href={cvPageHref}>
+                  <div className="flex flex-col gap-3 sm:flex-row">
+                    <Button variant="outline" onClick={handleDownloadCV} disabled={isDownloadingCV}>
                       <Download className="h-4 w-4 mr-2" />
-                      Download CV
-                    </Link>
-                  </Button>
+                      {isDownloadingCV ? "Downloading..." : "Download CV"}
+                    </Button>
+                    <Button variant="ghost" asChild>
+                      <Link href={cvPageHref}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview CV
+                      </Link>
+                    </Button>
+                  </div>
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -500,7 +551,7 @@ export default function CandidateDetailPage() {
                     <Button asChild>
                       <Link href={cvPageHref}>
                         <Download className="h-4 w-4 mr-2" />
-                        Download CV
+                        Prepare CV
                       </Link>
                     </Button>
                   ) : null}
@@ -527,15 +578,17 @@ export default function CandidateDetailPage() {
                 </div>
               </CardHeader>
               <CardContent>
-                <StatusTimeline
-                  steps={progressData.steps}
-                  canUpdate={isOwner}
-                  onUpdateStep={handleUpdateStep}
-                  isUpdating={isUpdatingStep}
-                />
-              </CardContent>
-            </Card>
-          )}
+              <StatusTimeline
+                steps={progressData.steps}
+                canUpdate={isOwner}
+                onUpdateStep={handleUpdateStep}
+                isUpdating={isUpdatingStep}
+                onUploadMedicalDocument={(file) => uploadDocument({ file, type: "medical" })}
+                isUploadingMedicalDocument={isUploadingDocument}
+              />
+            </CardContent>
+          </Card>
+        )}
         </div>
 
         {/* Right Column - Actions & Info */}
@@ -592,10 +645,32 @@ export default function CandidateDetailPage() {
                   )}
 
                   {(candidate.cv_pdf_url || canGenerateCV) && (
-                    <Button className="w-full" variant="outline" asChild>
+                    <Button
+                      className="w-full"
+                      variant="outline"
+                      onClick={candidate.cv_pdf_url ? handleDownloadCV : undefined}
+                      disabled={isDownloadingCV}
+                      asChild={!candidate.cv_pdf_url}
+                    >
+                      {candidate.cv_pdf_url ? (
+                        <span>
+                          <Download className="h-4 w-4 mr-2" />
+                          {isDownloadingCV ? "Downloading..." : "Download CV"}
+                        </span>
+                      ) : (
+                        <Link href={cvPageHref}>
+                          <Download className="h-4 w-4 mr-2" />
+                          Prepare CV
+                        </Link>
+                      )}
+                    </Button>
+                  )}
+
+                  {candidate.cv_pdf_url && (
+                    <Button className="w-full" variant="ghost" asChild>
                       <Link href={cvPageHref}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Download CV
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview CV
                       </Link>
                     </Button>
                   )}
@@ -649,10 +724,17 @@ export default function CandidateDetailPage() {
               {isForeignAgent && (
                 <>
                   {candidate.cv_pdf_url ? (
-                    <Button className="w-full" variant="outline" asChild>
-                      <Link href={cvPageHref}>
+                    <Button className="w-full" variant="outline" onClick={handleDownloadCV} disabled={isDownloadingCV}>
                         <Download className="h-4 w-4 mr-2" />
-                        Download CV
+                        {isDownloadingCV ? "Downloading..." : "Download CV"}
+                    </Button>
+                  ) : null}
+
+                  {candidate.cv_pdf_url ? (
+                    <Button className="w-full" variant="ghost" asChild>
+                      <Link href={cvPageHref}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview CV
                       </Link>
                     </Button>
                   ) : null}

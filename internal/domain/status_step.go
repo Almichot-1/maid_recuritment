@@ -11,7 +11,7 @@ const (
 )
 
 const (
-	Medical         = "Medical"
+	MedicalStep     = "Medical"
 	CoCPending      = "CoC Pending"
 	CoCOnline       = "CoC Online"
 	LMISPending     = "LMIS Pending"
@@ -21,7 +21,8 @@ const (
 	TicketConfirmed = "Ticket Confirmed"
 	Arrived         = "Arrived"
 
-	MedicalTest    = Medical
+	// Aliases kept for backwards compatibility.
+	MedicalTest    = MedicalStep
 	LMISApproval   = LMISIssued
 	VisaProcessing = TicketPending
 	FlightBooked   = TicketBooked

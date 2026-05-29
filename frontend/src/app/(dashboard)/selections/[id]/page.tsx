@@ -5,6 +5,7 @@ import Link from "next/link"
 import { useParams, useRouter } from "next/navigation"
 import { format } from "date-fns"
 import {
+  AlertTriangle,
   BadgeCheck,
   CheckCircle2,
   ChevronRight,
@@ -27,10 +28,9 @@ import {
   useSelectionApprovals,
   useUploadSelectionDocument,
 } from "@/hooks/use-selections"
-import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
+import { useCandidateProgress } from "@/hooks/use-status-steps"
 import { SelectionStatus } from "@/types"
-import { ApprovalDialog } from "@/components/selections/approval-dialog"
-import { StatusTimeline } from "@/components/candidates/status-timeline"
+import { RejectSelectionDialog } from "@/components/selections/approval-dialog"
 import { DocumentUpload } from "@/components/candidates/document-upload"
 import { LockCountdown } from "@/components/selections/lock-countdown"
 import { Badge } from "@/components/ui/badge"
@@ -49,11 +49,16 @@ export default function SelectionDetailPage() {
   const { data: approvalStatus, isLoading: isApprovalsLoading } = useSelectionApprovals(selectionId)
   const { mutate: approveSelection, isPending: isApproving } = useApproveSelection(selectionId, candidateId)
   const { mutate: rejectSelection, isPending: isRejecting } = useRejectSelection(selectionId, candidateId)
-  const { mutate: uploadSelectionDocument, isPending: isUploadingSelectionDocument } = useUploadSelectionDocument(selectionId)
-  const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId || "")
+  const { mutateAsync: uploadSelectionDocument, isPending: isUploadingSelectionDocument } = useUploadSelectionDocument(selectionId)
 
-  const [approveDialogOpen, setApproveDialogOpen] = React.useState(false)
   const [rejectDialogOpen, setRejectDialogOpen] = React.useState(false)
+  const [replacingDocumentType, setReplacingDocumentType] = React.useState<"contract" | "employer_id" | null>(null)
+  const [activeUploadType, setActiveUploadType] = React.useState<"contract" | "employer_id" | null>(null)
+  const [uploadProgress, setUploadProgress] = React.useState<Record<"contract" | "employer_id", number>>({
+    contract: 0,
+    employer_id: 0,
+  })
+  const [uploadErrors, setUploadErrors] = React.useState<Partial<Record<"contract" | "employer_id", string>>>({})
 
   if (isSelectionLoading || isApprovalsLoading || (candidateId && isProgressLoading)) {
     return (
@@ -84,26 +89,42 @@ export default function SelectionDetailPage() {
   const isExpired = selection.status === SelectionStatus.EXPIRED
   const showTrackingTimeline = !!progressData && progressData.steps.length > 0
   const trackingPageHref = `/candidates/${selection.candidate_id}/tracking`
-  const canUpdateProgress = isEthiopianAgent && candidate.created_by === user?.id
   const hasEmployerContract = !!selection.employer_contract?.file_url
   const hasEmployerID = !!selection.employer_id?.file_url
   const hasRequiredEmployerDocuments = hasEmployerContract && hasEmployerID
+  const approvalBlockedByEmployerPackage = isEthiopianAgent && isPending && !hasRequiredEmployerDocuments
+  const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
 
-  const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
-    if (!candidateId || !canUpdateProgress) {
-      return
+  const handleUploadSelectionDocument = async (type: "contract" | "employer_id", file: File) => {
+    setActiveUploadType(type)
+    setUploadProgress((current) => ({ ...current, [type]: 0 }))
+    setUploadErrors((current) => {
+      const next = { ...current }
+      delete next[type]
+      return next
+    })
+
+    try {
+      await uploadSelectionDocument({
+        type,
+        file,
+        onProgress: (progress) => {
+          setUploadProgress((current) => ({ ...current, [type]: progress }))
+        },
+      })
+      setReplacingDocumentType((current) => (current === type ? null : current))
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Upload failed. Try a PDF, JPG, or PNG under 10 MB."
+      setUploadErrors((current) => ({ ...current, [type]: message }))
+      throw error
+    } finally {
+      setActiveUploadType((current) => (current === type ? null : current))
+      setUploadProgress((current) => ({ ...current, [type]: 0 }))
     }
-    updateStep({ step_name: stepName, status, notes })
-  }
-
-  const handleUploadSelectionDocument = (type: "contract" | "employer_id", file: File) => {
-    uploadSelectionDocument({ type, file })
   }
 
   const handleApprove = () => {
-    approveSelection(undefined, {
-      onSuccess: () => setApproveDialogOpen(false),
-    })
+    approveSelection()
   }
 
   const handleReject = (reason?: string) => {
@@ -166,7 +187,7 @@ export default function SelectionDetailPage() {
                   </div>
 
                   {isPending && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 p-3">
                       <LockCountdown expiresAt={selection.expires_at} className="text-sm" />
                     </div>
                   )}
@@ -228,9 +249,9 @@ export default function SelectionDetailPage() {
 
           <Card className="overflow-hidden">
             <CardHeader>
-              <CardTitle>Employer Contract Package</CardTitle>
+              <CardTitle>Employer contract package</CardTitle>
               <CardDescription>
-                The foreign employer uploads the requested contract and employer ID here so the Ethiopian agency can review them before approval.
+                Required before the Ethiopian agency can approve: signed contract (or offer letter) and employer ID. Drag and drop PDF, JPG, or PNG files (max 10 MB each).
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -240,28 +261,43 @@ export default function SelectionDetailPage() {
                   label="Contract file"
                   description="Offer letter, signed contract, or requested working terms."
                   document={selection.employer_contract}
+                  canReplace={!isEthiopianAgent && isPending}
+                  onReplace={() => setReplacingDocumentType("contract")}
+                  uploading={activeUploadType === "contract"}
+                  progress={uploadProgress.contract}
                 />
                 <SupportingDocumentCard
                   icon={<FileBadge2 className="h-4 w-4" />}
                   label="Employer ID"
                   description="Passport, national ID, or employer identity proof."
                   document={selection.employer_id}
+                  canReplace={!isEthiopianAgent && isPending}
+                  onReplace={() => setReplacingDocumentType("employer_id")}
+                  uploading={activeUploadType === "employer_id"}
+                  progress={uploadProgress.employer_id}
                 />
               </div>
 
               {isPending && !hasRequiredEmployerDocuments ? (
-                <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                  The approval package is not complete yet. Both the contract and the employer ID must be uploaded before this selection can be approved.
+                <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
+                  {isEthiopianAgent
+                    ? "Waiting for contract + employer ID before you can approve."
+                    : "Upload both files so the Ethiopian agency can approve."}
                 </div>
               ) : null}
 
               {!isEthiopianAgent && isPending ? (
                 <div className="grid gap-4 md:grid-cols-2">
-                  {!hasEmployerContract ? (
+                  {!hasEmployerContract || replacingDocumentType === "contract" ? (
+                    <div className="space-y-2">
                     <DocumentUpload
                       documentType="contract"
-                      title="Upload contract"
-                      description="Drop a PDF, JPG, or PNG contract file."
+                      title={hasEmployerContract ? "Replace contract file" : "Contract file"}
+                      description={
+                        activeUploadType === "contract" && uploadProgress.contract > 0
+                          ? `Uploading… ${uploadProgress.contract}%`
+                          : "Drag and drop or click to choose a contract (PDF, JPG, PNG)."
+                      }
                       accept={{
                         "application/pdf": [".pdf"],
                         "image/jpeg": [".jpg", ".jpeg"],
@@ -269,16 +305,29 @@ export default function SelectionDetailPage() {
                       }}
                       maxSize={10485760}
                       mode="instant"
-                      disabled={isUploadingSelectionDocument}
+                      disabled={isUploadingSelectionDocument && activeUploadType !== "contract"}
+                      onRemove={() => setReplacingDocumentType((current) => (current === "contract" ? null : current))}
                       onUpload={(file) => handleUploadSelectionDocument("contract", file)}
                     />
+                    {activeUploadType === "contract" && uploadProgress.contract > 0 ? (
+                      <UploadProgressBar progress={uploadProgress.contract} />
+                    ) : null}
+                    {uploadErrors.contract ? (
+                      <p className="text-sm text-destructive">{uploadErrors.contract}</p>
+                    ) : null}
+                    </div>
                   ) : null}
 
-                  {!hasEmployerID ? (
+                  {!hasEmployerID || replacingDocumentType === "employer_id" ? (
+                    <div className="space-y-2">
                     <DocumentUpload
                       documentType="employer_id"
-                      title="Upload employer ID"
-                      description="Drop a PDF, JPG, or PNG identity document."
+                      title={hasEmployerID ? "Replace employer ID" : "Employer ID"}
+                      description={
+                        activeUploadType === "employer_id" && uploadProgress.employer_id > 0
+                          ? `Uploading… ${uploadProgress.employer_id}%`
+                          : "Drag and drop or click to choose ID proof (PDF, JPG, PNG)."
+                      }
                       accept={{
                         "application/pdf": [".pdf"],
                         "image/jpeg": [".jpg", ".jpeg"],
@@ -286,9 +335,17 @@ export default function SelectionDetailPage() {
                       }}
                       maxSize={10485760}
                       mode="instant"
-                      disabled={isUploadingSelectionDocument}
+                      disabled={isUploadingSelectionDocument && activeUploadType !== "employer_id"}
+                      onRemove={() => setReplacingDocumentType((current) => (current === "employer_id" ? null : current))}
                       onUpload={(file) => handleUploadSelectionDocument("employer_id", file)}
                     />
+                    {activeUploadType === "employer_id" && uploadProgress.employer_id > 0 ? (
+                      <UploadProgressBar progress={uploadProgress.employer_id} />
+                    ) : null}
+                    {uploadErrors.employer_id ? (
+                      <p className="text-sm text-destructive">{uploadErrors.employer_id}</p>
+                    ) : null}
+                    </div>
                   ) : null}
                 </div>
               ) : null}
@@ -296,64 +353,53 @@ export default function SelectionDetailPage() {
           </Card>
 
           <Card>
-            <CardHeader>
-              <CardTitle>Recruitment Tracking</CardTitle>
-              <CardDescription>
-                After both agencies approve, this is where the shared recruitment process becomes visible.
-              </CardDescription>
+            <CardHeader className="space-y-1">
+              <CardTitle className="text-lg">Tracking</CardTitle>
+              <CardDescription>Update milestones on the dedicated tracking page.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              {showTrackingTimeline ? (
+              {showTrackingTimeline && progressData ? (
                 <>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="text-muted-foreground">Overall candidate status</span>
-                      <span className="font-semibold capitalize">
-                        {progressData.overall_status.replaceAll("_", " ")}
-                      </span>
+                  {failedStep ? (
+                    <div className="flex items-start gap-3 rounded-lg border border-destructive/30 bg-destructive/5 px-4 py-3 text-sm">
+                      <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-destructive" />
+                      <div>
+                        <p className="font-medium text-foreground">{failedStep.step_name}</p>
+                        <p className="text-muted-foreground">{failedStep.notes || "Needs attention"}</p>
+                      </div>
                     </div>
-                    <div className="flex items-center justify-between gap-3 text-sm">
+                  ) : null}
+                  <div className="space-y-2">
+                    <div className="flex items-center justify-between text-sm">
                       <span className="text-muted-foreground">Progress</span>
                       <span className="font-semibold">{Math.round(progressData.progress_percentage)}%</span>
                     </div>
                     <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
                       <div
-                        className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500"
+                        className="h-full bg-primary transition-all duration-500"
                         style={{ width: `${progressData.progress_percentage}%` }}
                       />
                     </div>
+                    {failedStep || progressData.steps.find((s) => s.step_status === "in_progress") ? (
+                      <p className="text-sm text-muted-foreground">
+                        Current:{" "}
+                        <span className="font-medium text-foreground">
+                          {(failedStep || progressData.steps.find((s) => s.step_status === "in_progress"))?.step_name}
+                        </span>
+                      </p>
+                    ) : null}
                   </div>
-
-                  <Separator />
-
-                  {!canUpdateProgress && isEthiopianAgent ? (
-                    <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                      You can monitor this process here, but only the Ethiopian agency that created this candidate can update the milestones.
-                    </div>
-                  ) : null}
-
-                  <div className="flex justify-end">
-                    <Button variant="outline" asChild>
-                      <Link href={trackingPageHref}>
-                        <Eye className="mr-2 h-4 w-4" />
-                        Open Process Tracking
-                      </Link>
-                    </Button>
-                  </div>
-
-                  <StatusTimeline
-                    steps={progressData.steps}
-                    canUpdate={canUpdateProgress}
-                    onUpdateStep={handleUpdateStep}
-                    isUpdating={isUpdatingStep}
-                  />
+                  <Button className="w-full" asChild>
+                    <Link href={trackingPageHref}>
+                      Open tracking
+                      <ChevronRight className="ml-2 h-4 w-4" />
+                    </Link>
+                  </Button>
                 </>
               ) : (
-                <div className="rounded-lg border bg-muted/40 p-4 text-sm text-muted-foreground">
-                  {isPending
-                    ? "Tracking has not started yet. Once both agencies approve, the Ethiopian agency can update medical, CoC, LMIS, ticket, and arrival steps here."
-                    : "This selection is approved, but the tracking steps are still being prepared."}
-                </div>
+                <p className="text-sm text-muted-foreground">
+                  {isPending ? "Available after both agencies approve." : "Preparing tracking steps…"}
+                </p>
               )}
             </CardContent>
           </Card>
@@ -367,18 +413,18 @@ export default function SelectionDetailPage() {
             <CardContent className="space-y-3">
               {isPending && !userHasApproved && (
                 <>
-                  {!hasRequiredEmployerDocuments ? (
-                    <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                      Approval is blocked until the employer contract package is complete.
+                  {approvalBlockedByEmployerPackage ? (
+                    <div className="rounded-lg border border-warning/30 bg-warning/10 px-4 py-3 text-sm text-foreground">
+                      Upload contract + employer ID first.
                     </div>
                   ) : null}
                   <Button
-                    className="w-full bg-green-600 hover:bg-green-700"
-                    onClick={() => setApproveDialogOpen(true)}
-                    disabled={isApproving || isRejecting || !hasRequiredEmployerDocuments}
+                    className="w-full"
+                    onClick={handleApprove}
+                    disabled={isApproving || isRejecting || approvalBlockedByEmployerPackage}
                   >
                     {isApproving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Approve Selection
+                    Approve
                   </Button>
                   <Button
                     variant="outline"
@@ -387,7 +433,7 @@ export default function SelectionDetailPage() {
                     disabled={isApproving || isRejecting}
                   >
                     {isRejecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Reject Selection
+                    Reject
                   </Button>
                 </>
               )}
@@ -399,20 +445,20 @@ export default function SelectionDetailPage() {
               )}
 
               {isApproved && (
-                <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-900/50 dark:bg-green-950/20 dark:text-green-200">
-                  Both parties approved this selection. The candidate can continue through the recruitment steps.
+                <div className="rounded-lg border border-success/30 bg-success/10 p-3 text-sm text-foreground">
+                  Both agencies approved. Continue on the tracking page.
                 </div>
               )}
 
               {isRejected && (
-                <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800 dark:border-red-900/50 dark:bg-red-950/20 dark:text-red-200">
-                  This selection has been rejected and will not move forward.
+                <div className="rounded-lg border border-destructive/30 bg-destructive/5 p-3 text-sm text-foreground">
+                  This selection was rejected.
                 </div>
               )}
 
               {isExpired && (
-                <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800 dark:border-amber-900/50 dark:bg-amber-950/20 dark:text-amber-200">
-                  This selection expired before both approvals were completed.
+                <div className="rounded-lg border border-warning/30 bg-warning/10 p-3 text-sm text-foreground">
+                  This selection expired before both agencies approved.
                 </div>
               )}
 
@@ -436,37 +482,43 @@ export default function SelectionDetailPage() {
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader>
-              <CardTitle>Summary</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4 text-sm">
-              <SummaryRow label="Selection ID" value={selection.id} mono />
-              <SummaryRow label="Candidate ID" value={selection.candidate_id} mono />
-              <SummaryRow label="Selected By" value={selection.selected_by} mono />
-              <SummaryRow label="Expires" value={format(new Date(selection.expires_at), "MMM dd, yyyy h:mm a")} />
-            </CardContent>
-          </Card>
+          {failedStep ? (
+            <Card>
+              <CardHeader>
+                <CardTitle>Current Issue</CardTitle>
+                <CardDescription>The shared recruitment process is waiting on this issue to be resolved.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="rounded-2xl border border-rose-300/50 bg-rose-50/80 p-4 text-rose-900 dark:border-rose-900/40 dark:bg-rose-950/25 dark:text-rose-100">
+                  <p className="font-semibold">{failedStep.step_name}</p>
+                  <p className="mt-2">{failedStep.notes || "The Ethiopian agency has not added a written reason yet."}</p>
+                </div>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
       </div>
 
-      <ApprovalDialog
-        open={approveDialogOpen}
-        onOpenChange={setApproveDialogOpen}
-        candidateName={candidate.full_name}
-        type="approve"
-        onConfirm={handleApprove}
-        isLoading={isApproving}
-      />
-
-      <ApprovalDialog
+      <RejectSelectionDialog
         open={rejectDialogOpen}
         onOpenChange={setRejectDialogOpen}
-        candidateName={candidate.full_name}
-        type="reject"
         onConfirm={handleReject}
         isLoading={isRejecting}
       />
+    </div>
+  )
+}
+
+function UploadProgressBar({ progress }: { progress: number }) {
+  return (
+    <div className="space-y-1">
+      <div className="h-1.5 w-full overflow-hidden rounded-full bg-muted">
+        <div
+          className="h-full bg-primary transition-all duration-300"
+          style={{ width: `${Math.min(100, Math.max(0, progress))}%` }}
+        />
+      </div>
+      <p className="text-xs text-muted-foreground">{progress}% complete</p>
     </div>
   )
 }
@@ -504,68 +556,76 @@ function ApprovalPartyCard({ label, approved }: { label: string; approved: boole
   )
 }
 
-function SummaryRow({ label, value, mono = false }: { label: string; value: string; mono?: boolean }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{label}</p>
-      <p className={mono ? "break-all font-mono text-xs" : "font-medium"}>{value}</p>
-    </div>
-  )
-}
-
 function SupportingDocumentCard({
   icon,
   label,
   description,
   document,
+  canReplace = false,
+  onReplace,
+  uploading = false,
+  progress = 0,
 }: {
   icon: React.ReactNode
   label: string
   description: string
   document?: { file_url: string; file_name: string; uploaded_at?: string }
+  canReplace?: boolean
+  onReplace?: () => void
+  uploading?: boolean
+  progress?: number
 }) {
   if (!document) {
     return (
-      <div className="rounded-[1.4rem] border border-dashed border-border/70 bg-muted/20 p-4">
+      <div className="rounded-lg border border-dashed border-border bg-muted/20 p-4">
         <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
           {icon}
           {label}
         </div>
         <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-        <p className="mt-4 inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-medium text-amber-800 dark:bg-amber-950/40 dark:text-amber-200">
+        <p className="mt-4 inline-flex items-center gap-2 rounded-full border border-border bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
           <Clock className="h-3.5 w-3.5" />
-          Not uploaded yet
+          Not uploaded
         </p>
       </div>
     )
   }
 
   return (
-    <div className="rounded-[1.4rem] border border-emerald-200/70 bg-emerald-50/70 p-4 dark:border-emerald-900/40 dark:bg-emerald-950/20">
+    <div className="rounded-lg border border-success/30 bg-success/5 p-4">
       <div className="flex items-center gap-2 text-sm font-semibold text-foreground">
         {icon}
         {label}
       </div>
       <p className="mt-2 text-sm text-muted-foreground">{description}</p>
-      <div className="mt-4 space-y-3 rounded-2xl border border-emerald-200/60 bg-background/90 p-3 dark:border-emerald-900/30">
-        <div className="flex items-start justify-between gap-3">
-          <div className="min-w-0">
-            <p className="truncate font-medium text-foreground">{document.file_name}</p>
+        <div className="mt-4 space-y-3 rounded-lg border border-border bg-card p-3">
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              <p className="truncate font-medium text-foreground">{document.file_name}</p>
             <p className="text-xs text-muted-foreground">
               {document.uploaded_at ? `Uploaded ${format(new Date(document.uploaded_at), "MMM dd, yyyy h:mm a")}` : "Uploaded"}
             </p>
           </div>
-          <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
+          <Badge variant="default" className="shrink-0">
             <BadgeCheck className="mr-1 h-3.5 w-3.5" />
             Ready
           </Badge>
         </div>
+        {uploading ? (
+          <p className="text-xs font-medium text-primary">Uploading replacement... {progress}%</p>
+        ) : null}
         <Button variant="outline" size="sm" asChild>
           <a href={document.file_url} target="_blank" rel="noreferrer">
             <Eye className="mr-2 h-4 w-4" />
             View File
           </a>
         </Button>
+        {canReplace && onReplace ? (
+          <Button variant="ghost" size="sm" onClick={onReplace}>
+            <FileText className="mr-2 h-4 w-4" />
+            Replace File
+          </Button>
+        ) : null}
       </div>
     </div>
   )

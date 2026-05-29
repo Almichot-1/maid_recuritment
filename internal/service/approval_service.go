@@ -91,7 +91,10 @@ func (s *ApprovalService) ApproveSelection(selectionID, userID string) error {
 		if !isInvolvedUser(selection, candidate, userID) {
 			return ErrNotAuthorized
 		}
-		if !selectionHasRequiredSupportingDocuments(selection) {
+		// Ethiopian agency must have the employer contract package before approving.
+		// Foreign agency may approve first and upload documents afterward.
+		if strings.TrimSpace(userID) == strings.TrimSpace(candidate.CreatedBy) &&
+			!selectionHasRequiredSupportingDocuments(selection) {
 			return ErrSelectionSupportingDocumentsRequired
 		}
 

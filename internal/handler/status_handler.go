@@ -139,8 +139,8 @@ func (h *StatusHandler) UpdateStatusStep(w http.ResponseWriter, r *http.Request)
 	}
 
 	status := domain.StepStatus(strings.TrimSpace(req.Status))
-	if status != domain.InProgress && status != domain.Completed {
-		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be in_progress or completed"})
+	if status != domain.Pending && status != domain.InProgress && status != domain.Completed {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be pending, in_progress, or completed"})
 		return
 	}
 
@@ -261,6 +261,8 @@ func (h *StatusHandler) writeStatusError(w http.ResponseWriter, err error) {
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 	case errors.Is(err, service.ErrInvalidStepTransition):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+	case errors.Is(err, service.ErrMedicalDocumentRequired):
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	default:
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 	}
@@ -273,7 +275,7 @@ func normalizeStepName(stepName string) string {
 func canonicalStepName(stepName string) (string, error) {
 	normalized := normalizeStepName(stepName)
 	mapping := map[string]string{
-		normalizeStepName(domain.Medical):         domain.Medical,
+		normalizeStepName(domain.MedicalStep):     domain.MedicalStep,
 		normalizeStepName(domain.CoCPending):      domain.CoCPending,
 		normalizeStepName(domain.CoCOnline):       domain.CoCOnline,
 		normalizeStepName(domain.LMISPending):     domain.LMISPending,

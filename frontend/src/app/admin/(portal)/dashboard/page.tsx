@@ -30,7 +30,7 @@ function MiniBars({ points }: { points: Array<{ label: string; value: number }> 
               className="w-full rounded-t-2xl bg-gradient-to-t from-slate-950 via-slate-800 to-amber-400"
               style={{ height: `${Math.max((point.value / max) * 100, point.value > 0 ? 12 : 4)}%` }}
             />
-            <span className="text-[11px] text-slate-500">{point.label}</span>
+            <span className="text-[11px] text-muted-foreground">{point.label}</span>
           </div>
         ))}
       </div>
@@ -114,7 +114,7 @@ export default function AdminDashboardPage() {
         description="A live control center for approvals, agency activity, candidate supply, and recruitment progress across the platform."
         action={
           <Link href="/admin/agencies/pending">
-            <Button className="gap-2 bg-slate-950 hover:bg-slate-800">
+            <Button className="gap-2">
               Review queue
               <ArrowRight className="h-4 w-4" />
             </Button>
@@ -142,14 +142,14 @@ export default function AdminDashboardPage() {
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metricCards.map((card) => (
-          <Card key={card.label} className="border-slate-200 bg-white/90 shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:shadow-lg">
+          <Card key={card.label} className="border-border bg-card shadow-sm transition-transform duration-200 hover:-translate-y-1 hover:shadow-lg">
             <CardContent className="flex items-start justify-between p-6">
               <div className="space-y-2">
-                <p className="text-sm font-medium text-slate-500">{card.label}</p>
-                <p className="text-3xl font-semibold tracking-tight text-slate-950">
+                <p className="text-sm font-medium text-muted-foreground">{card.label}</p>
+                <p className="text-3xl font-semibold tracking-tight text-foreground">
                   {statsLoading ? "..." : card.value}
                 </p>
-                <p className="text-sm text-slate-500">{card.detail}</p>
+                <p className="text-sm text-muted-foreground">{card.detail}</p>
               </div>
               <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-amber-100 text-amber-700">
                 <card.icon className="h-5 w-5" />
@@ -160,20 +160,20 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-[1.35fr_0.95fr]">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="space-y-2">
-            <CardTitle className="text-lg text-slate-950">Pending approval queue</CardTitle>
-            <p className="text-sm text-slate-500">Newest agency applications that still need an admin decision.</p>
+            <CardTitle className="text-lg text-foreground">Pending approval queue</CardTitle>
+            <p className="text-sm text-muted-foreground">Newest agency applications that still need an admin decision.</p>
           </CardHeader>
           <CardContent className="space-y-3">
             {pendingAgencies.slice(0, 5).map((agency) => (
-              <div key={agency.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 bg-white p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={agency.id} className="flex flex-col gap-3 rounded-2xl border border-border bg-card p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <p className="font-medium text-slate-950">{agency.company_name || agency.contact_person}</p>
+                    <p className="font-medium text-foreground">{agency.company_name || agency.contact_person}</p>
                     <AdminStatusBadge status={agency.account_status} />
                   </div>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-muted-foreground">
                     {agency.contact_person} • {agency.email}
                   </p>
                   <p className="text-xs uppercase tracking-wide text-slate-400">
@@ -186,23 +186,23 @@ export default function AdminDashboardPage() {
               </div>
             ))}
             {!pendingAgencies.length ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+              <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-muted-foreground">
                 No pending approvals right now. Newly registered agencies will appear here automatically.
               </div>
             ) : null}
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Candidate status distribution</CardTitle>
+            <CardTitle className="text-lg text-foreground">Candidate status distribution</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {candidateDistribution.map(([status, count]) => (
               <div key={status} className="space-y-2">
                 <div className="flex items-center justify-between text-sm">
                   <AdminStatusBadge status={status} />
-                  <span className="font-semibold text-slate-950">{count}</span>
+                  <span className="font-semibold text-foreground">{count}</span>
                 </div>
                 <div className="h-2 rounded-full bg-slate-100">
                   <div
@@ -212,23 +212,23 @@ export default function AdminDashboardPage() {
                 </div>
               </div>
             ))}
-            {!candidateDistribution.length ? <p className="text-sm text-slate-500">No candidate data available yet.</p> : null}
+            {!candidateDistribution.length ? <p className="text-sm text-muted-foreground">No candidate data available yet.</p> : null}
           </CardContent>
         </Card>
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Agency registrations over the last 7 days</CardTitle>
+            <CardTitle className="text-lg text-foreground">Agency registrations over the last 7 days</CardTitle>
           </CardHeader>
           <CardContent>
             <MiniBars points={registrationTrend} />
           </CardContent>
         </Card>
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Selections over the last 7 days</CardTitle>
+            <CardTitle className="text-lg text-foreground">Selections over the last 7 days</CardTitle>
           </CardHeader>
           <CardContent>
             <MiniBars points={selectionTrend} />
@@ -237,21 +237,21 @@ export default function AdminDashboardPage() {
       </div>
 
       <div className="grid gap-6 xl:grid-cols-2">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Top Ethiopian agencies</CardTitle>
+            <CardTitle className="text-lg text-foreground">Top Ethiopian agencies</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {topEthiopian.map((agency, index) => (
-              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-border p-4">
                 <div>
-                  <p className="font-medium text-slate-950">
+                  <p className="font-medium text-foreground">
                     {index + 1}. {agency.company_name || agency.contact_person}
                   </p>
-                  <p className="text-sm text-slate-500">Registered {formatShortDate(agency.registration_date)}</p>
+                  <p className="text-sm text-muted-foreground">Registered {formatShortDate(agency.registration_date)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold text-slate-950">{agency.total_candidates}</p>
+                  <p className="text-lg font-semibold text-foreground">{agency.total_candidates}</p>
                   <p className="text-xs uppercase tracking-wide text-slate-400">Candidates</p>
                 </div>
               </div>
@@ -259,21 +259,21 @@ export default function AdminDashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Top Foreign agencies</CardTitle>
+            <CardTitle className="text-lg text-foreground">Top Foreign agencies</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {topForeign.map((agency, index) => (
-              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div key={agency.id} className="flex items-center justify-between rounded-2xl border border-border p-4">
                 <div>
-                  <p className="font-medium text-slate-950">
+                  <p className="font-medium text-foreground">
                     {index + 1}. {agency.company_name || agency.contact_person}
                   </p>
-                  <p className="text-sm text-slate-500">Registered {formatShortDate(agency.registration_date)}</p>
+                  <p className="text-sm text-muted-foreground">Registered {formatShortDate(agency.registration_date)}</p>
                 </div>
                 <div className="text-right">
-                  <p className="text-lg font-semibold text-slate-950">{agency.total_selections}</p>
+                  <p className="text-lg font-semibold text-foreground">{agency.total_selections}</p>
                   <p className="text-xs uppercase tracking-wide text-slate-400">Selections</p>
                 </div>
               </div>

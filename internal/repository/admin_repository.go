@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 
 	"maid-recruitment-tracking/internal/config"
@@ -36,6 +37,7 @@ func (r *GormAdminRepository) Create(admin *domain.Admin) error {
 	if admin == nil {
 		return fmt.Errorf("create admin: admin is nil")
 	}
+	admin.Email = normalizeAdminEmail(admin.Email)
 	if err := validateAdminEmail(admin.Email); err != nil {
 		return err
 	}
@@ -51,6 +53,13 @@ func (r *GormAdminRepository) Create(admin *domain.Admin) error {
 	if admin.ID == "" {
 		admin.ID = uuid.NewString()
 	}
+	if !isBcryptPasswordHash(admin.PasswordHash) {
+		hashedPassword, err := bcrypt.GenerateFromPassword([]byte(admin.PasswordHash), bcrypt.DefaultCost)
+		if err != nil {
+			return fmt.Errorf("create admin: hash password: %w", err)
+		}
+		admin.PasswordHash = string(hashedPassword)
+	}
 	if err := r.db.Create(admin).Error; err != nil {
 		if isDuplicateEmailError(err) {
 			return ErrDuplicateEmail
@@ -62,7 +71,7 @@ func (r *GormAdminRepository) Create(admin *domain.Admin) error {
 
 func (r *GormAdminRepository) GetByEmail(email string) (*domain.Admin, error) {
 	var admin domain.Admin
-	if err := r.db.Where("email = ?", strings.TrimSpace(strings.ToLower(email))).First(&admin).Error; err != nil {
+	if err := r.db.Where("LOWER(email) = ?", normalizeAdminEmail(email)).First(&admin).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrAdminNotFound
 		}
@@ -110,6 +119,7 @@ func (r *GormAdminRepository) Update(admin *domain.Admin) error {
 	if strings.TrimSpace(admin.ID) == "" {
 		return fmt.Errorf("update admin: id is required")
 	}
+	admin.Email = normalizeAdminEmail(admin.Email)
 	if err := validateAdminEmail(admin.Email); err != nil {
 		return err
 	}
@@ -128,6 +138,13 @@ func (r *GormAdminRepository) Update(admin *domain.Admin) error {
 		"force_password_change": admin.ForcePasswordChange,
 	}
 	if strings.TrimSpace(admin.PasswordHash) != "" {
+		if !isBcryptPasswordHash(admin.PasswordHash) {
+			hashedPassword, err := bcrypt.GenerateFromPassword([]byte(admin.PasswordHash), bcrypt.DefaultCost)
+			if err != nil {
+				return fmt.Errorf("update admin: hash password: %w", err)
+			}
+			admin.PasswordHash = string(hashedPassword)
+		}
 		updates["password_hash"] = admin.PasswordHash
 	}
 	result := r.db.Model(&domain.Admin{}).Where("id = ?", admin.ID).Updates(updates)
@@ -153,6 +170,10 @@ func validateAdminEmail(email string) error {
 	return nil
 }
 
+func normalizeAdminEmail(email string) string {
+	return strings.TrimSpace(strings.ToLower(email))
+}
+
 func validateAdminRole(role domain.AdminRole) error {
 	switch role {
 	case domain.SuperAdmin, domain.SupportAdmin:
@@ -160,4 +181,8 @@ func validateAdminRole(role domain.AdminRole) error {
 	default:
 		return ErrInvalidAdminRole
 	}
+}
+
+func isBcryptPasswordHash(password string) bool {
+	return strings.HasPrefix(password, "$2a$") || strings.HasPrefix(password, "$2b$") || strings.HasPrefix(password, "$2y$")
 }

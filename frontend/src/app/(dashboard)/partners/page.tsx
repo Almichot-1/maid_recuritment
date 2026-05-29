@@ -14,6 +14,7 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Skeleton } from "@/components/ui/skeleton"
+import { useI18n } from "@/lib/i18n"
 import { cn } from "@/lib/utils"
 
 function partnerName(companyName?: string, fullName?: string) {
@@ -22,6 +23,7 @@ function partnerName(companyName?: string, fullName?: string) {
 
 export default function PartnersPage() {
   const { isEthiopianAgent } = useCurrentUser()
+  const { t } = useI18n()
   const {
     context,
     activePairingId,
@@ -41,9 +43,7 @@ export default function PartnersPage() {
   const activeSelectionCount = selections.filter((selection) => selection.status === "pending" || selection.status === "approved").length
   const inTrackingCount = selections.filter((selection) => selection.candidate?.status === "in_progress" || selection.candidate?.status === "completed").length
 
-  const headerText = isEthiopianAgent
-    ? "Switch between foreign partner agencies and see exactly which candidates from your library are visible inside each private workspace."
-    : "Switch between Ethiopian partner agencies and review the candidates and selections that belong to each private workspace."
+  const headerText = isEthiopianAgent ? t("partners.bodyEthiopian") : t("partners.bodyForeign")
 
   if (isPairingLoading) {
     return (
@@ -56,20 +56,15 @@ export default function PartnersPage() {
   if (!hasActivePairs || !context?.workspaces.length) {
     return (
       <div className="space-y-6">
-        <PageHeader
-          heading="Partner Workspaces"
-          text="This page comes alive once an admin connects your agency to at least one partner agency."
-        />
+        <PageHeader heading={t("partners.heading")} text={t("partners.noneBody")} />
         <Card className="border-dashed">
           <CardContent className="flex min-h-[260px] flex-col items-center justify-center gap-4 text-center">
-            <div className="flex h-14 w-14 items-center justify-center rounded-2xl bg-muted text-muted-foreground">
+            <div className="flex h-14 w-14 items-center justify-center border border-border bg-muted/20 text-muted-foreground">
               <Link2 className="h-6 w-6" />
             </div>
             <div className="space-y-2">
-              <h2 className="text-xl font-semibold">No partner workspaces yet</h2>
-              <p className="max-w-lg text-sm text-muted-foreground">
-                As soon as an admin approves a partnership, this page will show the related agency and the candidates shared into that workspace.
-              </p>
+              <h2 className="font-display text-3xl text-foreground">{t("partners.noneTitle")}</h2>
+              <p className="max-w-lg text-sm text-muted-foreground">{t("partners.noneBody")}</p>
             </div>
           </CardContent>
         </Card>
@@ -78,27 +73,25 @@ export default function PartnersPage() {
   }
 
   return (
-    <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-6 animate-in">
       <PageHeader
-        heading="Partner Workspaces"
+        heading={t("partners.heading")}
         text={headerText}
         action={
           <Button variant="outline" asChild>
             <Link href="/candidates">
-              <Users className="mr-2 h-4 w-4" />
-              {isEthiopianAgent ? "Open Candidate Library" : "Browse Candidates"}
+              <Users className="h-4 w-4" />
+              {isEthiopianAgent ? t("partners.openLibrary") : t("partners.browseCandidates")}
             </Link>
           </Button>
         }
       />
 
       <div className="grid gap-6 xl:grid-cols-[320px_minmax(0,1fr)]">
-        <Card className="border-border/70 shadow-sm">
+        <Card>
           <CardHeader>
-            <CardTitle>Partner agencies</CardTitle>
-            <CardDescription>
-              Choose a partner workspace to inspect the candidates and workflow inside it.
-            </CardDescription>
+            <CardTitle>{t("partners.listTitle")}</CardTitle>
+            <CardDescription>{t("partners.listBody")}</CardDescription>
           </CardHeader>
           <CardContent className="space-y-3">
             {context.workspaces.map((workspace) => {
@@ -109,27 +102,23 @@ export default function PartnersPage() {
                   type="button"
                   onClick={() => setActivePairingId(workspace.id)}
                   className={cn(
-                    "w-full rounded-2xl border p-4 text-left transition-all duration-200",
-                    isActive
-                      ? "border-sky-400 bg-sky-50 shadow-sm dark:border-sky-700 dark:bg-sky-950/30"
-                      : "border-border/70 bg-card hover:-translate-y-0.5 hover:border-sky-200 hover:bg-slate-50 dark:hover:bg-slate-900/50"
+                    "w-full border p-4 text-left transition-colors",
+                    isActive ? "border-primary bg-primary/5" : "border-border bg-background hover:bg-muted/20"
                   )}
                 >
                   <div className="flex items-start gap-3">
-                    <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-2xl bg-primary/10 text-primary">
+                    <div className="flex h-10 w-10 shrink-0 items-center justify-center border border-border text-primary">
                       <Building2 className="h-4 w-4" />
                     </div>
                     <div className="min-w-0 flex-1 space-y-2">
                       <div className="flex flex-wrap items-center gap-2">
-                        <p className="truncate font-semibold text-foreground">
+                        <p className="truncate text-sm font-bold uppercase tracking-[0.06em] text-foreground">
                           {partnerName(workspace.partner_agency.company_name, workspace.partner_agency.full_name)}
                         </p>
-                        {isActive ? <Badge>Active view</Badge> : null}
+                        {isActive ? <Badge variant="outline">{t("common.activeView")}</Badge> : null}
                       </div>
                       <p className="truncate text-xs text-muted-foreground">{workspace.partner_agency.email}</p>
-                      <Badge variant="outline" className="capitalize">
-                        {workspace.status.replaceAll("_", " ")}
-                      </Badge>
+                      <Badge variant="outline">{workspace.status.replaceAll("_", " ")}</Badge>
                     </div>
                   </div>
                 </button>
@@ -139,48 +128,42 @@ export default function PartnersPage() {
         </Card>
 
         <div className="space-y-6">
-          <Card className="overflow-hidden border-0 bg-[radial-gradient(circle_at_top_left,_rgba(14,165,233,0.18),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.18),_transparent_24%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96))] text-white shadow-xl">
+          <Card>
             <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_240px]">
               <div className="space-y-4">
-                <Badge className="w-fit rounded-full border-0 bg-white/15 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-sky-200 hover:bg-white/15">
-                  Active workspace
-                </Badge>
+                <p className="section-kicker">{t("partners.heroLabel")}</p>
                 <div className="space-y-2">
-                  <h2 className="text-3xl font-semibold tracking-tight">
+                  <h2 className="font-display text-4xl text-foreground">
                     {activeWorkspace
                       ? partnerName(activeWorkspace.partner_agency.company_name, activeWorkspace.partner_agency.full_name)
-                      : "Partner workspace"}
+                      : t("partners.heroDefaultTitle")}
                   </h2>
-                  <p className="max-w-2xl text-sm text-slate-200/90">
-                    {isEthiopianAgent
-                      ? "These are the candidates from your agency library that are currently visible to this foreign partner."
-                      : "These are the candidates this Ethiopian partner has made visible inside your current workspace."}
+                  <p className="max-w-2xl text-sm text-muted-foreground sm:text-base">
+                    {isEthiopianAgent ? t("partners.heroEthiopianBody") : t("partners.heroForeignBody")}
                   </p>
                 </div>
-                <div className="flex flex-wrap gap-3 text-xs text-slate-100/90">
-                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
-                    {candidateData?.meta.total ?? 0} candidate{candidateData?.meta.total === 1 ? "" : "s"} in this workspace
+                <div className="flex flex-wrap gap-3 text-xs text-muted-foreground">
+                  <span className="border border-border bg-background px-3 py-2">
+                    {candidateData?.meta.total ?? 0} {t("partners.visibleCandidates")}
                   </span>
-                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
-                    {activeSelectionCount} selection{activeSelectionCount === 1 ? "" : "s"} in motion
+                  <span className="border border-border bg-background px-3 py-2">
+                    {activeSelectionCount} {t("partners.selections")}
                   </span>
-                  <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
-                    {inTrackingCount} candidate{inTrackingCount === 1 ? "" : "s"} in tracking
+                  <span className="border border-border bg-background px-3 py-2">
+                    {inTrackingCount} {t("partners.tracking")}
                   </span>
                 </div>
               </div>
 
-              <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                <p className="text-xs uppercase tracking-[0.24em] text-sky-200">Helpful shortcut</p>
-                <p className="mt-3 text-sm text-slate-100/90">
-                  {isEthiopianAgent
-                    ? "Your full agency library is still on the Candidates page. This workspace page only shows what the selected partner can see."
-                    : "Switch partners here to compare which Ethiopian agency shared which candidates with you."}
+              <div className="space-y-3 border-l border-border pl-0 lg:pl-6">
+                <p className="section-kicker">{t("partners.shortcutTitle")}</p>
+                <p className="text-sm text-muted-foreground">
+                  {isEthiopianAgent ? t("partners.shortcutEthiopian") : t("partners.shortcutForeign")}
                 </p>
-                <Button className="mt-4 w-full bg-white text-slate-950 hover:bg-slate-100" asChild>
+                <Button className="w-full" asChild>
                   <Link href="/candidates">
-                    <ArrowRight className="mr-2 h-4 w-4" />
-                    {isEthiopianAgent ? "Go to full library" : "Open candidate browser"}
+                    <ArrowRight className="h-4 w-4" />
+                    {isEthiopianAgent ? t("partners.goLibrary") : t("partners.goBrowser")}
                   </Link>
                 </Button>
               </div>
@@ -188,37 +171,23 @@ export default function PartnersPage() {
           </Card>
 
           <div className="grid gap-4 md:grid-cols-3">
-            <SummaryCard
-              title="Visible candidates"
-              value={isCandidatesLoading ? "..." : String(candidateData?.meta.total ?? 0)}
-              description={isEthiopianAgent ? "Profiles this partner can review" : "Profiles shared into this workspace"}
-            />
-            <SummaryCard
-              title="Selections"
-              value={isSelectionsLoading ? "..." : String(activeSelectionCount)}
-              description="Selections tied to this workspace"
-            />
-            <SummaryCard
-              title="Tracking"
-              value={isSelectionsLoading ? "..." : String(inTrackingCount)}
-              description="Candidates already moving through recruitment"
-            />
+            <SummaryCard title={t("partners.visibleCandidates")} value={isCandidatesLoading ? "..." : String(candidateData?.meta.total ?? 0)} description={isEthiopianAgent ? t("partners.candidatesBodyEthiopian") : t("partners.candidatesBodyForeign")} />
+            <SummaryCard title={t("partners.selections")} value={isSelectionsLoading ? "..." : String(activeSelectionCount)} description={t("partners.activityBody")} />
+            <SummaryCard title={t("partners.tracking")} value={isSelectionsLoading ? "..." : String(inTrackingCount)} description={t("partners.activityBody")} />
           </div>
 
-          <Card className="border-border/70 shadow-sm">
+          <Card>
             <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
-                <CardTitle>Candidates in this workspace</CardTitle>
+                <CardTitle>{t("partners.candidatesTitle")}</CardTitle>
                 <CardDescription>
-                  {isEthiopianAgent
-                    ? "Only the candidates you have shared with this selected foreign partner appear here."
-                    : "Only the candidates shared by this selected Ethiopian partner appear here."}
+                  {isEthiopianAgent ? t("partners.candidatesBodyEthiopian") : t("partners.candidatesBodyForeign")}
                 </CardDescription>
               </div>
               <Button variant="outline" asChild>
                 <Link href="/selections">
-                  <CheckSquare className="mr-2 h-4 w-4" />
-                  Open selections
+                  <CheckSquare className="h-4 w-4" />
+                  {t("partners.openSelections")}
                 </Link>
               </Button>
             </CardHeader>
@@ -226,36 +195,32 @@ export default function PartnersPage() {
               {isCandidatesLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 4 }).map((_, index) => (
-                    <Skeleton key={index} className="h-14 w-full rounded-xl" />
+                    <Skeleton key={index} className="h-14 w-full" />
                   ))}
                 </div>
               ) : candidates.length > 0 ? (
                 <CandidateTable candidates={candidates} />
               ) : (
-                <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-                  <p className="text-sm font-semibold text-foreground">No candidates in this workspace yet</p>
+                <div className="border border-dashed border-border p-8 text-center">
+                  <p className="text-sm font-bold uppercase tracking-[0.06em] text-foreground">{t("partners.emptyCandidatesTitle")}</p>
                   <p className="mt-2 text-sm text-muted-foreground">
-                    {isEthiopianAgent
-                      ? "Open your full candidate library and share the right profiles with this partner agency."
-                      : "This Ethiopian partner has not shared any currently available candidates into this workspace yet."}
+                    {isEthiopianAgent ? t("partners.emptyCandidatesBodyEthiopian") : t("partners.emptyCandidatesBodyForeign")}
                   </p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card className="border-border/70 shadow-sm">
+          <Card>
             <CardHeader>
-              <CardTitle>Current workspace activity</CardTitle>
-              <CardDescription>
-                Selections and tracking items connected to the partner currently in view.
-              </CardDescription>
+              <CardTitle>{t("partners.activityTitle")}</CardTitle>
+              <CardDescription>{t("partners.activityBody")}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {isSelectionsLoading ? (
                 <div className="space-y-3">
                   {Array.from({ length: 3 }).map((_, index) => (
-                    <Skeleton key={index} className="h-16 w-full rounded-xl" />
+                    <Skeleton key={index} className="h-16 w-full" />
                   ))}
                 </div>
               ) : selections.length > 0 ? (
@@ -263,28 +228,24 @@ export default function PartnersPage() {
                   <Link
                     key={selection.id}
                     href={`/selections/${selection.id}`}
-                    className="flex items-center justify-between rounded-2xl border border-border/70 bg-muted/20 p-4 transition-colors hover:bg-muted/40"
+                    className="flex items-center justify-between border border-border bg-background p-4 transition-colors hover:bg-muted/20"
                   >
                     <div className="space-y-1">
-                      <p className="font-semibold text-foreground">{selection.candidate?.full_name || "Candidate"}</p>
+                      <p className="text-sm font-bold uppercase tracking-[0.06em] text-foreground">{selection.candidate?.full_name || "Candidate"}</p>
                       <p className="text-xs text-muted-foreground">
                         {selection.status.replaceAll("_", " ")} - {selection.created_at ? new Date(selection.created_at).toLocaleDateString() : "Recently updated"}
                       </p>
                     </div>
                     <div className="flex items-center gap-2">
-                      <Badge variant="outline" className="capitalize">
-                        {selection.candidate?.status?.replaceAll("_", " ") || "selection"}
-                      </Badge>
+                      <Badge variant="outline">{selection.candidate?.status?.replaceAll("_", " ") || "selection"}</Badge>
                       <Route className="h-4 w-4 text-muted-foreground" />
                     </div>
                   </Link>
                 ))
               ) : (
-                <div className="rounded-2xl border border-dashed border-border p-8 text-center">
-                  <p className="text-sm font-semibold text-foreground">No activity in this workspace yet</p>
-                  <p className="mt-2 text-sm text-muted-foreground">
-                    Once a candidate is selected here, the approvals and process tracking will appear in this panel.
-                  </p>
+                <div className="border border-dashed border-border p-8 text-center">
+                  <p className="text-sm font-bold uppercase tracking-[0.06em] text-foreground">{t("partners.emptyActivityTitle")}</p>
+                  <p className="mt-2 text-sm text-muted-foreground">{t("partners.emptyActivityBody")}</p>
                 </div>
               )}
             </CardContent>
@@ -297,10 +258,10 @@ export default function PartnersPage() {
 
 function SummaryCard({ title, value, description }: { title: string; value: string; description: string }) {
   return (
-    <Card className="border-border/70 shadow-sm">
+    <Card>
       <CardContent className="space-y-2 p-5">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{title}</p>
-        <p className="text-3xl font-semibold tracking-tight text-foreground">{value}</p>
+        <p className="route-stamp text-[11px] text-muted-foreground">{title}</p>
+        <p className="font-display text-4xl text-foreground">{value}</p>
         <p className="text-sm text-muted-foreground">{description}</p>
       </CardContent>
     </Card>

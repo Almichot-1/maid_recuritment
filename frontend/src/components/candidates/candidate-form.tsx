@@ -1,31 +1,24 @@
-"use client"
+"use client";
 
-import * as React from "react"
-import { useFieldArray, useForm } from "react-hook-form"
-import { zodResolver } from "@hookform/resolvers/zod"
+import * as React from "react";
+import { FieldErrors, useFieldArray, useForm } from "react-hook-form";
+import { zodResolver } from "@hookform/resolvers/zod";
 import {
-  BadgeCheck,
   BriefcaseBusiness,
-  Building2,
-  Globe2,
-  ImagePlus,
   Languages,
   Loader2,
   Plus,
   ShieldCheck,
-  Sparkles,
   Trash2,
   UserSquare2,
-} from "lucide-react"
-import { z } from "zod"
+} from "lucide-react";
+import { toast } from "sonner";
 
-import { CandidateInput, candidateSchema } from "@/lib/validations"
-import { useAgencyBranding } from "@/hooks/use-agency-branding"
-import { useCurrentUser } from "@/hooks/use-auth"
-import { Button } from "@/components/ui/button"
-import { Badge } from "@/components/ui/badge"
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
-import { Checkbox } from "@/components/ui/checkbox"
+import { useParsePassport } from "@/hooks/use-passport-ocr";
+import { CandidateInput, candidateSchema } from "@/lib/validations";
+import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardHeader } from "@/components/ui/card";
+import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -34,16 +27,17 @@ import {
   FormItem,
   FormLabel,
   FormMessage,
-} from "@/components/ui/form"
-import { Input } from "@/components/ui/input"
+} from "@/components/ui/form";
+import { Input } from "@/components/ui/input";
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select"
-import { DocumentUpload } from "./document-upload"
+} from "@/components/ui/select";
+import { DocumentUpload } from "./document-upload";
+import { PassportData } from "@/types";
 
 const SKILLS_OPTIONS = [
   "Cooking",
@@ -55,247 +49,676 @@ const SKILLS_OPTIONS = [
   "Driving",
   "First Aid",
   "Pet Care",
-]
+];
 
-const LANGUAGES_OPTIONS = ["Arabic", "English", "Amharic", "French", "Swahili"]
-const PROFICIENCY_OPTIONS = ["Basic", "Intermediate", "Fluent"]
+const LANGUAGES_OPTIONS = ["Arabic", "English", "Amharic", "French", "Swahili"];
+const PROFICIENCY_OPTIONS = ["Basic", "Intermediate", "Fluent"];
+const RELIGION_OPTIONS = ["Muslim", "Christian", "Other"];
+const MARITAL_STATUS_OPTIONS = ["Single", "Married", "Divorced", "Widowed"];
+const EDUCATION_LEVEL_OPTIONS = [
+  "Elementary",
+  "Secondary",
+  "High School",
+  "Diploma",
+  "Degree",
+  "Other",
+];
 
 interface CandidateFormProps {
-  initialData?: Partial<CandidateFormValues>
+  candidateId?: string;
+  mode?: "create" | "edit";
+  initialData?: Partial<CandidateFormValues>;
+  initialDocuments?: Partial<Record<"passport" | "photo" | "video", File | null>>;
   onSubmit: (
     data: CandidateInput,
-    context?: { submitter: "default" | "create_another" }
-  ) => Promise<{ resetForm?: boolean } | void> | { resetForm?: boolean } | void
-  isLoading?: boolean
-  onDocumentChange?: (documentType: "passport" | "photo" | "video", file: File | null) => void
-  showDocuments?: boolean
+    context?: { submitter: "default" | "create_another" },
+  ) => Promise<{ resetForm?: boolean } | void> | { resetForm?: boolean } | void;
+  isLoading?: boolean;
+  onDocumentChange?: (
+    documentType: "passport" | "photo" | "video",
+    file: File | null,
+  ) => void;
+  onDraftChange?: (draft: CandidateFormValues) => void;
+  onClearDraft?: () => void;
+  showDocuments?: boolean;
 }
 
-type CandidateFormValues = z.input<typeof candidateSchema>
+export type CandidateFormValues = {
+  full_name: string;
+  nationality?: string;
+  date_of_birth?: string;
+  age?: number | string;
+  place_of_birth?: string;
+  religion?: string;
+  marital_status?: string;
+  children_count?: number | string;
+  education_level?: string;
+  experience_years?: number | string;
+  skills: string[];
+  languages: Array<{ language: string; proficiency: string }>;
+};
 
 function SectionTitle({
   icon,
   title,
   description,
 }: {
-  icon: React.ReactNode
-  title: string
-  description: string
+  icon: React.ReactNode;
+  title: string;
+  description?: string;
 }) {
   return (
-    <div className="flex items-start gap-4">
-      <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl bg-slate-950 text-white shadow-sm">
+    <div className="flex items-start gap-3">
+      <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
         {icon}
       </div>
       <div className="space-y-1">
-        <h3 className="text-lg font-semibold tracking-tight text-foreground">{title}</h3>
-        <p className="text-sm text-muted-foreground">{description}</p>
+        <h3 className="text-lg font-semibold text-foreground">{title}</h3>
+        {description ? (
+          <p className="text-sm text-muted-foreground">{description}</p>
+        ) : null}
       </div>
     </div>
-  )
+  );
 }
 
 export function CandidateForm({
+  candidateId,
+  mode = "create",
   initialData,
+  initialDocuments,
   onSubmit,
   isLoading,
   onDocumentChange,
+  onDraftChange,
+  onClearDraft,
   showDocuments = true,
 }: CandidateFormProps) {
-  const { user } = useCurrentUser()
-  const { hasLogo, logoDataURL } = useAgencyBranding()
-  const [documentResetKey, setDocumentResetKey] = React.useState(0)
+  const { mutateAsync: parsePassport, isPending: isParsingPassport } =
+    useParsePassport(candidateId);
+  const [documentResetKey, setDocumentResetKey] = React.useState(0);
+  const [ageAutoSyncEnabled, setAgeAutoSyncEnabled] = React.useState(true);
 
   const blankFormValues = React.useMemo<CandidateFormValues>(
     () => ({
       full_name: "",
+      nationality: "",
+      date_of_birth: "",
       age: undefined,
+      place_of_birth: "",
+      religion: "",
+      marital_status: "",
+      children_count: undefined,
+      education_level: "",
       experience_years: undefined,
       skills: [],
-      languages: [{ language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] }],
+      languages: [
+        { language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] },
+      ],
     }),
-    []
-  )
+    [],
+  );
 
   const form = useForm<CandidateFormValues, undefined, CandidateInput>({
-    resolver: zodResolver(candidateSchema),
+    resolver: zodResolver(candidateSchema) as never,
     defaultValues: initialData || blankFormValues,
-  })
+  });
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: "languages",
-  })
-  const [documentPresence, setDocumentPresence] = React.useState({
-    passport: false,
-    photo: false,
-    video: false,
-  })
+  });
+  const watchedDateOfBirth = form.watch("date_of_birth");
+  const watchedAge = form.watch("age");
 
-  const selectedSkills = form.watch("skills") || []
-  const watchedLanguages = form.watch("languages") || []
-  const fullName = form.watch("full_name")
+  const isEditing = mode === "edit";
+  const addLanguageEntry = () =>
+    append({
+      language: LANGUAGES_OPTIONS[0],
+      proficiency: PROFICIENCY_OPTIONS[0],
+    });
 
-  const requiredDocumentChecklist = [
-    { label: "Passport", done: documentPresence.passport || !showDocuments },
-    { label: "Full body photo", done: documentPresence.photo || !showDocuments },
-    { label: "Video interview (optional)", done: documentPresence.video || !showDocuments },
-  ]
+  React.useEffect(() => {
+    if (!onDraftChange) {
+      return;
+    }
 
-  const isEditing = !!initialData
-  const addLanguageEntry = () => append({ language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] })
+    const subscription = form.watch((values) => {
+      onDraftChange({
+        ...blankFormValues,
+        ...values,
+        skills: values.skills || [],
+        languages:
+          values.languages && values.languages.length > 0
+            ? values.languages.map((language) => ({
+                language: language.language || LANGUAGES_OPTIONS[0],
+                proficiency: language.proficiency || PROFICIENCY_OPTIONS[0],
+              }))
+            : blankFormValues.languages,
+      });
+    });
+
+    return () => subscription.unsubscribe();
+  }, [blankFormValues, form, onDraftChange]);
+
+  React.useEffect(() => {
+    const derivedAge = calculateAgeFromDate(watchedDateOfBirth);
+    if (derivedAge === null || !ageAutoSyncEnabled) {
+      return;
+    }
+
+    const currentAge =
+      typeof watchedAge === "number"
+        ? watchedAge
+        : typeof watchedAge === "string" && watchedAge.trim()
+          ? Number(watchedAge)
+          : null;
+
+    if (currentAge === null || Number.isNaN(currentAge)) {
+      form.setValue("age", derivedAge, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [ageAutoSyncEnabled, form, watchedAge, watchedDateOfBirth]);
+
   const resetForNextCandidate = React.useCallback(() => {
-    form.reset(blankFormValues)
-    setDocumentPresence({
-      passport: false,
-      photo: false,
-      video: false,
-    })
-    setDocumentResetKey((current) => current + 1)
-    onDocumentChange?.("passport", null)
-    onDocumentChange?.("photo", null)
-    onDocumentChange?.("video", null)
-  }, [blankFormValues, form, onDocumentChange])
+    form.reset(blankFormValues);
+    setAgeAutoSyncEnabled(true);
+    setDocumentResetKey((current) => current + 1);
+    onDocumentChange?.("passport", null);
+    onDocumentChange?.("photo", null);
+    onDocumentChange?.("video", null);
+    onClearDraft?.();
+  }, [blankFormValues, form, onClearDraft, onDocumentChange]);
 
   const handleFormSubmit = form.handleSubmit(async (data, event) => {
-    const submitter = (event?.nativeEvent as SubmitEvent | undefined)?.submitter as HTMLButtonElement | null
-    const submitMode = submitter?.dataset.submitMode === "create_another" ? "create_another" : "default"
-    const result = await onSubmit(data, { submitter: submitMode })
+    const submitter = (event?.nativeEvent as SubmitEvent | undefined)
+      ?.submitter as HTMLButtonElement | null;
+    const submitMode =
+      submitter?.dataset.submitMode === "create_another"
+        ? "create_another"
+        : "default";
+    const result = await onSubmit(data, { submitter: submitMode });
 
     if (!isEditing && submitMode === "create_another" && result?.resetForm) {
-      resetForNextCandidate()
+      resetForNextCandidate();
     }
-  })
+  }, (errors: FieldErrors<CandidateFormValues>) => {
+    const message = isEditing
+      ? "Please fix the highlighted fields before saving changes."
+      : "Please fix the highlighted fields before creating the candidate.";
+
+    toast.error(message);
+
+    window.requestAnimationFrame(() => {
+      const invalidElement = document.querySelector<HTMLElement>(
+        "[aria-invalid='true']",
+      );
+
+      invalidElement?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      invalidElement?.focus();
+    });
+
+    if (Object.keys(errors).length === 0) {
+      return;
+    }
+  });
+
+  const applyPassportAutofill = React.useCallback((parsed: PassportData) => {
+    if (parsed.holder_name?.trim()) {
+      form.setValue("full_name", parsed.holder_name.trim(), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+
+    if (parsed.nationality?.trim()) {
+      form.setValue("nationality", parsed.nationality.trim().toUpperCase(), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+
+    const normalizedDateOfBirth = normalizeDateInputValue(parsed.date_of_birth);
+    if (normalizedDateOfBirth) {
+      setAgeAutoSyncEnabled(true);
+      form.setValue("date_of_birth", normalizedDateOfBirth, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+
+      const derivedAge = calculateAgeFromDate(normalizedDateOfBirth);
+      if (derivedAge !== null) {
+        form.setValue("age", derivedAge, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      }
+    }
+
+    if (parsed.place_of_birth?.trim()) {
+      form.setValue("place_of_birth", parsed.place_of_birth.trim(), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+  }, [form]);
+
+  const handlePassportFileSelected = React.useCallback((file: File | null) => {
+    if (!file || !file.type.startsWith("image/")) {
+      return;
+    }
+
+    const idleWindow = window as Window & {
+      requestIdleCallback?: (
+        callback: () => void,
+        options?: { timeout: number },
+      ) => number;
+    };
+
+    const runExtraction = async () => {
+      try {
+        const parsed = await parsePassport(file);
+        applyPassportAutofill(parsed);
+      } catch {
+        // The mutation already surfaces the error to the user.
+      }
+    };
+
+    if (typeof idleWindow.requestIdleCallback === "function") {
+      idleWindow.requestIdleCallback(() => {
+        void runExtraction();
+      }, {
+        timeout: 700,
+      });
+      return;
+    }
+
+    window.setTimeout(() => {
+      void runExtraction();
+    }, 180);
+  }, [applyPassportAutofill, parsePassport]);
 
   return (
     <Form {...form}>
       <form onSubmit={handleFormSubmit} className="w-full">
-        <div className="grid gap-6 xl:grid-cols-[minmax(0,1.45fr)_360px]">
-          <div className="space-y-6">
-            <Card className="overflow-hidden border-border/70 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.22),_transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96))] text-white shadow-xl">
-              <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_220px]">
-                <div className="space-y-4">
-                  <Badge className="w-fit rounded-full border-0 bg-white/15 px-3 py-1 text-[11px] uppercase tracking-[0.24em] text-amber-200 hover:bg-white/15">
-                    Candidate workflow
-                  </Badge>
-                  <div className="space-y-2">
-                    <h2 className="text-3xl font-semibold tracking-tight">
-                      {isEditing ? "Refine and update this candidate profile" : "Create a polished candidate profile in one pass"}
-                    </h2>
-                    <p className="max-w-2xl text-sm text-slate-200/90">
-                      Fill the profile, capture the documents, and keep the submission clean enough for selection and post-approval tracking.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-3 text-xs text-slate-100/90">
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
-                      Draft first, publish when ready
-                    </span>
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
-                      Passport and photo required for CV
-                    </span>
-                    <span className="rounded-full border border-white/15 bg-white/10 px-3 py-1.5">
-                      Post-approval tracking starts automatically
-                    </span>
-                  </div>
-                </div>
+        <div className="space-y-6">
+            {showDocuments ? (
+              <Card className="border-border/70 shadow-sm">
+                <CardHeader>
+                  <SectionTitle
+                    icon={<ShieldCheck className="h-5 w-5" />}
+                    title="Documents"
+                    description="Passport and photo are required for CV download."
+                  />
+                </CardHeader>
+                <CardContent className="space-y-6">
+                  <div className="grid gap-5 md:grid-cols-2">
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                      <DocumentUpload
+                        key={`passport-${documentResetKey}`}
+                        initialFile={initialDocuments?.passport || null}
+                        documentType="passport"
+                        title="Passport document"
+                        description="PDF, JPG, or PNG. Passport images auto-fill the matching applicant fields."
+                        accept={{
+                          "application/pdf": [".pdf"],
+                          "image/jpeg": [".jpg", ".jpeg"],
+                          "image/png": [".png"],
+                        }}
+                        maxSize={10485760}
+                        onUpload={(file) => {
+                          onDocumentChange?.("passport", file);
+                          handlePassportFileSelected(file);
+                        }}
+                        onRemove={() => {
+                          onDocumentChange?.("passport", null);
+                        }}
+                      />
+                    </div>
 
-                <div className="rounded-3xl border border-white/10 bg-white/10 p-5 backdrop-blur">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border border-white/15 bg-white/10">
-                      {hasLogo ? (
-                        <img
-                          src={logoDataURL}
-                          alt={`${user?.company_name || user?.full_name || "Agency"} logo`}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <ImagePlus className="h-8 w-8 text-amber-200" />
-                      )}
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                      <DocumentUpload
+                        key={`photo-${documentResetKey}`}
+                        initialFile={initialDocuments?.photo || null}
+                        documentType="photo"
+                        title="Full body photo"
+                        description="Use a clean photo with good light and a clear full-body view."
+                        accept={{
+                          "image/jpeg": [".jpg", ".jpeg"],
+                          "image/png": [".png"],
+                        }}
+                        maxSize={10485760}
+                        onUpload={(file) => {
+                          onDocumentChange?.("photo", file);
+                        }}
+                        onRemove={() => {
+                          onDocumentChange?.("photo", null);
+                        }}
+                      />
                     </div>
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-[0.24em] text-amber-200/90">Agency branding</p>
-                      <p className="truncate text-sm font-semibold text-white">
-                        {user?.company_name || "Agency profile"}
-                      </p>
-                      <p className="text-xs text-slate-200/80">
-                        {hasLogo ? "Saved once and ready to reuse" : "Upload a reusable logo from Settings"}
-                      </p>
+
+                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 md:col-span-2">
+                      <DocumentUpload
+                        key={`video-${documentResetKey}`}
+                        initialFile={initialDocuments?.video || null}
+                        documentType="video"
+                        title="Video interview"
+                        description="Optional, but helpful for faster employer review."
+                        accept={{ "video/mp4": [".mp4"] }}
+                        maxSize={52428800}
+                        onUpload={(file) => {
+                          onDocumentChange?.("video", file);
+                        }}
+                        onRemove={() => {
+                          onDocumentChange?.("video", null);
+                        }}
+                      />
                     </div>
                   </div>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
+            ) : null}
 
             <Card className="border-border/70 shadow-sm">
               <CardHeader>
                 <SectionTitle
                   icon={<UserSquare2 className="h-5 w-5" />}
                   title="Personal profile"
-                  description="Capture the core identity details that foreign employers will compare first."
                 />
               </CardHeader>
-              <CardContent className="grid gap-5 md:grid-cols-2">
+              <CardContent className="space-y-6">
                 <FormField
                   control={form.control}
                   name="full_name"
                   render={({ field }) => (
-                    <FormItem className="md:col-span-2">
+                    <FormItem>
                       <FormLabel>Full name</FormLabel>
                       <FormControl>
-                        <Input placeholder="For example: Aster Demeke" {...field} />
+                        <Input
+                          placeholder="For example: Aster Demeke"
+                          {...field}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>
                   )}
                 />
 
-                <FormField
-                  control={form.control}
-                  name="age"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Age</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={18}
-                          max={65}
-                          name={field.name}
-                          value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""}
-                          onBlur={field.onBlur}
-                          onChange={field.onChange}
-                          ref={field.ref}
-                        />
-                      </FormControl>
-                      <FormDescription>Allowed range: 18 to 65</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="rounded-2xl border border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
+                  Uploading a passport image fills the matching applicant fields automatically, but every value below stays editable before you save the candidate.
+                  {isParsingPassport ? (
+                    <span className="mt-2 flex items-center gap-2 font-medium text-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin text-primary" />
+                      Reading the passport image now.
+                    </span>
+                  ) : null}
+                </div>
 
-                <FormField
-                  control={form.control}
-                  name="experience_years"
-                  render={({ field }) => (
-                    <FormItem>
-                      <FormLabel>Years of experience</FormLabel>
-                      <FormControl>
-                        <Input
-                          type="number"
-                          min={0}
-                          max={30}
-                          name={field.name}
-                          value={typeof field.value === "number" || typeof field.value === "string" ? field.value : ""}
-                          onBlur={field.onBlur}
-                          onChange={field.onChange}
-                          ref={field.ref}
-                        />
-                      </FormControl>
-                      <FormDescription>How long she has worked in similar roles</FormDescription>
-                      <FormMessage />
-                    </FormItem>
-                  )}
-                />
+                <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                  <FormField
+                    control={form.control}
+                    name="nationality"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Nationality</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="For example: ETH or Ethiopian"
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Type the exact value you want printed in the CV
+                          applicants detail table.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="date_of_birth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Date of birth</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="date"
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          The age field below will help itself once a valid date
+                          is entered.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="age"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Age</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={18}
+                            max={65}
+                            name={field.name}
+                            value={
+                              typeof field.value === "number" ||
+                              typeof field.value === "string"
+                                ? field.value
+                                : ""
+                            }
+                            onBlur={field.onBlur}
+                            onChange={(event) => {
+                              setAgeAutoSyncEnabled(false);
+                              field.onChange(event);
+                            }}
+                            ref={field.ref}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Edit this if the agency wants a specific CV age
+                          display.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="place_of_birth"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Place of birth</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="For example: Legambo"
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Use the exact town or city name the employer should
+                          see.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="religion"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Religion</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select religion" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {RELIGION_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Pick the value you want in the applicants detail
+                          section.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="marital_status"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Marital status</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select marital status" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {MARITAL_STATUS_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Choose the exact marital status that should print in
+                          the CV.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="children_count"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Children</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={0}
+                            name={field.name}
+                            value={
+                              typeof field.value === "number" ||
+                              typeof field.value === "string"
+                                ? field.value
+                                : ""
+                            }
+                            onBlur={field.onBlur}
+                            onChange={field.onChange}
+                            ref={field.ref}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Enter the actual number you want shown instead of
+                          leaving it blank.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="education_level"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Education level</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select education level" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {EDUCATION_LEVEL_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          This appears exactly in the applicants detail section
+                          of the CV.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="experience_years"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Years of experience</FormLabel>
+                        <FormControl>
+                          <Input
+                            type="number"
+                            min={0}
+                            max={30}
+                            name={field.name}
+                            value={
+                              typeof field.value === "number" ||
+                              typeof field.value === "string"
+                                ? field.value
+                                : ""
+                            }
+                            onBlur={field.onBlur}
+                            onChange={field.onChange}
+                            ref={field.ref}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          How long she has worked in similar roles
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
               </CardContent>
             </Card>
 
@@ -320,7 +743,7 @@ export function CandidateForm({
                             control={form.control}
                             name="skills"
                             render={({ field }) => {
-                              const checked = field.value?.includes(skill)
+                              const checked = field.value?.includes(skill);
                               return (
                                 <FormItem className="rounded-2xl border border-border/70 bg-muted/20 p-4 transition-colors hover:bg-muted/40">
                                   <div className="flex items-center gap-3">
@@ -329,15 +752,24 @@ export function CandidateForm({
                                         checked={checked}
                                         onCheckedChange={(nextChecked) => {
                                           return nextChecked
-                                            ? field.onChange([...(field.value || []), skill])
-                                            : field.onChange((field.value || []).filter((value) => value !== skill))
+                                            ? field.onChange([
+                                                ...(field.value || []),
+                                                skill,
+                                              ])
+                                            : field.onChange(
+                                                (field.value || []).filter(
+                                                  (value) => value !== skill,
+                                                ),
+                                              );
                                         }}
                                       />
                                     </FormControl>
-                                    <FormLabel className="cursor-pointer text-sm font-semibold">{skill}</FormLabel>
+                                    <FormLabel className="cursor-pointer text-sm font-semibold">
+                                      {skill}
+                                    </FormLabel>
                                   </div>
                                 </FormItem>
-                              )
+                              );
                             }}
                           />
                         ))}
@@ -357,7 +789,12 @@ export function CandidateForm({
                     title="Languages"
                     description="Track the languages the candidate can use and the level she can handle confidently."
                   />
-                  <Button type="button" variant="outline" className="border-dashed md:shrink-0" onClick={addLanguageEntry}>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    className="border-dashed md:shrink-0"
+                    onClick={addLanguageEntry}
+                  >
                     <Plus className="mr-2 h-4 w-4" />
                     Add another
                   </Button>
@@ -365,7 +802,10 @@ export function CandidateForm({
               </CardHeader>
               <CardContent className="space-y-4">
                 {fields.map((field, index) => (
-                  <div key={field.id} className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                  <div
+                    key={field.id}
+                    className="rounded-2xl border border-border/70 bg-muted/20 p-4"
+                  >
                     <div className="grid gap-4 md:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_auto] md:items-end">
                       <FormField
                         control={form.control}
@@ -373,7 +813,10 @@ export function CandidateForm({
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Language</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                            >
                               <FormControl>
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select language" />
@@ -398,7 +841,10 @@ export function CandidateForm({
                         render={({ field }) => (
                           <FormItem>
                             <FormLabel>Proficiency</FormLabel>
-                            <Select onValueChange={field.onChange} defaultValue={field.value}>
+                            <Select
+                              onValueChange={field.onChange}
+                              defaultValue={field.value}
+                            >
                               <FormControl>
                                 <SelectTrigger>
                                   <SelectValue placeholder="Select proficiency" />
@@ -442,160 +888,6 @@ export function CandidateForm({
                 </Button>
               </CardContent>
             </Card>
-
-            {showDocuments ? (
-              <Card className="border-border/70 shadow-sm">
-                <CardHeader>
-                  <SectionTitle
-                    icon={<ShieldCheck className="h-5 w-5" />}
-                    title="Documents and media"
-                    description="Upload the key recruitment files now so the profile is immediately useful after creation."
-                  />
-                </CardHeader>
-                <CardContent className="space-y-6">
-                  <div className="grid gap-5 xl:grid-cols-2">
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                      <DocumentUpload
-                        key={`passport-${documentResetKey}`}
-                        documentType="passport"
-                        title="Passport document"
-                        description="PDF, JPG, or PNG. This is required before CV download."
-                        accept={{
-                          "application/pdf": [".pdf"],
-                          "image/jpeg": [".jpg", ".jpeg"],
-                          "image/png": [".png"],
-                        }}
-                        maxSize={10485760}
-                        onUpload={(file) => {
-                          setDocumentPresence((current) => ({ ...current, passport: true }))
-                          onDocumentChange?.("passport", file)
-                        }}
-                        onRemove={() => {
-                          setDocumentPresence((current) => ({ ...current, passport: false }))
-                          onDocumentChange?.("passport", null)
-                        }}
-                      />
-                    </div>
-
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                      <DocumentUpload
-                        key={`photo-${documentResetKey}`}
-                        documentType="photo"
-                        title="Full body photo"
-                        description="Use a clean photo with good light and a clear full-body view."
-                        accept={{
-                          "image/jpeg": [".jpg", ".jpeg"],
-                          "image/png": [".png"],
-                        }}
-                        maxSize={10485760}
-                        onUpload={(file) => {
-                          setDocumentPresence((current) => ({ ...current, photo: true }))
-                          onDocumentChange?.("photo", file)
-                        }}
-                        onRemove={() => {
-                          setDocumentPresence((current) => ({ ...current, photo: false }))
-                          onDocumentChange?.("photo", null)
-                        }}
-                      />
-                    </div>
-
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4 xl:col-span-2">
-                      <DocumentUpload
-                        key={`video-${documentResetKey}`}
-                        documentType="video"
-                        title="Video interview"
-                        description="Optional, but helpful for faster employer review."
-                        accept={{ "video/mp4": [".mp4"] }}
-                        maxSize={52428800}
-                        onUpload={(file) => {
-                          setDocumentPresence((current) => ({ ...current, video: true }))
-                          onDocumentChange?.("video", file)
-                        }}
-                        onRemove={() => {
-                          setDocumentPresence((current) => ({ ...current, video: false }))
-                          onDocumentChange?.("video", null)
-                        }}
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-            ) : null}
-          </div>
-
-          <div className="space-y-6 xl:sticky xl:top-6 xl:self-start">
-            <Card className="overflow-hidden border-border/70 shadow-lg">
-              <CardHeader className="bg-gradient-to-br from-amber-50 via-background to-slate-50">
-                <CardTitle className="flex items-center gap-2 text-lg">
-                  <Sparkles className="h-5 w-5 text-amber-600" />
-                  Submission summary
-                </CardTitle>
-                <CardDescription>Keep the profile complete before you publish it to foreign agencies.</CardDescription>
-              </CardHeader>
-              <CardContent className="space-y-5 p-6">
-                <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex items-center gap-4">
-                    <div className="flex h-16 w-16 items-center justify-center overflow-hidden rounded-2xl border bg-background shadow-sm">
-                      {hasLogo ? (
-                        <img
-                          src={logoDataURL}
-                          alt={`${user?.company_name || user?.full_name || "Agency"} branding`}
-                          className="h-full w-full object-cover"
-                        />
-                      ) : (
-                        <Building2 className="h-7 w-7 text-muted-foreground" />
-                      )}
-                    </div>
-                    <div className="min-w-0">
-                      <p className="text-xs uppercase tracking-[0.18em] text-muted-foreground">Agency</p>
-                      <p className="truncate text-sm font-semibold">{user?.company_name || "Agency profile"}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {hasLogo ? "Reusable logo is ready" : "Add a reusable logo from Settings"}
-                      </p>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-3">
-                  <SummaryItem
-                    label="Candidate name"
-                    value={fullName?.trim() ? fullName : "Not filled yet"}
-                  />
-                  <SummaryItem
-                    label="Skills selected"
-                    value={selectedSkills.length ? `${selectedSkills.length} selected` : "Select at least one skill"}
-                  />
-                  <SummaryItem
-                    label="Languages tracked"
-                    value={watchedLanguages.length ? `${watchedLanguages.length} language entries` : "Add a language"}
-                  />
-                </div>
-
-                <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
-                  <div className="flex items-center gap-2">
-                    <Globe2 className="h-4 w-4 text-slate-700" />
-                    <p className="text-sm font-semibold">Before you submit</p>
-                  </div>
-                  {requiredDocumentChecklist.map((item) => (
-                    <div key={item.label} className="flex items-center gap-2 text-sm">
-                      <BadgeCheck className={`h-4 w-4 ${item.done ? "text-green-600" : "text-muted-foreground"}`} />
-                      <span className={item.done ? "text-foreground" : "text-muted-foreground"}>{item.label}</span>
-                    </div>
-                  ))}
-                  {!showDocuments ? (
-                    <p className="text-xs text-muted-foreground">
-                      Profile details are edited here. The latest supporting files can be managed from the surrounding candidate workspace.
-                    </p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">
-                      Uploaded files are attached right after the candidate record is saved.
-                    </p>
-                  )}
-                </div>
-
-              </CardContent>
-            </Card>
-          </div>
         </div>
 
         <div className="mt-8 flex flex-col-reverse gap-3 border-t border-border/70 pt-6 sm:flex-row sm:justify-end">
@@ -608,25 +900,74 @@ export function CandidateForm({
               data-submit-mode="create_another"
               disabled={isLoading}
             >
-              {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : <Plus className="mr-2 h-5 w-5" />}
+              {isLoading ? (
+                <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+              ) : (
+                <Plus className="mr-2 h-5 w-5" />
+              )}
               {isLoading ? "Saving..." : "Create & Add Another"}
             </Button>
           ) : null}
-          <Button type="submit" size="lg" className="min-w-[220px]" data-submit-mode="default" disabled={isLoading}>
-            {isLoading ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
-            {isLoading ? (isEditing ? "Saving Changes..." : "Creating Candidate...") : isEditing ? "Save Changes" : "Create Candidate"}
+          <Button
+            type="submit"
+            size="lg"
+            className="min-w-[220px]"
+            data-submit-mode="default"
+            disabled={isLoading}
+          >
+            {isLoading ? (
+              <Loader2 className="mr-2 h-5 w-5 animate-spin" />
+            ) : null}
+            {isLoading
+              ? isEditing
+                ? "Saving Changes..."
+                : "Creating Candidate..."
+              : isEditing
+                ? "Save Changes"
+                : "Create Candidate"}
           </Button>
         </div>
       </form>
     </Form>
-  )
+  );
 }
 
-function SummaryItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="space-y-1">
-      <p className="text-xs font-medium uppercase tracking-[0.18em] text-muted-foreground">{label}</p>
-      <p className="text-sm font-semibold text-foreground">{value}</p>
-    </div>
-  )
+function normalizeDateInputValue(value?: string) {
+  if (!value) {
+    return "";
+  }
+
+  const directMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})/);
+  if (directMatch) {
+    return `${directMatch[1]}-${directMatch[2]}-${directMatch[3]}`;
+  }
+
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) {
+    return "";
+  }
+
+  return parsed.toISOString().slice(0, 10);
+}
+
+function calculateAgeFromDate(value?: string) {
+  if (!value) {
+    return null;
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return null;
+  }
+
+  const today = new Date();
+  let age = today.getFullYear() - date.getFullYear();
+  const monthDelta = today.getMonth() - date.getMonth();
+  if (
+    monthDelta < 0 ||
+    (monthDelta === 0 && today.getDate() < date.getDate())
+  ) {
+    age -= 1;
+  }
+  return age >= 0 ? age : null;
 }

@@ -51,16 +51,16 @@ export default function AgenciesManagementPage() {
         description="Monitor every registered agency, filter by status and role, and take operational actions without entering the agency portal."
       />
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.3fr_0.8fr_0.8fr]">
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search company, email, or contact person"
-            className="bg-white"
+            className="bg-card"
           />
           <Select value={status} onValueChange={(value) => setStatus(value as AccountStatus | "all")}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-card">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -72,7 +72,7 @@ export default function AgenciesManagementPage() {
             </SelectContent>
           </Select>
           <Select value={role} onValueChange={(value) => setRole(value as UserRole | "all")}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-card">
               <SelectValue placeholder="Filter by role" />
             </SelectTrigger>
             <SelectContent>
@@ -84,7 +84,7 @@ export default function AgenciesManagementPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -101,7 +101,7 @@ export default function AgenciesManagementPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-500">
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     Loading agencies...
                   </TableCell>
                 </TableRow>
@@ -109,7 +109,7 @@ export default function AgenciesManagementPage() {
 
               {!isLoading && !agencies.length ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-10 text-center text-sm text-slate-500">
+                  <TableCell colSpan={7} className="py-10 text-center text-sm text-muted-foreground">
                     No agencies matched the current filters.
                   </TableCell>
                 </TableRow>
@@ -119,23 +119,23 @@ export default function AgenciesManagementPage() {
                 <TableRow key={agency.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium text-slate-950">{agency.company_name || agency.contact_person}</p>
-                      <p className="text-xs text-slate-500">{agency.contact_person}</p>
+                      <p className="font-medium text-foreground">{agency.company_name || agency.contact_person}</p>
+                      <p className="text-xs text-muted-foreground">{agency.contact_person}</p>
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-600">{agency.email}</TableCell>
+                  <TableCell className="text-muted-foreground">{agency.email}</TableCell>
                   <TableCell>
                     <Badge variant="outline" className="rounded-full">{titleize(agency.role)}</Badge>
                   </TableCell>
                   <TableCell>
                     <AdminStatusBadge status={agency.account_status} />
                   </TableCell>
-                  <TableCell className="text-slate-600">{formatShortDate(agency.registration_date)}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatShortDate(agency.registration_date)}</TableCell>
                   <TableCell>
                     {agency.role === UserRole.ETHIOPIAN_AGENT ? (
-                      <span className="text-sm text-slate-600">{agency.total_candidates} candidates</span>
+                      <span className="text-sm text-muted-foreground">{agency.total_candidates} candidates</span>
                     ) : (
-                      <span className="text-sm text-slate-600">{agency.total_selections} selections</span>
+                      <span className="text-sm text-muted-foreground">{agency.total_selections} selections</span>
                     )}
                   </TableCell>
                   <TableCell>

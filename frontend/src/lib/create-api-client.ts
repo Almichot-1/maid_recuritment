@@ -1,32 +1,29 @@
 import axios from "axios"
 import { toast } from "sonner"
 import { usePairingStore } from "@/stores/pairing-store"
+import { getApiBaseUrl } from "@/lib/api-base-url"
 
 interface CreateApiClientOptions {
-  tokenKey: string
+  includePairingHeader?: boolean
   onUnauthorized?: () => void
 }
 
-export function createApiClient({ tokenKey, onUnauthorized }: CreateApiClientOptions) {
+export function createApiClient({ includePairingHeader = false, onUnauthorized }: CreateApiClientOptions) {
+  // Auth uses HttpOnly session cookies with SameSite from the API; no CSRF token endpoint exists on the backend.
   const client = axios.create({
-    baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:8080/api/v1",
+    baseURL: getApiBaseUrl(),
+    withCredentials: true,
   })
 
   client.interceptors.request.use(
     (config) => {
-      if (typeof window !== "undefined") {
-        const token = localStorage.getItem(tokenKey)
-        if (token && config.headers) {
-          config.headers.Authorization = `Bearer ${token}`
-        }
-        if (tokenKey === "auth_token" && config.headers) {
-          const pairingState = usePairingStore.getState()
-          if (pairingState.isReady && pairingState.activePairingId) {
-            const pairingId = pairingState.activePairingId
-            config.headers["X-Pairing-ID"] = pairingId
-          } else if ("X-Pairing-ID" in config.headers) {
-            delete config.headers["X-Pairing-ID"]
-          }
+      if (typeof window !== "undefined" && includePairingHeader && config.headers) {
+        const pairingState = usePairingStore.getState()
+        if (pairingState.isReady && pairingState.activePairingId) {
+          const pairingId = pairingState.activePairingId
+          config.headers["X-Pairing-ID"] = pairingId
+        } else if ("X-Pairing-ID" in config.headers) {
+          delete config.headers["X-Pairing-ID"]
         }
       }
       return config
@@ -45,12 +42,19 @@ export function createApiClient({ tokenKey, onUnauthorized }: CreateApiClientOpt
       } else if (error.response?.data?.account_status) {
         // Let the calling hook present a more contextual account-state message.
       } else {
+        const requestUrl = String(error.config?.url || "")
+        const hookHandlesToast =
+          requestUrl.includes("/selections/") &&
+          (requestUrl.includes("/approve") ||
+            requestUrl.includes("/reject") ||
+            requestUrl.includes("/documents"))
+
         const message =
           error.response?.data?.error ||
           error.response?.data?.message ||
           error.message ||
           "An unexpected error occurred"
-        if (typeof window !== "undefined") {
+        if (typeof window !== "undefined" && !hookHandlesToast) {
           toast.error(message)
         }
       }

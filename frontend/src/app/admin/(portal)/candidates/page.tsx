@@ -48,16 +48,16 @@ export default function AdminCandidatesPage() {
         description="A platform-wide read-only view of every candidate uploaded by Ethiopian agencies."
       />
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.3fr_0.8fr_1fr]">
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search candidate or agency"
-            className="bg-white"
+            className="bg-card"
           />
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-card">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -72,7 +72,7 @@ export default function AdminCandidatesPage() {
             </SelectContent>
           </Select>
           <Select value={agency} onValueChange={setAgency}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-card">
               <SelectValue placeholder="Filter by agency" />
             </SelectTrigger>
             <SelectContent>
@@ -85,7 +85,7 @@ export default function AdminCandidatesPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -100,26 +100,26 @@ export default function AdminCandidatesPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">Loading candidates...</TableCell>
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">Loading candidates...</TableCell>
                 </TableRow>
               ) : null}
               {!isLoading && !filtered.length ? (
                 <TableRow>
-                  <TableCell colSpan={5} className="py-10 text-center text-sm text-slate-500">No candidates matched the current filters.</TableCell>
+                  <TableCell colSpan={5} className="py-10 text-center text-sm text-muted-foreground">No candidates matched the current filters.</TableCell>
                 </TableRow>
               ) : null}
               {filtered.map((candidate) => (
                 <TableRow key={candidate.id}>
                   <TableCell>
                     <div>
-                      <p className="font-medium text-slate-950">{candidate.full_name}</p>
-                      <p className="text-xs text-slate-500">{candidate.company_name || candidate.agency_name}</p>
+                      <p className="font-medium text-foreground">{candidate.full_name}</p>
+                      <p className="text-xs text-muted-foreground">{candidate.company_name || candidate.agency_name}</p>
                     </div>
                   </TableCell>
-                  <TableCell className="text-slate-600">{candidate.age ?? "N/A"}</TableCell>
+                  <TableCell className="text-muted-foreground">{candidate.age ?? "N/A"}</TableCell>
                   <TableCell><AdminStatusBadge status={candidate.status} /></TableCell>
-                  <TableCell className="text-slate-600">{candidate.company_name || candidate.agency_name}</TableCell>
-                  <TableCell className="text-slate-600">{formatShortDate(candidate.created_at)}</TableCell>
+                  <TableCell className="text-muted-foreground">{candidate.company_name || candidate.agency_name}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatShortDate(candidate.created_at)}</TableCell>
                 </TableRow>
               ))}
             </TableBody>

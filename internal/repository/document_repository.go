@@ -47,6 +47,20 @@ func (r *GormDocumentRepository) GetByCandidateID(candidateID string) ([]*domain
 	return documents, nil
 }
 
+func (r *GormDocumentRepository) GetByCandidateIDAndType(candidateID string, documentType domain.DocumentType) (*domain.Document, error) {
+	var document domain.Document
+	if err := r.db.
+		Where("candidate_id = ? AND document_type = ?", candidateID, documentType).
+		Order("uploaded_at DESC").
+		First(&document).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrDocumentNotFound
+		}
+		return nil, fmt.Errorf("get document by candidate id and type: %w", err)
+	}
+	return &document, nil
+}
+
 func (r *GormDocumentRepository) Delete(id string) error {
 	result := r.db.Delete(&domain.Document{}, "id = ?", id)
 	if result.Error != nil {

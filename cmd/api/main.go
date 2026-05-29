@@ -51,7 +51,6 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize candidate pair share repository: %v", err)
 	}
-
 	authService, err := service.NewAuthService(userRepository, cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize auth service: %v", err)
@@ -73,6 +72,14 @@ func main() {
 	documentRepository, err := repository.NewGormDocumentRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize document repository: %v", err)
+	}
+	passportRepository, err := repository.NewGormPassportDataRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize passport repository: %v", err)
+	}
+	medicalRepository, err := repository.NewGormMedicalDataRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize medical repository: %v", err)
 	}
 
 	selectionRepository, err := repository.NewGormSelectionRepository(cfg)
@@ -122,7 +129,19 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize candidate service: %v", err)
 	}
+	candidateService.SetPassportRepository(passportRepository)
+	candidateService.SetMedicalDataRepository(medicalRepository)
 
+	passportOCRService, err := service.NewPassportOCRService(cfg, candidateRepository, passportRepository)
+	if err != nil {
+		log.Fatalf("failed to initialize passport OCR service: %v", err)
+	}
+	candidateService.SetPassportOCRService(passportOCRService)
+	medicalDocumentService, err := service.NewMedicalDocumentService(cfg, medicalRepository)
+	if err != nil {
+		log.Fatalf("failed to initialize medical document service: %v", err)
+	}
+	candidateService.SetMedicalDocumentService(medicalDocumentService)
 	selectionService, err := service.NewSelectionService(selectionRepository, candidateRepository, notificationService)
 	if err != nil {
 		log.Fatalf("failed to initialize selection service: %v", err)
@@ -135,6 +154,7 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize status step service: %v", err)
 	}
+	statusStepService.SetDocumentRepository(documentRepository)
 
 	approvalService, err := service.NewApprovalService(approvalRepository, selectionRepository, candidateRepository, statusStepService, notificationService)
 	if err != nil {
@@ -148,13 +168,15 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService, userRepository, agencyApprovalService)
 	userHandler := handler.NewUserHandler(userRepository)
 	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService)
-	candidateHandler := handler.NewCandidateHandler(candidateService, candidateRepository, selectionRepository, pairingService)
+	dashboardHandler.SetPassportRepository(passportRepository)
+	dashboardHandler.SetStatusStepRepository(statusStepRepository)
+	candidateHandler := handler.NewCandidateHandler(candidateService, passportOCRService, candidateRepository, selectionRepository, pairingService)
 	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService)
 	approvalHandler := handler.NewApprovalHandler(approvalService, selectionService, candidateRepository, pairingService)
 	statusHandler := handler.NewStatusHandler(statusStepService, candidateRepository, selectionRepository, userRepository, pairingService)
 	notificationHandler := handler.NewNotificationHandler(notificationRepository)
 	pairingHandler := handler.NewPairingHandler(pairingService, userRepository, candidateRepository)
-	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService)
+	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, adminRepository)
 	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
 	adminAgencyHandler := handler.NewAdminAgencyHandler(userRepository, agencyApprovalRepository, agencyApprovalService, candidateRepository, selectionRepository)
 	adminReadonlyHandler := handler.NewAdminReadonlyHandler(userRepository, adminRepository, candidateRepository, selectionRepository, auditLogRepository)
@@ -166,6 +188,9 @@ func main() {
 	if cfg.RunExpiryScheduler {
 		if _, err := jobs.StartExpiryScheduler(selectionService); err != nil {
 			log.Fatalf("failed to start expiry scheduler: %v", err)
+		}
+		if _, err := jobs.StartExpiryWarningScheduler(selectionRepository, passportRepository, candidateRepository, notificationService); err != nil {
+			log.Fatalf("failed to start expiry warning scheduler: %v", err)
 		}
 	} else {
 		log.Printf("expiry scheduler disabled for this process")
@@ -187,6 +212,7 @@ func main() {
 		r.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.AuthMiddleware(authService))
 			protected.Get("/me", authHandler.Me)
+			protected.Post("/logout", authHandler.Logout)
 		})
 	})
 
@@ -196,6 +222,7 @@ func main() {
 		adminRouter.Group(func(protected chi.Router) {
 			protected.Use(appmiddleware.AdminAuthMiddleware(adminAuthService))
 
+			protected.Get("/me", adminAuthHandler.Me)
 			protected.Post("/logout", adminAuthHandler.Logout)
 			protected.Get("/analytics/dashboard", adminDashboardHandler.GetStats)
 			protected.Get("/audit-logs", adminReadonlyHandler.GetAuditLogs)
@@ -245,6 +272,7 @@ func main() {
 
 		protected.Route("/candidates", func(cr chi.Router) {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/", candidateHandler.CreateCandidate)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/passport/parse-preview", candidateHandler.ParsePassportPreview)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}", candidateHandler.UpdateCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}", candidateHandler.DeleteCandidate)
 			cr.Get("/{id}", candidateHandler.GetCandidate)
@@ -252,6 +280,8 @@ func main() {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/shares", pairingHandler.GetCandidateShares)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/publish", candidateHandler.PublishCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/documents", candidateHandler.UploadCandidateDocument)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/passport/parse", candidateHandler.ParsePassport)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/passport", candidateHandler.GetPassport)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/generate-cv", candidateHandler.GenerateCV)
 			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/select", selectionHandler.SelectCandidate)
 			cr.Get("/{id}/status-steps", statusHandler.GetCandidateStatusSteps)
@@ -268,13 +298,16 @@ func main() {
 		})
 
 		protected.Route("/notifications", func(nr chi.Router) {
+			nr.Get("/summary", notificationHandler.GetSummary)
 			nr.Get("/", notificationHandler.GetNotifications)
 			nr.Patch("/{id}/read", notificationHandler.MarkAsRead)
 			nr.Post("/mark-all-read", notificationHandler.MarkAllAsRead)
 		})
 
 		protected.Route("/dashboard", func(dr chi.Router) {
+			dr.Get("/home", dashboardHandler.GetHome)
 			dr.Get("/stats", dashboardHandler.GetStats)
+			dr.Get("/smart-alerts", dashboardHandler.GetSmartAlerts)
 		})
 
 		protected.Route("/users", func(ur chi.Router) {
@@ -290,6 +323,10 @@ func main() {
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
 		ReadHeaderTimeout: 5 * time.Second,
+		ReadTimeout:       30 * time.Second,
+		WriteTimeout:      60 * time.Second,
+		IdleTimeout:       120 * time.Second,
+		MaxHeaderBytes:    1 << 20,
 	}
 
 	log.Printf("API server listening on :%s", cfg.Port)

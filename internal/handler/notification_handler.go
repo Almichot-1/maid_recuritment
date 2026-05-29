@@ -71,6 +71,33 @@ func NewNotificationHandler(notificationRepository domain.NotificationRepository
 	}
 }
 
+func (h *NotificationHandler) GetSummary(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var unreadCount int64
+	if h.paginator != nil {
+		count, err := h.paginator.CountByUserID(userID, true)
+		if err != nil {
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+			return
+		}
+		unreadCount = count
+	} else {
+		items, err := h.notificationRepository.GetByUserID(userID, true)
+		if err != nil {
+			_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+			return
+		}
+		unreadCount = int64(len(items))
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]int64{"unread_count": unreadCount})
+}
+
 func (h *NotificationHandler) GetNotifications(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
 	if !ok || strings.TrimSpace(userID) == "" {

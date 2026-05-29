@@ -67,23 +67,30 @@ export function useUploadSelectionDocument(selectionId: string) {
 
   return useMutation({
     mutationFn: async ({ file, type, onProgress }: UploadSelectionDocumentArgs) => {
-      const formData = new FormData();
-      formData.append('file', file);
-      formData.append('document_type', type);
+      try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('document_type', type);
 
-      const response = await api.post(`/selections/${selectionId}/documents`, formData, {
-        headers: {
-          'Content-Type': 'multipart/form-data',
-        },
-        onUploadProgress: (progressEvent) => {
-          if (progressEvent.total && onProgress) {
-            const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-            onProgress(progress);
-          }
-        },
-      });
+        const response = await api.post(`/selections/${selectionId}/documents`, formData, {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+          },
+          onUploadProgress: (progressEvent) => {
+            if (progressEvent.total && onProgress) {
+              const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+              onProgress(progress);
+            }
+          },
+        });
 
-      return response.data;
+        return response.data;
+      } catch (error) {
+        if (axios.isAxiosError<ApiErrorResponse>(error)) {
+          throw new Error(error.response?.data?.error || error.response?.data?.message || 'Failed to upload employer document');
+        }
+        throw error;
+      }
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['selection', selectionId] });
@@ -91,6 +98,10 @@ export function useUploadSelectionDocument(selectionId: string) {
       toast.success('Employer document uploaded successfully');
     },
     onError: (error: unknown) => {
+      if (error instanceof Error) {
+        toast.error(error.message);
+        return;
+      }
       const response = axios.isAxiosError<ApiErrorResponse>(error) ? error.response : undefined;
       toast.error(response?.data?.error || response?.data?.message || 'Failed to upload employer document');
     },
@@ -109,6 +120,8 @@ export function useMySelections() {
       return response.data.selections;
     },
     enabled: !!user && isPairingReady && !!activePairingId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -124,6 +137,8 @@ export function useSelection(id?: string) {
       return response.data.selection;
     },
     enabled: !!id && !!user && isPairingReady && !!activePairingId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -139,6 +154,8 @@ export function useSelectionApprovals(id?: string) {
       return response.data;
     },
     enabled: !!id && !!user && isPairingReady && !!activePairingId,
+    staleTime: 30_000,
+    refetchOnWindowFocus: false,
   });
 }
 
@@ -163,7 +180,12 @@ export function useApproveSelection(id: string, candidateId?: string) {
     },
     onError: (error: unknown) => {
       const response = axios.isAxiosError<ApiErrorResponse>(error) ? error.response : undefined;
-      toast.error(response?.data?.error || response?.data?.message || 'Failed to approve selection');
+      const message = response?.data?.error || response?.data?.message;
+      if (message?.toLowerCase().includes('employer contract')) {
+        toast.error('Upload the contract and employer ID before the Ethiopian agency can approve.');
+        return;
+      }
+      toast.error(message || 'Failed to approve selection');
     },
   });
 }

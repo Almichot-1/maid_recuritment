@@ -104,6 +104,79 @@
   .clickable-glow {
     @apply hover:shadow-[0_0_0_1px_rgba(20,184,166,0.16),0_18px_42px_-24px_rgba(13,148,136,0.55)];
   }
+
+  .admin-portal .admin-surface-card,
+  .admin-portal [class*="bg-white/90"],
+  .admin-portal [class*="bg-white/80"] {
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.92), rgba(15, 23, 42, 0.82)) !important;
+    border-color: rgba(51, 65, 85, 0.9) !important;
+    box-shadow: 0 22px 60px -42px rgba(2, 6, 23, 0.95);
+  }
+
+  .admin-portal [class*="bg-white"] {
+    background-color: rgba(15, 23, 42, 0.88) !important;
+  }
+
+  .admin-portal [class*="bg-slate-50"] {
+    background-color: rgba(15, 23, 42, 0.62) !important;
+  }
+
+  .admin-portal [class*="border-slate-200"],
+  .admin-portal [class*="border-slate-300"] {
+    border-color: rgba(51, 65, 85, 0.9) !important;
+  }
+
+  .admin-portal [class*="text-slate-950"] {
+    color: rgb(248 250 252) !important;
+  }
+
+  .admin-portal [class*="text-slate-900"] {
+    color: rgb(241 245 249) !important;
+  }
+
+  .admin-portal [class*="text-slate-700"],
+  .admin-portal [class*="text-slate-600"] {
+    color: rgb(203 213 225) !important;
+  }
+
+  .admin-portal [class*="text-slate-500"],
+  .admin-portal [class*="text-slate-400"] {
+    color: rgb(148 163 184) !important;
+  }
+
+  .admin-portal input,
+  .admin-portal textarea,
+  .admin-portal button[role="combobox"],
+  .admin-portal [data-radix-popper-content-wrapper] [role="listbox"],
+  .admin-portal [data-slot="select-trigger"] {
+    background-color: rgba(15, 23, 42, 0.88) !important;
+    border-color: rgba(51, 65, 85, 0.95) !important;
+    color: rgb(241 245 249) !important;
+  }
+
+  .admin-portal input::placeholder,
+  .admin-portal textarea::placeholder {
+    color: rgb(100 116 139) !important;
+  }
+
+  .admin-portal table {
+    border-color: rgba(51, 65, 85, 0.9) !important;
+  }
+
+  .admin-portal thead tr,
+  .admin-portal tbody tr {
+    border-color: rgba(51, 65, 85, 0.7) !important;
+  }
+
+  .admin-portal tbody tr:hover {
+    background-color: rgba(30, 41, 59, 0.7) !important;
+  }
+
+  .admin-portal [role="dialog"] {
+    border-color: rgba(51, 65, 85, 0.95) !important;
+    background: linear-gradient(180deg, rgba(15, 23, 42, 0.98), rgba(2, 6, 23, 0.98)) !important;
+    color: rgb(241 245 249) !important;
+  }
 }
 
 @layer utilities {

@@ -40,16 +40,16 @@ export default function AdminSelectionsPage() {
         description="Track all candidate selections across agencies, including approval outcomes and selection activity."
       />
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="grid gap-4 p-5 lg:grid-cols-[1.2fr_0.8fr]">
           <Input
             value={search}
             onChange={(event) => setSearch(event.target.value)}
             placeholder="Search candidate, Ethiopian agency, or Foreign agency"
-            className="bg-white"
+            className="bg-card"
           />
           <Select value={status} onValueChange={setStatus}>
-            <SelectTrigger className="bg-white">
+            <SelectTrigger className="bg-card">
               <SelectValue placeholder="Filter by status" />
             </SelectTrigger>
             <SelectContent>
@@ -63,7 +63,7 @@ export default function AdminSelectionsPage() {
         </CardContent>
       </Card>
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardContent className="p-0">
           <Table>
             <TableHeader>
@@ -79,21 +79,21 @@ export default function AdminSelectionsPage() {
             <TableBody>
               {isLoading ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500">Loading selections...</TableCell>
+                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">Loading selections...</TableCell>
                 </TableRow>
               ) : null}
               {!isLoading && !filtered.length ? (
                 <TableRow>
-                  <TableCell colSpan={6} className="py-10 text-center text-sm text-slate-500">No selections matched the current filters.</TableCell>
+                  <TableCell colSpan={6} className="py-10 text-center text-sm text-muted-foreground">No selections matched the current filters.</TableCell>
                 </TableRow>
               ) : null}
               {filtered.map((selection) => (
                 <TableRow key={selection.id}>
-                  <TableCell className="font-medium text-slate-950">{selection.candidate_name}</TableCell>
-                  <TableCell className="text-slate-600">{selection.ethiopian_agency}</TableCell>
-                  <TableCell className="text-slate-600">{selection.foreign_agency}</TableCell>
+                  <TableCell className="font-medium text-foreground">{selection.candidate_name}</TableCell>
+                  <TableCell className="text-muted-foreground">{selection.ethiopian_agency}</TableCell>
+                  <TableCell className="text-muted-foreground">{selection.foreign_agency}</TableCell>
                   <TableCell><AdminStatusBadge status={selection.status} /></TableCell>
-                  <TableCell className="text-slate-600">{formatShortDate(selection.selected_date)}</TableCell>
+                  <TableCell className="text-muted-foreground">{formatShortDate(selection.selected_date)}</TableCell>
                   <TableCell><AdminStatusBadge status={selection.approval_status} /></TableCell>
                 </TableRow>
               ))}

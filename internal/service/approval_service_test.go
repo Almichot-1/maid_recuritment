@@ -183,6 +183,67 @@ func TestApprovalService_SingleRejectionBlocksBothParties(t *testing.T) {
 	require.ErrorIs(t, err, ErrSelectionNotPending)
 }
 
+func TestApprovalService_ForeignCanApproveWithoutSupportingDocuments(t *testing.T) {
+	service, db := setupApprovalService(t)
+	now := time.Now().UTC()
+
+	err := db.Create(&approvalTestCandidate{
+		ID:        "cand-1",
+		CreatedBy: "owner-1",
+		FullName:  "Candidate",
+		Status:    string(domain.CandidateStatusLocked),
+		LockedBy:  ptrString("selector-1"),
+		Languages: []byte("[]"),
+		Skills:    []byte("[]"),
+	}).Error
+	require.NoError(t, err)
+
+	err = db.Create(&approvalTestSelection{
+		ID:          "sel-1",
+		CandidateID: "cand-1",
+		SelectedBy:  "selector-1",
+		Status:      string(domain.SelectionPending),
+		ExpiresAt:   now.Add(2 * time.Hour),
+	}).Error
+	require.NoError(t, err)
+
+	err = service.ApproveSelection("sel-1", "selector-1")
+	require.NoError(t, err)
+
+	var selection domain.Selection
+	err = db.Where("id = ?", "sel-1").First(&selection).Error
+	require.NoError(t, err)
+	assert.Equal(t, domain.SelectionPending, selection.Status)
+}
+
+func TestApprovalService_EthiopianCannotApproveWithoutSupportingDocuments(t *testing.T) {
+	service, db := setupApprovalService(t)
+	now := time.Now().UTC()
+
+	err := db.Create(&approvalTestCandidate{
+		ID:        "cand-1",
+		CreatedBy: "owner-1",
+		FullName:  "Candidate",
+		Status:    string(domain.CandidateStatusLocked),
+		LockedBy:  ptrString("selector-1"),
+		Languages: []byte("[]"),
+		Skills:    []byte("[]"),
+	}).Error
+	require.NoError(t, err)
+
+	err = db.Create(&approvalTestSelection{
+		ID:          "sel-1",
+		CandidateID: "cand-1",
+		SelectedBy:  "selector-1",
+		Status:      string(domain.SelectionPending),
+		ExpiresAt:   now.Add(2 * time.Hour),
+	}).Error
+	require.NoError(t, err)
+
+	err = service.ApproveSelection("sel-1", "owner-1")
+	require.ErrorIs(t, err, ErrSelectionSupportingDocumentsRequired)
+}
+
 func TestApprovalService_BothApprovalsNeededToProceed(t *testing.T) {
 	service, db := setupApprovalService(t)
 	seedApprovalScenario(t, db, domain.SelectionPending, time.Now().UTC().Add(2*time.Hour))

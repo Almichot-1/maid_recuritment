@@ -11,6 +11,7 @@ import { useAuthStore } from "@/stores/auth-store"
 import { useLayoutStore } from "@/stores/layout-store"
 import { Loader2 } from "lucide-react"
 import { cn } from "@/lib/utils"
+import { useI18n } from "@/lib/i18n"
 import { getRoleHomePath } from "@/lib/role-home"
 import { UserRole } from "@/types"
 
@@ -20,6 +21,7 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
   const { user, isAuthenticated, isLoading, loadFromStorage } = useAuthStore()
   const { isSidebarCollapsed } = useLayoutStore()
   const { hasActivePairs, isLoading: pairingLoading, isReady } = usePairingContext()
+  const { isRTL } = useI18n()
 
   // Hydrate user store
   React.useEffect(() => {
@@ -73,7 +75,9 @@ export default function DashboardLayout({ children }: { children: React.ReactNod
       <div 
         className={cn(
           "flex flex-1 flex-col transition-all duration-300 ease-in-out min-w-0",
-          isSidebarCollapsed ? "md:pl-16" : "md:pl-64"
+          isRTL
+            ? (isSidebarCollapsed ? "md:pr-16" : "md:pr-64")
+            : (isSidebarCollapsed ? "md:pl-16" : "md:pl-64")
         )}
       >
         {/* Desktop Header */}

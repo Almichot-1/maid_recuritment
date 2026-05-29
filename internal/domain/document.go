@@ -8,6 +8,7 @@ const (
 	Passport DocumentType = "passport"
 	Photo    DocumentType = "photo"
 	Video    DocumentType = "video"
+	Medical  DocumentType = "medical"
 )
 
 type Document struct {
@@ -27,5 +28,6 @@ func (Document) TableName() string {
 type DocumentRepository interface {
 	Create(document *Document) error
 	GetByCandidateID(candidateID string) ([]*Document, error)
+	GetByCandidateIDAndType(candidateID string, documentType DocumentType) (*Document, error)
 	Delete(id string) error
 }

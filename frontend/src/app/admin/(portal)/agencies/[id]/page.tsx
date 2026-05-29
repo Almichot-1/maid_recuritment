@@ -1,7 +1,7 @@
 "use client"
 
 import * as React from "react"
-import { useRouter } from "next/navigation"
+import { useParams, useRouter } from "next/navigation"
 import { toast } from "sonner"
 
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
@@ -17,10 +17,12 @@ import { useAgencyPairings } from "@/hooks/use-pairings"
 import { AccountStatus } from "@/types"
 import { formatDateTime, titleize } from "@/lib/admin-utils"
 
-export default function AdminAgencyDetailPage({ params }: { params: { id: string } }) {
+export default function AdminAgencyDetailPage() {
+  const params = useParams()
+  const id = typeof params.id === "string" ? params.id : Array.isArray(params.id) ? params.id[0] ?? "" : ""
   const router = useRouter()
-  const { data, isLoading } = useAgency(params.id)
-  const { data: pairings = [], isLoading: pairingsLoading } = useAgencyPairings(params.id)
+  const { data, isLoading } = useAgency(id)
+  const { data: pairings = [], isLoading: pairingsLoading } = useAgencyPairings(id)
   const { mutateAsync: approveAgency, isPending: approving } = useApproveAgency()
   const { mutateAsync: rejectAgency, isPending: rejecting } = useRejectAgency()
   const { mutateAsync: updateStatus, isPending: updatingStatus } = useUpdateAgencyStatus()
@@ -38,7 +40,7 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
   }, [data?.agency.account_status])
 
   if (isLoading || !data) {
-    return <div className="rounded-3xl border border-slate-200 bg-white p-10 text-center text-sm text-slate-500">Loading agency profile...</div>
+    return <div className="rounded-3xl border border-border bg-card p-10 text-center text-sm text-muted-foreground">Loading agency profile...</div>
   }
 
   const handleApprove = async () => {
@@ -93,9 +95,9 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
       />
 
       <div className="grid gap-6 xl:grid-cols-[1.1fr_0.9fr]">
-        <Card className="border-slate-200 bg-white/90">
+        <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Agency profile</CardTitle>
+            <CardTitle className="text-lg text-foreground">Agency profile</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4 sm:grid-cols-2">
             <InfoItem label="Company name" value={data.agency.company_name || "Not provided"} />
@@ -109,13 +111,13 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-white/90">
+        <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Account controls</CardTitle>
+            <CardTitle className="text-lg text-foreground">Account controls</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Account status</label>
+              <label className="text-sm font-medium text-muted-foreground">Account status</label>
               <Select value={statusDraft} onValueChange={(value) => setStatusDraft(value as AccountStatus)}>
                 <SelectTrigger>
                   <SelectValue />
@@ -128,7 +130,7 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
               </Select>
             </div>
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Reason / admin note</label>
+              <label className="text-sm font-medium text-muted-foreground">Reason / admin note</label>
               <Textarea
                 value={statusReason}
                 onChange={(event) => setStatusReason(event.target.value)}
@@ -143,9 +145,9 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
       </div>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <Card className="border-slate-200 bg-white/90">
+        <Card className="border-border bg-card">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Activity summary</CardTitle>
+            <CardTitle className="text-lg text-foreground">Activity summary</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             <MetricItem label="Total candidates" value={data.activity_summary.total_candidates} />
@@ -157,22 +159,22 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-white/90 lg:col-span-2">
+        <Card className="border-border bg-card lg:col-span-2">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Recent activity</CardTitle>
+            <CardTitle className="text-lg text-foreground">Recent activity</CardTitle>
           </CardHeader>
           <CardContent className="space-y-3">
             {data.recent_activity.map((item) => (
-              <div key={item.id} className="flex items-center justify-between rounded-2xl border border-slate-200 p-4">
+              <div key={item.id} className="flex items-center justify-between rounded-2xl border border-border p-4">
                 <div>
-                  <p className="font-medium text-slate-950">{item.title}</p>
-                  <p className="text-sm text-slate-500">{titleize(item.type)} • {formatDateTime(item.occurred_at)}</p>
+                  <p className="font-medium text-foreground">{item.title}</p>
+                  <p className="text-sm text-muted-foreground">{titleize(item.type)} • {formatDateTime(item.occurred_at)}</p>
                 </div>
                 <AdminStatusBadge status={item.status} />
               </div>
             ))}
             {!data.recent_activity.length ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+              <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
                 No recent activity has been recorded for this agency yet.
               </div>
             ) : null}
@@ -180,11 +182,11 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
         </Card>
       </div>
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div>
-            <CardTitle className="text-lg text-slate-950">Pair workspaces</CardTitle>
-            <p className="text-sm text-slate-500">Private Ethiopian–Foreign relationships connected to this agency.</p>
+            <CardTitle className="text-lg text-foreground">Pair workspaces</CardTitle>
+            <p className="text-sm text-muted-foreground">Private Ethiopian–Foreign relationships connected to this agency.</p>
           </div>
           <Button variant="outline" onClick={() => router.push("/admin/pairings")}>
             Open pairings manager
@@ -192,51 +194,51 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
         </CardHeader>
         <CardContent className="space-y-3">
           {pairingsLoading ? (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
               Loading pair workspaces...
             </div>
           ) : pairings.length ? (
             pairings.map((pairing) => (
-              <div key={pairing.id} className="flex flex-col gap-3 rounded-2xl border border-slate-200 p-4 sm:flex-row sm:items-center sm:justify-between">
+              <div key={pairing.id} className="flex flex-col gap-3 rounded-2xl border border-border p-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="space-y-1">
                   <div className="flex flex-wrap items-center gap-2">
                     <AdminStatusBadge status={pairing.status} />
-                    <p className="text-sm font-medium text-slate-950">
+                    <p className="text-sm font-medium text-foreground">
                       {pairing.ethiopian_agency.company_name || pairing.ethiopian_agency.full_name} ↔ {pairing.foreign_agency.company_name || pairing.foreign_agency.full_name}
                     </p>
                   </div>
-                  <p className="text-sm text-slate-500">
+                  <p className="text-sm text-muted-foreground">
                     Approved {formatDateTime(pairing.approved_at)}
                   </p>
-                  {pairing.notes ? <p className="text-sm text-slate-500">{pairing.notes}</p> : null}
+                  {pairing.notes ? <p className="text-sm text-muted-foreground">{pairing.notes}</p> : null}
                 </div>
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
               This agency is not connected to any private workspaces yet.
             </div>
           )}
         </CardContent>
       </Card>
 
-      <Card className="border-slate-200 bg-white/90">
+      <Card className="border-border bg-card">
         <CardHeader>
-          <CardTitle className="text-lg text-slate-950">Verification documents</CardTitle>
+          <CardTitle className="text-lg text-foreground">Verification documents</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {data.submitted_documents.length ? (
             data.submitted_documents.map((document, index) => (
-              <div key={`${document.id ?? index}`} className="rounded-2xl border border-slate-200 p-4 text-sm text-slate-600">
+              <div key={`${document.id ?? index}`} className="rounded-2xl border border-border p-4 text-sm text-muted-foreground">
                 {Object.entries(document).map(([key, value]) => (
                   <p key={key}>
-                    <span className="font-medium text-slate-900">{titleize(key)}:</span> {value}
+                    <span className="font-medium text-foreground">{titleize(key)}:</span> {value}
                   </p>
                 ))}
               </div>
             ))
           ) : (
-            <div className="rounded-2xl border border-dashed border-slate-300 p-6 text-sm text-slate-500">
+            <div className="rounded-2xl border border-dashed border-border p-6 text-sm text-muted-foreground">
               Agency verification document upload is not captured in the current signup flow yet, so this section stays empty for now.
             </div>
           )}
@@ -271,18 +273,18 @@ export default function AdminAgencyDetailPage({ params }: { params: { id: string
 
 function InfoItem({ label, value }: { label: string; value: string }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
-      <p className="text-xs font-semibold uppercase tracking-wide text-slate-400">{label}</p>
-      <p className="mt-2 text-sm text-slate-700">{value}</p>
+    <div className="rounded-2xl border border-border bg-muted/30 p-4">
+      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">{label}</p>
+      <p className="mt-2 text-sm text-muted-foreground">{value}</p>
     </div>
   )
 }
 
 function MetricItem({ label, value }: { label: string; value: number }) {
   return (
-    <div className="flex items-center justify-between rounded-2xl border border-slate-200 px-4 py-3">
-      <span className="text-sm text-slate-500">{label}</span>
-      <span className="text-lg font-semibold text-slate-950">{value}</span>
+    <div className="flex items-center justify-between rounded-2xl border border-border px-4 py-3">
+      <span className="text-sm text-muted-foreground">{label}</span>
+      <span className="text-lg font-semibold text-foreground">{value}</span>
     </div>
   )
 }

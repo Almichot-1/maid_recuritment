@@ -75,13 +75,13 @@ export default function AdminPairingsPage() {
       />
 
       <div className="grid gap-6 xl:grid-cols-[420px_minmax(0,1fr)]">
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader>
-            <CardTitle className="text-lg text-slate-950">Create a private workspace</CardTitle>
+            <CardTitle className="text-lg text-foreground">Create a private workspace</CardTitle>
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Ethiopian agency</label>
+              <label className="text-sm font-medium text-muted-foreground">Ethiopian agency</label>
               <Select value={ethiopianAgencyId} onValueChange={setEthiopianAgencyId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose an Ethiopian agency" />
@@ -97,7 +97,7 @@ export default function AdminPairingsPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Foreign agency</label>
+              <label className="text-sm font-medium text-muted-foreground">Foreign agency</label>
               <Select value={foreignAgencyId} onValueChange={setForeignAgencyId}>
                 <SelectTrigger>
                   <SelectValue placeholder="Choose a foreign agency" />
@@ -113,7 +113,7 @@ export default function AdminPairingsPage() {
             </div>
 
             <div className="space-y-2">
-              <label className="text-sm font-medium text-slate-700">Internal note</label>
+              <label className="text-sm font-medium text-muted-foreground">Internal note</label>
               <Textarea
                 value={notes}
                 onChange={(event) => setNotes(event.target.value)}
@@ -127,11 +127,11 @@ export default function AdminPairingsPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-slate-200 bg-white/90 shadow-sm">
+        <Card className="border-border bg-card shadow-sm">
           <CardHeader className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
-              <CardTitle className="text-lg text-slate-950">Existing workspaces</CardTitle>
-              <p className="text-sm text-slate-500">Every relationship below is a private operational workspace between one Ethiopian and one foreign agency.</p>
+              <CardTitle className="text-lg text-foreground">Existing workspaces</CardTitle>
+              <p className="text-sm text-muted-foreground">Every relationship below is a private operational workspace between one Ethiopian and one foreign agency.</p>
             </div>
             <div className="w-full sm:w-[220px]">
               <Select value={statusFilter} onValueChange={setStatusFilter}>
@@ -149,12 +149,12 @@ export default function AdminPairingsPage() {
           </CardHeader>
           <CardContent className="space-y-4">
             {isLoading ? (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-muted-foreground">
                 Loading pair workspaces...
               </div>
             ) : pairings.length ? (
               pairings.map((pairing) => (
-                <div key={pairing.id} className="space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm">
+                <div key={pairing.id} className="space-y-4 rounded-3xl border border-border bg-card p-5 shadow-sm">
                   <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
                     <div className="space-y-3">
                       <div className="flex flex-wrap items-center gap-2">
@@ -176,7 +176,7 @@ export default function AdminPairingsPage() {
                         />
                       </div>
                       {pairing.notes ? (
-                        <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-slate-600">{pairing.notes}</p>
+                        <p className="rounded-2xl bg-slate-50 px-4 py-3 text-sm text-muted-foreground">{pairing.notes}</p>
                       ) : null}
                     </div>
 
@@ -213,7 +213,7 @@ export default function AdminPairingsPage() {
                 </div>
               ))
             ) : (
-              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-slate-500">
+              <div className="rounded-2xl border border-dashed border-slate-300 p-8 text-center text-sm text-muted-foreground">
                 No pair workspaces match this filter yet.
               </div>
             )}
@@ -234,10 +234,10 @@ function WorkspacePartyCard({
   subtitle: string
 }) {
   return (
-    <div className="rounded-2xl border border-slate-200 bg-slate-50 p-4">
+    <div className="rounded-2xl border border-border bg-muted/30 p-4">
       <p className="text-xs font-semibold uppercase tracking-[0.22em] text-slate-400">{label}</p>
-      <p className="mt-2 font-semibold text-slate-950">{title}</p>
-      <p className="text-sm text-slate-500">{subtitle}</p>
+      <p className="mt-2 font-semibold text-foreground">{title}</p>
+      <p className="text-sm text-muted-foreground">{subtitle}</p>
     </div>
   )
 }

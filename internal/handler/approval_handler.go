@@ -62,6 +62,11 @@ func (h *ApprovalHandler) ApproveSelection(w http.ResponseWriter, r *http.Reques
 	}
 	pairingID, _ := middleware.PairingIDFromContext(r.Context())
 
+	if err := h.ensureSelectionWorkspaceAccess(selectionID, role, userID, pairingID); err != nil {
+		h.writeApprovalError(w, err)
+		return
+	}
+
 	if err := h.approvalService.ApproveSelection(selectionID, userID); err != nil {
 		h.writeApprovalError(w, err)
 		return
@@ -87,6 +92,13 @@ func (h *ApprovalHandler) RejectSelection(w http.ResponseWriter, r *http.Request
 	var req RejectSelectionRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil && !errors.Is(err, io.EOF) {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	role, _ := middleware.RoleFromContext(r.Context())
+	pairingID, _ := middleware.PairingIDFromContext(r.Context())
+	if err := h.ensureSelectionWorkspaceAccess(selectionID, role, userID, pairingID); err != nil {
+		h.writeApprovalError(w, err)
 		return
 	}
 
@@ -118,28 +130,45 @@ func (h *ApprovalHandler) GetApprovals(w http.ResponseWriter, r *http.Request) {
 	_ = utils.WriteJSON(w, statusCode, response)
 }
 
-func (h *ApprovalHandler) buildApprovalStatusResponse(selectionID, role, userID, pairingID string) (*ApprovalStatusResponse, int, error) {
+func (h *ApprovalHandler) ensureSelectionWorkspaceAccess(selectionID, role, userID, pairingID string) error {
 	selection, err := h.selectionService.GetSelection(selectionID)
 	if err != nil {
-		return nil, 0, err
+		return err
 	}
 	if h.pairingService != nil {
 		pairing, err := h.pairingService.ResolveActivePairing(userID, role, pairingID)
 		if err != nil {
-			return nil, 0, err
+			return err
 		}
 		if strings.TrimSpace(selection.PairingID) != strings.TrimSpace(pairing.ID) {
-			return nil, 0, service.ErrNotAuthorized
+			return service.ErrNotAuthorized
 		}
 	}
 
 	candidate, err := h.candidateRepo.GetByID(selection.CandidateID)
 	if err != nil {
-		return nil, 0, err
+		return err
 	}
 
 	if !isInvolvedSelectionParty(role, userID, selection, candidate) {
-		return nil, 0, service.ErrNotAuthorized
+		return service.ErrNotAuthorized
+	}
+
+	return nil
+}
+
+func (h *ApprovalHandler) buildApprovalStatusResponse(selectionID, role, userID, pairingID string) (*ApprovalStatusResponse, int, error) {
+	selection, err := h.selectionService.GetSelection(selectionID)
+	if err != nil {
+		return nil, 0, err
+	}
+	if err := h.ensureSelectionWorkspaceAccess(selectionID, role, userID, pairingID); err != nil {
+		return nil, 0, err
+	}
+
+	candidate, err := h.candidateRepo.GetByID(selection.CandidateID)
+	if err != nil {
+		return nil, 0, err
 	}
 
 	approvals, err := h.approvalService.GetApprovals(selectionID)

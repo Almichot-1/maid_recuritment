@@ -27,6 +27,12 @@ type Config struct {
 	AppBaseURL         string
 	CORSAllowedOrigins []string
 	RunExpiryScheduler bool
+	// TessDataPath is the TESSDATA_PREFIX directory for Tesseract OCR.
+	// Leave empty to use the system default (works when Tesseract is on PATH).
+	// Example: "C:\\Program Files\\Tesseract-OCR"
+	TessDataPath string
+	// OCRLanguage is the Tesseract language code (e.g. "eng").
+	OCRLanguage string
 }
 
 func Load() (*Config, error) {
@@ -50,6 +56,8 @@ func Load() (*Config, error) {
 		AppBaseURL:         os.Getenv("APP_BASE_URL"),
 		CORSAllowedOrigins: splitCSV(getEnv("CORS_ALLOWED_ORIGINS", "http://localhost:3000,http://localhost:3001")),
 		RunExpiryScheduler: getEnvAsBool("RUN_EXPIRY_SCHEDULER", true),
+		TessDataPath:       os.Getenv("TESSDATA_PREFIX"),
+		OCRLanguage:        getEnv("OCR_LANGUAGE", "eng"),
 	}
 
 	missing := make([]string, 0)

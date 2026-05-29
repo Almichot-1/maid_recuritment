@@ -1,4 +1,4 @@
-import { UserCheck, CheckCircle2, XCircle, ArrowRight, Clock, Bell } from "lucide-react"
+import { UserCheck, CheckCircle2, XCircle, ArrowRight, Clock, Bell, ShieldAlert, PlaneTakeoff, PlaneLanding } from "lucide-react"
 
 export function getNotificationIcon(type: string) {
   switch (type) {
@@ -12,6 +12,14 @@ export function getNotificationIcon(type: string) {
       return ArrowRight
     case "expiry":
       return Clock
+    case "expiry_warning":
+      return Clock
+    case "passport_expiry_warning":
+      return ShieldAlert
+    case "flight_booked":
+      return PlaneTakeoff
+    case "arrived":
+      return PlaneLanding
     default:
       return Bell
   }
@@ -20,17 +28,23 @@ export function getNotificationIcon(type: string) {
 export function getNotificationColor(type: string) {
   switch (type) {
     case "selection":
-      return "bg-blue-100 dark:bg-blue-950/30 text-blue-600 dark:text-blue-400"
+      return "bg-primary/10 text-primary"
     case "approval":
-      return "bg-green-100 dark:bg-green-950/30 text-green-600 dark:text-green-400"
+      return "bg-primary/15 text-primary"
     case "rejection":
-      return "bg-red-100 dark:bg-red-950/30 text-red-600 dark:text-red-400"
+      return "bg-destructive/10 text-destructive"
     case "status_update":
-      return "bg-purple-100 dark:bg-purple-950/30 text-purple-600 dark:text-purple-400"
+      return "bg-accent text-accent-foreground"
     case "expiry":
-      return "bg-orange-100 dark:bg-orange-950/30 text-orange-600 dark:text-orange-400"
+    case "expiry_warning":
+    case "passport_expiry_warning":
+      return "bg-muted text-muted-foreground"
+    case "flight_booked":
+      return "bg-secondary text-secondary-foreground"
+    case "arrived":
+      return "bg-primary/10 text-primary"
     default:
-      return "bg-gray-100 dark:bg-gray-950/30 text-gray-600 dark:text-gray-400"
+      return "bg-muted text-muted-foreground"
   }
 }
 
@@ -43,9 +57,17 @@ export function getNotificationTypeLabel(type: string) {
     case "rejection":
       return "Rejection"
     case "status_update":
-      return "Status Update"
+      return "Status update"
     case "expiry":
       return "Expiry"
+    case "expiry_warning":
+      return "Expiry warning"
+    case "passport_expiry_warning":
+      return "Passport warning"
+    case "flight_booked":
+      return "Flight booked"
+    case "arrived":
+      return "Arrived"
     default:
       return "Notification"
   }

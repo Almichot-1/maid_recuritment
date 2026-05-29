@@ -1,5 +1,12 @@
 import { create } from "zustand"
 import { AdminUser } from "@/types"
+import { getApiBaseUrl } from "@/lib/api-base-url"
+import { clearPersistedAdminUser, persistAdminUser } from "@/lib/auth-storage"
+import { clearQueryCache } from "@/lib/query-client"
+
+interface AdminMeResponse {
+  admin: AdminUser
+}
 
 interface AdminAuthState {
   admin: AdminUser | null
@@ -8,7 +15,7 @@ interface AdminAuthState {
   isLoading: boolean
   setAuth: (admin: AdminUser, token: string) => void
   logout: () => void
-  loadFromStorage: () => void
+  loadFromStorage: () => Promise<void>
 }
 
 export const useAdminAuthStore = create<AdminAuthState>((set) => ({
@@ -18,33 +25,45 @@ export const useAdminAuthStore = create<AdminAuthState>((set) => ({
   isLoading: true,
 
   setAuth: (admin, token) => {
-    localStorage.setItem("admin_auth_token", token)
-    localStorage.setItem("admin_auth_user", JSON.stringify(admin))
+    persistAdminUser(admin)
     set({ admin, token, isAuthenticated: true, isLoading: false })
   },
 
   logout: () => {
-    localStorage.removeItem("admin_auth_token")
-    localStorage.removeItem("admin_auth_user")
+    clearPersistedAdminUser()
+    clearQueryCache()
     set({ admin: null, token: null, isAuthenticated: false, isLoading: false })
   },
 
-  loadFromStorage: () => {
+  loadFromStorage: async () => {
     try {
       if (typeof window === "undefined") {
         return
       }
-      const token = localStorage.getItem("admin_auth_token")
-      const adminString = localStorage.getItem("admin_auth_user")
-      if (token && adminString) {
-        const admin = JSON.parse(adminString) as AdminUser
-        set({ admin, token, isAuthenticated: true, isLoading: false })
+
+      set({ isLoading: true })
+
+      const response = await fetch(`${getApiBaseUrl()}/admin/me`, {
+        credentials: "include",
+      })
+
+      if (response.status === 401 || response.status === 403) {
+        clearPersistedAdminUser()
+        set({ admin: null, token: null, isAuthenticated: false, isLoading: false })
         return
       }
+
+      if (!response.ok) {
+        set({ isLoading: false })
+        return
+      }
+
+      const data = (await response.json()) as AdminMeResponse
+      persistAdminUser(data.admin)
+      set({ admin: data.admin, token: null, isAuthenticated: true, isLoading: false })
     } catch (error) {
       console.error("Failed to load admin auth state", error)
+      set({ isLoading: false })
     }
-
-    set({ admin: null, token: null, isAuthenticated: false, isLoading: false })
   },
 }))

@@ -4,8 +4,9 @@ import { useRouter } from "next/navigation"
 import { toast } from "sonner"
 import api from "@/lib/api"
 import { useAuthStore } from "@/stores/auth-store"
-import { LoginInput, RegisterFormInput } from "@/lib/validations"
+import { ForgotPasswordRequestInput, ForgotPasswordResetInput, LoginInput, RegisterFormInput } from "@/lib/validations"
 import { AccountStatus, User, UserRole } from "@/types"
+import { getRoleHomePath } from "@/lib/role-home"
 
 interface AuthResponse {
   user: User
@@ -17,10 +18,28 @@ interface RegisterResponse {
   user: User
 }
 
+interface GenericMessageResponse {
+  message: string
+}
+
 interface ApiErrorResponse {
   error?: string
   message?: string
   account_status?: AccountStatus
+}
+
+export function getRegisterErrorMessage(error: unknown): string {
+  const response = (error as AxiosError<ApiErrorResponse>).response
+
+  if (response?.status === 409) {
+    return "This email already has an account. Sign in or reset the password instead."
+  }
+
+  return (
+    response?.data?.error ||
+    response?.data?.message ||
+    "We could not submit the registration right now. Please try again."
+  )
 }
 
 export function getLoginErrorMessage(error: unknown): string {
@@ -53,7 +72,7 @@ export function useLogin() {
     onSuccess: (data) => {
       setAuth(data.user, data.token)
       toast.success("Successfully logged in")
-      router.push("/dashboard")
+      router.replace(getRoleHomePath(data.user.role))
     },
     onError: (error) => {
       const message = getLoginErrorMessage(error)
@@ -97,11 +116,59 @@ export function useLogout() {
   const router = useRouter()
   const logout = useAuthStore((state) => state.logout)
 
-  return () => {
-    logout()
-    router.push("/login")
-    toast.info("Logged out successfully")
+  return async () => {
+    try {
+      await api.post("/auth/logout")
+    } catch {
+      // handled by interceptor when needed
+    } finally {
+      logout()
+      router.push("/login")
+      toast.info("Logged out successfully")
+    }
   }
+}
+
+export function useRequestPasswordReset() {
+  return useMutation({
+    mutationFn: async (data: ForgotPasswordRequestInput) => {
+      const response = await api.post<GenericMessageResponse>("/auth/forgot-password/request", data)
+      return response.data
+    },
+    onSuccess: (data) => {
+      toast.success(data.message)
+    },
+    onError: () => {
+      toast.error("We could not send a reset code right now. Please try again.")
+    },
+  })
+}
+
+export function useResetForgottenPassword() {
+  const router = useRouter()
+
+  return useMutation({
+    mutationFn: async (data: ForgotPasswordResetInput) => {
+      const response = await api.post<GenericMessageResponse>("/auth/forgot-password/reset", {
+        email: data.email,
+        code: data.code,
+        new_password: data.new_password,
+      })
+      return response.data
+    },
+    onSuccess: (data) => {
+      toast.success(data.message)
+      router.push("/login")
+    },
+    onError: (error: unknown) => {
+      const response = (error as AxiosError<ApiErrorResponse>).response
+      toast.error(
+        response?.data?.error ||
+          response?.data?.message ||
+          "We could not reset your password right now. Please try again."
+      )
+    },
+  })
 }
 
 export function useCurrentUser() {

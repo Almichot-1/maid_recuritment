@@ -16,6 +16,37 @@ import { CandidateTable } from "@/components/candidates/candidate-table"
 import { CandidatePagination } from "@/components/candidates/candidate-pagination"
 import { Skeleton } from "@/components/ui/skeleton"
 
+function parseOptionalInt(value: string | null): number | undefined {
+  if (!value) {
+    return undefined
+  }
+
+  const parsed = Number(value)
+  if (!Number.isFinite(parsed)) {
+    return undefined
+  }
+
+  return parsed
+}
+
+function parsePage(value: string | null, fallback = 1) {
+  const parsed = parseOptionalInt(value)
+  if (parsed === undefined || parsed < 1) {
+    return fallback
+  }
+
+  return Math.floor(parsed)
+}
+
+function parsePageSize(value: string | null, fallback = 12) {
+  const parsed = parseOptionalInt(value)
+  if (parsed === undefined || parsed < 1) {
+    return fallback
+  }
+
+  return Math.floor(parsed)
+}
+
 export default function CandidatesPage() {
   const searchParams = useSearchParams()
   const { isEthiopianAgent } = useCurrentUser()
@@ -43,13 +74,13 @@ export default function CandidatesPage() {
     return {
       search: searchParams.get("search") || undefined,
       status: searchParams.get("status") || undefined,
-      min_age: searchParams.get("min_age") ? Number(searchParams.get("min_age")) : undefined,
-      max_age: searchParams.get("max_age") ? Number(searchParams.get("max_age")) : undefined,
-      min_experience: searchParams.get("min_experience") ? Number(searchParams.get("min_experience")) : undefined,
-      max_experience: searchParams.get("max_experience") ? Number(searchParams.get("max_experience")) : undefined,
+      min_age: parseOptionalInt(searchParams.get("min_age")),
+      max_age: parseOptionalInt(searchParams.get("max_age")),
+      min_experience: parseOptionalInt(searchParams.get("min_experience")),
+      max_experience: parseOptionalInt(searchParams.get("max_experience")),
       languages: searchParams.get("languages") || undefined,
-      page: searchParams.get("page") ? Number(searchParams.get("page")) : 1,
-      page_size: searchParams.get("page_size") ? Number(searchParams.get("page_size")) : 12,
+      page: parsePage(searchParams.get("page")),
+      page_size: parsePageSize(searchParams.get("page_size")),
     }
   }, [searchParams])
 

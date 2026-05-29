@@ -1,8 +1,11 @@
 import axios from 'axios';
 import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { useRouter } from 'next/navigation';
 import { toast } from 'sonner';
 import api from '@/lib/api';
+import type { Locale } from '@/lib/i18n';
 import { useAuthStore } from '@/stores/auth-store';
+import { User } from '@/types';
 
 export interface ProfileUpdateData {
   full_name: string;
@@ -16,6 +19,7 @@ export interface PasswordChangeData {
 
 export interface PreferencesData {
   theme: 'light' | 'dark' | 'system';
+  language: Locale;
   email_notifications: boolean;
   selection_alerts: boolean;
   status_update_alerts: boolean;
@@ -32,7 +36,7 @@ export function useUpdateProfile() {
 
   return useMutation({
     mutationFn: async (data: ProfileUpdateData) => {
-      const response = await api.patch<{ user: { full_name: string; company_name?: string } }>('/users/profile', data);
+      const response = await api.patch<{ user: User }>('/users/profile', data);
       return response.data.user;
     },
     onSuccess: (user) => {
@@ -40,8 +44,13 @@ export function useUpdateProfile() {
       queryClient.invalidateQueries({ queryKey: ['user'] });
       toast.success('Profile updated successfully');
     },
-    onError: () => {
-      toast.error('Failed to update profile');
+    onError: (error: unknown) => {
+      const message = axios.isAxiosError<ApiErrorResponse>(error)
+        ? error.response?.data?.error || error.response?.data?.message || error.message
+        : error instanceof Error
+          ? error.message
+          : 'Failed to update profile';
+      toast.error(message);
     },
   });
 }
@@ -73,6 +82,7 @@ export function useUpdatePreferences() {
     mutationFn: async (data: PreferencesData) => {
       if (typeof window !== 'undefined') {
         localStorage.setItem('user_preferences', JSON.stringify(data));
+        localStorage.setItem('app_locale', data.language);
       }
       return data;
     },
@@ -87,12 +97,26 @@ export function useUpdatePreferences() {
 }
 
 export function useLogoutAllDevices() {
+  const router = useRouter();
+  const logout = useAuthStore((state) => state.logout);
+
   return useMutation({
     mutationFn: async () => {
-      throw new Error('Logging out of all devices is not supported by the current API yet.');
+      await api.post('/users/sessions/logout-all');
+      return true;
     },
-    onError: (error: Error) => {
-      toast.error(error.message || 'Failed to logout of all devices');
+    onSuccess: () => {
+      logout();
+      router.push('/login');
+      toast.success('Signed out everywhere and cleared all active sessions.');
+    },
+    onError: (error: unknown) => {
+      const message = axios.isAxiosError<ApiErrorResponse>(error)
+        ? error.response?.data?.error || error.response?.data?.message || error.message
+        : error instanceof Error
+          ? error.message
+          : 'Failed to clear active sessions';
+      toast.error(message);
     },
   });
 }
