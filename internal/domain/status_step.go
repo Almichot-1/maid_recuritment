@@ -8,6 +8,7 @@ const (
 	Pending    StepStatus = "pending"
 	InProgress StepStatus = "in_progress"
 	Completed  StepStatus = "completed"
+	Failed     StepStatus = "failed"
 )
 
 const (

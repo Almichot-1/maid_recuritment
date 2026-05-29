@@ -76,13 +76,13 @@ func TestCandidateService_MoreBranches(t *testing.T) {
 	require.NoError(t, err)
 	assert.Nil(t, docs)
 
-	err = service.PublishCandidate("cand-1", "other")
+	_, err = service.PublishCandidate("cand-1", "other", PublishCandidateInput{})
 	require.ErrorIs(t, err, ErrForbidden)
 
 	repo.getByID = func(id string) (*domain.Candidate, error) {
 		return &domain.Candidate{ID: id, CreatedBy: "owner-1", Status: domain.CandidateStatusAvailable, Languages: []byte("[]"), Skills: []byte("[]")}, nil
 	}
-	err = service.PublishCandidate("cand-1", "owner-1")
+	_, err = service.PublishCandidate("cand-1", "owner-1", PublishCandidateInput{})
 	require.ErrorIs(t, err, repository.ErrInvalidStatusTransition)
 
 	_, err = service.UploadCandidateDocument("cand-1", "owner-1", UploadCandidateDocumentInput{DocumentType: "photo", FileName: "p.png"})

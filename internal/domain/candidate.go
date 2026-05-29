@@ -24,7 +24,14 @@ type Candidate struct {
 	ID              string `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	CreatedBy       string `gorm:"type:uuid;not null"`
 	FullName        string `gorm:"not null"`
+	Nationality     string
+	DateOfBirth     *time.Time `gorm:"type:date"`
 	Age             *int
+	PlaceOfBirth    string
+	Religion        string
+	MaritalStatus   string
+	ChildrenCount   *int
+	EducationLevel  string
 	ExperienceYears *int
 	Languages       json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
 	Skills          json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb"`

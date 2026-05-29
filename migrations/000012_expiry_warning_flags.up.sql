@@ -1,0 +1,2 @@
+ALTER TABLE selections
+    ADD COLUMN IF NOT EXISTS warning_sent_flags INTEGER NOT NULL DEFAULT 0;

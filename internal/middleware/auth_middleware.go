@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"strings"
 
 	"maid-recruitment-tracking/internal/service"
 	"maid-recruitment-tracking/pkg/utils"
@@ -13,26 +12,21 @@ import (
 type contextKey string
 
 const (
-	userIDContextKey contextKey = "user_id"
-	roleContextKey   contextKey = "role"
+	userIDContextKey  contextKey = "user_id"
+	roleContextKey    contextKey = "role"
+	sessionContextKey contextKey = "session_id"
 )
 
 func AuthMiddleware(authService *service.AuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-			if authHeader == "" {
-				_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing authorization header"})
+			token := ResolveBearerToken(r, UserSessionCookieName)
+			if token == "" {
+				_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing authentication credentials"})
 				return
 			}
 
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
-				_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid authorization header"})
-				return
-			}
-
-			userID, role, err := authService.ValidateToken(parts[1])
+			userID, role, sessionID, err := authService.ValidateTokenWithSession(token)
 			if err != nil {
 				if errors.Is(err, service.ErrInvalidToken) {
 					_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid token"})
@@ -44,6 +38,7 @@ func AuthMiddleware(authService *service.AuthService) func(http.Handler) http.Ha
 
 			ctx := context.WithValue(r.Context(), userIDContextKey, userID)
 			ctx = context.WithValue(ctx, roleContextKey, role)
+			ctx = context.WithValue(ctx, sessionContextKey, sessionID)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -57,4 +52,9 @@ func UserIDFromContext(ctx context.Context) (string, bool) {
 func RoleFromContext(ctx context.Context) (string, bool) {
 	role, ok := ctx.Value(roleContextKey).(string)
 	return role, ok
+}
+
+func SessionIDFromContext(ctx context.Context) (string, bool) {
+	sessionID, ok := ctx.Value(sessionContextKey).(string)
+	return sessionID, ok
 }

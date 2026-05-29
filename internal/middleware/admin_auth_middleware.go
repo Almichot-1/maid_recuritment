@@ -21,19 +21,13 @@ const (
 func AdminAuthMiddleware(authService *service.AdminAuthService) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			authHeader := strings.TrimSpace(r.Header.Get("Authorization"))
-			if authHeader == "" {
-				_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing authorization header"})
+			token := ResolveBearerToken(r, AdminSessionCookieName)
+			if token == "" {
+				_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "missing authentication credentials"})
 				return
 			}
 
-			parts := strings.SplitN(authHeader, " ", 2)
-			if len(parts) != 2 || !strings.EqualFold(parts[0], "Bearer") || strings.TrimSpace(parts[1]) == "" {
-				_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "invalid authorization header"})
-				return
-			}
-
-			adminID, role, err := authService.ValidateToken(parts[1])
+			adminID, role, err := authService.ValidateToken(token)
 			if err != nil {
 				switch {
 				case errors.Is(err, service.ErrAdminInvalidToken):

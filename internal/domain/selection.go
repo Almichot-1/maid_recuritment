@@ -30,12 +30,12 @@ type Selection struct {
 	EmployerContractUploadedAt *time.Time
 	EmployerIDURL              string
 	EmployerIDFileName         string
-	EmployerIDUploadedAt       *time.Time
-	ExpiresAt                  time.Time `gorm:"not null"`
+	EmployerIDUploadedAt *time.Time
 	// WarningSentFlags is a bitmask tracking which pre-expiry warnings have
 	// already been dispatched for this selection so each warning fires only once.
 	// Use the WarningSent24h / WarningSent6h / WarningSent1h constants.
 	WarningSentFlags int       `gorm:"not null;default:0"`
+	ExpiresAt        time.Time `gorm:"not null"`
 	CreatedAt        time.Time `gorm:"not null;default:now()"`
 	UpdatedAt        time.Time `gorm:"not null;default:now()"`
 }

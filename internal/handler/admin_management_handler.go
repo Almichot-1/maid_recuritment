@@ -1,8 +1,10 @@
 package handler
 
 import (
+	"crypto/rand"
 	"encoding/json"
 	"fmt"
+	"math/big"
 	"net/http"
 	"strings"
 	"time"
@@ -46,9 +48,7 @@ type UpdateAdminRequest struct {
 
 type CreateAdminResponse struct {
 	Admin             AdminManagementView `json:"admin"`
-	TemporaryPassword string              `json:"temporary_password"`
-	MFASecret         string              `json:"mfa_secret"`
-	ProvisioningURL   string              `json:"provisioning_url"`
+	SetupURL          string              `json:"setup_url"`
 	InvitationWarning string              `json:"invitation_warning,omitempty"`
 }
 
@@ -101,7 +101,7 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req CreateAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -110,7 +110,11 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	tempPassword := generateTemporaryAdminPassword()
+	tempPassword, err := generateTemporaryAdminPassword()
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate temporary password"})
+		return
+	}
 	key, err := totp.Generate(totp.GenerateOpts{
 		Issuer:      "Maid Recruitment Platform",
 		AccountName: strings.TrimSpace(strings.ToLower(req.Email)),
@@ -141,17 +145,21 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	invitationWarning := ""
+	setupURL, err := h.authService.CreateSetupInvitation(admin)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to generate admin setup link"})
+		return
+	}
+
+	invitationWarning := "The new admin must use the one-time setup link to create a password and activate MFA."
 	if h.emailService != nil {
 		body := fmt.Sprintf(
-			"Hello %s,\n\nYou have been added as an admin on the Maid Recruitment Platform.\n\nTemporary password: %s\nMFA secret: %s\nSetup URL: %s\n\nYou will be asked to change your password after your first login.",
+			"Hello %s,\n\nYou have been added as an admin on the Maid Recruitment Platform.\n\nUse the secure one-time setup link below to create your password and add MFA to your authenticator app:\n\n%s\n\nThis setup link expires in 24 hours.",
 			admin.FullName,
-			tempPassword,
-			key.Secret(),
-			key.URL(),
+			setupURL,
 		)
 		if err := h.emailService.Send(admin.Email, "Your admin portal invitation", body); err != nil {
-			invitationWarning = err.Error()
+			invitationWarning = "Setup link generated, but invitation email delivery failed: " + err.Error()
 		}
 	}
 
@@ -163,9 +171,7 @@ func (h *AdminManagementHandler) CreateAdmin(w http.ResponseWriter, r *http.Requ
 
 	_ = utils.WriteJSON(w, http.StatusCreated, CreateAdminResponse{
 		Admin:             mapAdminManagementView(admin),
-		TemporaryPassword: tempPassword,
-		MFASecret:         key.Secret(),
-		ProvisioningURL:   key.URL(),
+		SetupURL:          setupURL,
 		InvitationWarning: invitationWarning,
 	})
 }
@@ -189,7 +195,7 @@ func (h *AdminManagementHandler) UpdateAdmin(w http.ResponseWriter, r *http.Requ
 	}
 
 	var req UpdateAdminRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
@@ -264,6 +270,57 @@ func mapAdminManagementView(admin *domain.Admin) AdminManagementView {
 	return view
 }
 
-func generateTemporaryAdminPassword() string {
-	return "Admin!" + strings.ToUpper(time.Now().UTC().Format("020106")) + "a9"
+func generateTemporaryAdminPassword() (string, error) {
+	const upper = "ABCDEFGHJKLMNPQRSTUVWXYZ"
+	const lower = "abcdefghijkmnopqrstuvwxyz"
+	const digits = "23456789"
+	const special = "!@#$%^&*()-_=+"
+	all := upper + lower + digits + special
+
+	password := make([]byte, 0, 20)
+	requiredSets := []string{upper, lower, digits, special}
+	for _, charset := range requiredSets {
+		value, err := randomPasswordChar(charset)
+		if err != nil {
+			return "", err
+		}
+		password = append(password, value)
+	}
+
+	for len(password) < 20 {
+		value, err := randomPasswordChar(all)
+		if err != nil {
+			return "", err
+		}
+		password = append(password, value)
+	}
+
+	for index := len(password) - 1; index > 0; index-- {
+		swapIndex, err := randomInt(index + 1)
+		if err != nil {
+			return "", err
+		}
+		password[index], password[swapIndex] = password[swapIndex], password[index]
+	}
+
+	return string(password), nil
+}
+
+func randomPasswordChar(charset string) (byte, error) {
+	index, err := randomInt(len(charset))
+	if err != nil {
+		return 0, err
+	}
+	return charset[index], nil
+}
+
+func randomInt(max int) (int, error) {
+	if max <= 0 {
+		return 0, fmt.Errorf("invalid random bound")
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(max)))
+	if err != nil {
+		return 0, err
+	}
+	return int(value.Int64()), nil
 }

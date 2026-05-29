@@ -140,9 +140,10 @@ func TestCandidateService_RemainingBranches(t *testing.T) {
 		return &domain.Candidate{ID: id, CreatedBy: "owner", Status: domain.CandidateStatusDraft, Languages: []byte("[]"), Skills: []byte("[]")}, nil
 	}
 	repo.updateFn = func(candidate *domain.Candidate) error { return nil }
-	require.NoError(t, svc.PublishCandidate("id", "owner"))
+	_, err = svc.PublishCandidate("id", "owner", PublishCandidateInput{})
+	require.NoError(t, err)
 
-	_, err = svc.UploadCandidateDocument("id", "owner", UploadCandidateDocumentInput{DocumentType: "photo", File: bytes.NewBufferString("x"), FileName: "p.png", FileSize: 1})
+	_, err = svc.UploadCandidateDocument("id", "owner", UploadCandidateDocumentInput{DocumentType: "photo", File: bytes.NewReader(validPNGBytes()), FileName: "p.png", FileSize: int64(len(validPNGBytes()))})
 	require.NoError(t, err)
 
 	_, err = svc.UploadCandidateDocument("id", "owner", UploadCandidateDocumentInput{DocumentType: "bad", File: bytes.NewBufferString("x"), FileName: "bad.bin", FileSize: 1})
@@ -205,6 +206,6 @@ func TestPDFService_GenerateCV_ImageDecodeFailure(t *testing.T) {
 		{DocumentType: domain.Photo, FileURL: server.URL},
 		{DocumentType: domain.Passport, FileURL: server.URL},
 		{DocumentType: domain.Video, FileURL: "https://example.com/video.mp4"},
-	}, CandidateCVBranding{})
+	}, CandidateCVBranding{}, nil)
 	require.Error(t, err)
 }

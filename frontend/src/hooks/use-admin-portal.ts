@@ -3,6 +3,8 @@ import adminApi from "@/lib/admin-api"
 import {
   AccountStatus,
   AdminAgencyDetail,
+  AdminAgencyLoginOverview,
+  AdminAgencyLoginSummary,
   AdminAgencySummary,
   AdminAuditLogOverview,
   AdminCandidateOverview,
@@ -171,6 +173,25 @@ export function useAdminAuditLogs(filters?: { admin_id?: string; action?: string
   })
 }
 
+export function useAdminAgencyLogins(filters?: { role?: UserRole | "all"; search?: string }) {
+  return useQuery({
+    queryKey: ["admin-agency-logins", filters ?? {}],
+    staleTime: 30_000,
+    queryFn: async () => {
+      const response = await adminApi.get<{ summary: AdminAgencyLoginSummary; logins: AdminAgencyLoginOverview[] }>(
+        "/admin/agency-logins",
+        {
+          params: {
+            ...(filters?.role && filters.role !== "all" ? { role: filters.role } : {}),
+            ...(filters?.search ? { search: filters.search } : {}),
+          },
+        }
+      )
+      return response.data
+    },
+  })
+}
+
 export function useAdminUsers(enabled = true) {
   return useQuery({
     queryKey: ["admin-users"],
@@ -218,9 +239,7 @@ export function useCreateAdminUser() {
       const response = await adminApi.post("/admin/admins", payload)
       return response.data as {
         admin: AdminManagementRecord
-        temporary_password: string
-        mfa_secret: string
-        provisioning_url: string
+        setup_url: string
         invitation_warning?: string
       }
     },

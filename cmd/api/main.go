@@ -27,6 +27,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize user repository: %v", err)
 	}
+	userSessionRepository, err := repository.NewGormUserSessionRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize user session repository: %v", err)
+	}
 	adminRepository, err := repository.NewGormAdminRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize admin repository: %v", err)
@@ -166,7 +170,7 @@ func main() {
 	approvalService.SetPlatformSettingsReader(platformSettingsService)
 
 	authHandler := handler.NewAuthHandler(authService, userRepository, agencyApprovalService)
-	userHandler := handler.NewUserHandler(userRepository)
+	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService, pairingService)
 	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService)
 	dashboardHandler.SetPassportRepository(passportRepository)
 	dashboardHandler.SetStatusStepRepository(statusStepRepository)
@@ -179,18 +183,19 @@ func main() {
 	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, adminRepository)
 	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
 	adminAgencyHandler := handler.NewAdminAgencyHandler(userRepository, agencyApprovalRepository, agencyApprovalService, candidateRepository, selectionRepository)
-	adminReadonlyHandler := handler.NewAdminReadonlyHandler(userRepository, adminRepository, candidateRepository, selectionRepository, auditLogRepository)
+	adminReadonlyHandler := handler.NewAdminReadonlyHandler(userRepository, userSessionRepository, adminRepository, candidateRepository, selectionRepository, auditLogRepository)
 	adminManagementHandler := handler.NewAdminManagementHandler(adminRepository, auditLogRepository, adminAuthService, emailService)
 	adminSettingsHandler := handler.NewAdminSettingsHandler(platformSettingsService)
 	adminPairingHandler := handler.NewAdminPairingHandler(pairingService, userRepository)
 	notificationService.SetRealtimeNotifier(notificationHandler)
 
 	if cfg.RunExpiryScheduler {
-		if _, err := jobs.StartExpiryScheduler(selectionService); err != nil {
-			log.Fatalf("failed to start expiry scheduler: %v", err)
+		expiryWarningJob, err := jobs.NewExpiryWarningJob(selectionRepository, passportRepository, candidateRepository, notificationService)
+		if err != nil {
+			log.Fatalf("failed to initialize expiry warning job: %v", err)
 		}
-		if _, err := jobs.StartExpiryWarningScheduler(selectionRepository, passportRepository, candidateRepository, notificationService); err != nil {
-			log.Fatalf("failed to start expiry warning scheduler: %v", err)
+		if _, err := jobs.StartExpiryScheduler(selectionService, expiryWarningJob); err != nil {
+			log.Fatalf("failed to start expiry scheduler: %v", err)
 		}
 	} else {
 		log.Printf("expiry scheduler disabled for this process")

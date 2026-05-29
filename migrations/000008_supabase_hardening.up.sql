@@ -1,0 +1,15 @@
+ALTER FUNCTION public.set_updated_at() SET search_path = public, pg_temp;
+
+ALTER TABLE public.users ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.candidates ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.documents ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.approvals ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.status_steps ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.notifications ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.admins ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.audit_logs ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.candidate_pair_shares ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.selections ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agency_approval_requests ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.platform_settings ENABLE ROW LEVEL SECURITY;
+ALTER TABLE public.agency_pairings ENABLE ROW LEVEL SECURITY;

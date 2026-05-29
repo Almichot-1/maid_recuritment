@@ -39,12 +39,17 @@ type RegisterResponse struct {
 }
 
 type AuthUserView struct {
-	ID            string `json:"id"`
-	Email         string `json:"email"`
-	FullName      string `json:"full_name"`
-	Role          string `json:"role"`
-	CompanyName   string `json:"company_name,omitempty"`
-	AccountStatus string `json:"account_status"`
+	ID                      string  `json:"id"`
+	Email                   string  `json:"email"`
+	FullName                string  `json:"full_name"`
+	Role                    string  `json:"role"`
+	CompanyName             string  `json:"company_name,omitempty"`
+	AvatarURL               string  `json:"avatar_url,omitempty"`
+	EmailVerified           bool    `json:"email_verified"`
+	AutoShareCandidates     bool    `json:"auto_share_candidates"`
+	DefaultForeignPairingID *string `json:"default_foreign_pairing_id,omitempty"`
+	AccountStatus           string  `json:"account_status"`
+	CurrentSessionID        string  `json:"current_session_id,omitempty"`
 }
 
 type AuthHandler struct {
@@ -104,7 +109,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 
 	_ = utils.WriteJSON(w, http.StatusAccepted, RegisterResponse{
 		Message: "Registration submitted and pending approval",
-		User:    mapUserToAuthUserView(user),
+		User:    mapUserToAuthUserView(user, ""),
 	})
 }
 
@@ -155,7 +160,7 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	_ = utils.WriteJSON(w, http.StatusOK, AuthResponse{
 		Token: token,
-		User:  mapUserToAuthUserView(user),
+		User:  mapUserToAuthUserView(user, ""),
 	})
 }
 
@@ -181,17 +186,22 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]AuthUserView{
-		"user": mapUserToAuthUserView(user),
+		"user": mapUserToAuthUserView(user, ""),
 	})
 }
 
-func mapUserToAuthUserView(user *domain.User) AuthUserView {
+func mapUserToAuthUserView(user *domain.User, currentSessionID string) AuthUserView {
 	return AuthUserView{
-		ID:            user.ID,
-		Email:         user.Email,
-		FullName:      user.FullName,
-		Role:          string(user.Role),
-		CompanyName:   user.CompanyName,
-		AccountStatus: string(user.AccountStatus),
+		ID:                      user.ID,
+		Email:                   user.Email,
+		FullName:                user.FullName,
+		Role:                    string(user.Role),
+		CompanyName:             user.CompanyName,
+		AvatarURL:               user.AvatarURL,
+		EmailVerified:           user.EmailVerified,
+		AutoShareCandidates:     user.AutoShareCandidates,
+		DefaultForeignPairingID: user.DefaultForeignPairingID,
+		AccountStatus:           string(user.AccountStatus),
+		CurrentSessionID:        currentSessionID,
 	}
 }

@@ -1,7 +1,6 @@
 package handler
 
 import (
-	"encoding/json"
 	"errors"
 	"net/http"
 	"strings"
@@ -48,7 +47,7 @@ func (h *AdminSettingsHandler) GetSettings(w http.ResponseWriter, r *http.Reques
 
 func (h *AdminSettingsHandler) UpdateSettings(w http.ResponseWriter, r *http.Request) {
 	var req UpdatePlatformSettingsRequest
-	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+	if err := decodeJSONBody(w, r, &req, 64<<10); err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}

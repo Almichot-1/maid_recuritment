@@ -204,10 +204,10 @@ func (s *SelectionService) SelectCandidateInPairing(candidateID, selectedBy, pai
 		if err := s.notificationService.Send(
 			candidate.CreatedBy,
 			"Candidate selected",
-			"A foreign agent has selected one of your candidates.",
+			"A foreign agent has selected one of your candidates. Open the selection to review the approval request.",
 			"selection",
-			"candidate",
-			candidateID,
+			"selection",
+			selection.ID,
 		); err != nil {
 			return fmt.Errorf("notify candidate owner: %w", err)
 		}
@@ -215,10 +215,10 @@ func (s *SelectionService) SelectCandidateInPairing(candidateID, selectedBy, pai
 		if err := s.notificationService.Send(
 			selectedBy,
 			"Selection confirmed",
-			fmt.Sprintf("You have successfully selected this candidate for %d hours.", lockDurationHours),
+			fmt.Sprintf("You have successfully selected this candidate for %d hours. Upload the contract package and continue from the selection page.", lockDurationHours),
 			"selection",
-			"candidate",
-			candidateID,
+			"selection",
+			selection.ID,
 		); err != nil {
 			return fmt.Errorf("notify selecting agent: %w", err)
 		}
@@ -318,7 +318,7 @@ func (s *SelectionService) UploadSelectionDocument(selectionID, uploadedBy strin
 		return nil, err
 	}
 
-	contentType, err := detectContentTypeFromFileName(input.FileName)
+	bufferedFile, contentType, err := validateAndBufferUpload(input.File, input.FileName)
 	if err != nil {
 		return nil, err
 	}
@@ -343,7 +343,7 @@ func (s *SelectionService) UploadSelectionDocument(selectionID, uploadedBy strin
 			return ErrSelectionNotPending
 		}
 
-		uploadedURL, err = s.storageService.Upload(input.File, input.FileName, contentType)
+		uploadedURL, err = s.storageService.Upload(bufferedFile, input.FileName, contentType)
 		if err != nil {
 			return fmt.Errorf("upload selection document: %w", err)
 		}

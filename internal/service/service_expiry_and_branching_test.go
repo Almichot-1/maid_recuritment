@@ -198,6 +198,9 @@ func TestStatusStepService_UpdateStep_CompletedSetsAndClearsTimestamp(t *testing
 			return &domain.Candidate{ID: id, CreatedBy: "owner-1"}, nil
 		}},
 		selectionRepository: &statusStepSelectionRepoMock{},
+		documentRepository: &statusStepDocumentRepoMock{
+			documents: []*domain.Document{{CandidateID: "cand-1", DocumentType: domain.MedicalDocument, FileURL: "https://files.example/medical.pdf"}},
+		},
 		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
 	}
 
@@ -208,8 +211,9 @@ func TestStatusStepService_UpdateStep_CompletedSetsAndClearsTimestamp(t *testing
 	repo.getByCandidateIDFn = func(candidateID string) ([]*domain.StatusStep, error) {
 		return []*domain.StatusStep{{ID: "s1", CandidateID: candidateID, StepName: domain.MedicalTest, StepStatus: domain.Completed, CompletedAt: updated[0].CompletedAt}}, nil
 	}
-	err := svc.UpdateStep("cand-1", domain.MedicalTest, "owner-1", domain.InProgress, "reopen")
-	require.ErrorIs(t, err, ErrInvalidStepTransition)
+	require.NoError(t, svc.UpdateStep("cand-1", domain.MedicalTest, "owner-1", domain.Pending, "reopen"))
+	require.Len(t, updated, 2)
+	require.Nil(t, updated[1].CompletedAt)
 }
 
 func TestNotificationService_NotifyRejectionUnknownPartyAndForeignCheckError(t *testing.T) {

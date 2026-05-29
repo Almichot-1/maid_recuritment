@@ -17,10 +17,10 @@ func TestPDFService_NewAndGenerateValidation(t *testing.T) {
 	svc := NewPDFService()
 	require.NotNil(t, svc)
 
-	_, err := svc.GenerateCandidateCV(nil, nil, CandidateCVBranding{})
+	_, err := svc.GenerateCandidateCV(nil, nil, CandidateCVBranding{}, nil)
 	require.Error(t, err)
 
-	_, err = svc.GenerateCandidateCV(&domain.Candidate{FullName: "A"}, []*domain.Document{}, CandidateCVBranding{})
+	_, err = svc.GenerateCandidateCV(&domain.Candidate{FullName: "A"}, []*domain.Document{}, CandidateCVBranding{}, nil)
 	require.ErrorIs(t, err, ErrMissingRequiredDocuments)
 }
 

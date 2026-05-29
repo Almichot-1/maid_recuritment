@@ -25,7 +25,7 @@ func (j *ExpiryJob) Run() {
 	}
 }
 
-func StartExpiryScheduler(selectionService *service.SelectionService) (*cron.Cron, error) {
+func StartExpiryScheduler(selectionService *service.SelectionService, warningJob *ExpiryWarningJob) (*cron.Cron, error) {
 	job, err := NewExpiryJob(selectionService)
 	if err != nil {
 		return nil, err
@@ -34,6 +34,11 @@ func StartExpiryScheduler(selectionService *service.SelectionService) (*cron.Cro
 	scheduler := cron.New(cron.WithSeconds())
 	if _, err := scheduler.AddJob("0 */5 * * * *", job); err != nil {
 		return nil, err
+	}
+	if warningJob != nil {
+		if _, err := scheduler.AddJob("0 0,30 * * * *", warningJob); err != nil {
+			return nil, err
+		}
 	}
 	scheduler.Start()
 

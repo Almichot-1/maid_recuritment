@@ -116,7 +116,7 @@ func (s *NotificationService) Send(userID, title, message, notificationType, rel
 	}
 
 	settings := s.currentPlatformSettings()
-	if strings.TrimSpace(user.Email) != "" && settings.EmailNotificationsEnabled {
+	if s.emailService != nil && strings.TrimSpace(user.Email) != "" && settings.EmailNotificationsEnabled {
 		body := message
 		variables := map[string]string{
 			"title":          title,
@@ -161,6 +161,9 @@ func (s *NotificationService) NotifySelection(candidateID, selectedBy string) er
 	}
 
 	message := fmt.Sprintf("Your candidate %s has been selected by %s", candidate.FullName, agency)
+	if selection, err := s.selectionRepository.GetByCandidateID(candidateID); err == nil && selection != nil {
+		return s.Send(owner.ID, "Candidate selected", message+"\n"+s.selectionLink(selection.ID), string(domain.NotificationSelection), "selection", selection.ID)
+	}
 	return s.Send(owner.ID, "Candidate selected", message+"\n"+s.candidateLink(candidate.ID), string(domain.NotificationSelection), "candidate", candidate.ID)
 }
 
@@ -235,6 +238,89 @@ func (s *NotificationService) NotifyExpiry(selectionID string) error {
 		return err
 	}
 	if err := s.Send(selection.SelectedBy, "Selection expired", msg+"\n"+s.selectionLink(selection.ID), string(domain.NotificationExpiry), "selection", selection.ID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *NotificationService) NotifyExpiryWarning(selectionID string, warningLabel string) error {
+	selection, err := s.selectionRepository.GetByID(selectionID)
+	if err != nil {
+		return err
+	}
+	candidate, err := s.candidateRepository.GetByID(selection.CandidateID)
+	if err != nil {
+		return err
+	}
+
+	message := fmt.Sprintf("Selection expiry warning: %s remaining before this pending selection expires.", warningLabel)
+	if err := s.Send(candidate.CreatedBy, "Selection expiry warning", message+"\n"+s.selectionLink(selection.ID), string(domain.NotificationExpiryWarning), "selection", selection.ID); err != nil {
+		return err
+	}
+	if err := s.Send(selection.SelectedBy, "Selection expiry warning", message+"\n"+s.selectionLink(selection.ID), string(domain.NotificationExpiryWarning), "selection", selection.ID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *NotificationService) NotifyPassportExpiry(candidateID, ownerID, warningLabel string) error {
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err == nil && candidate != nil && strings.TrimSpace(ownerID) == "" {
+		ownerID = candidate.CreatedBy
+	}
+	if strings.TrimSpace(ownerID) == "" {
+		return fmt.Errorf("passport expiry notification requires owner id")
+	}
+	message := fmt.Sprintf("Passport expiry warning: %s remaining before this passport expires.", warningLabel)
+	return s.Send(ownerID, "Passport expiry warning", message+"\n"+s.candidateLink(candidateID), string(domain.NotificationPassportExpiry), "candidate", candidateID)
+}
+
+func (s *NotificationService) NotifyMedicalExpiry(candidateID, ownerID, warningLabel string) error {
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err == nil && candidate != nil && strings.TrimSpace(ownerID) == "" {
+		ownerID = candidate.CreatedBy
+	}
+	if strings.TrimSpace(ownerID) == "" {
+		return fmt.Errorf("medical expiry notification requires owner id")
+	}
+
+	message := fmt.Sprintf("Medical expiry warning: %s remaining before this medical document expires.", warningLabel)
+	return s.Send(ownerID, "Medical expiry warning", message+"\n"+s.candidateLink(candidateID), string(domain.NotificationExpiryWarning), "candidate", candidateID)
+}
+
+func (s *NotificationService) NotifyFlightBooked(candidateID string) error {
+	selection, err := s.selectionRepository.GetByCandidateID(candidateID)
+	if err != nil {
+		return err
+	}
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err != nil {
+		return err
+	}
+	message := "The flight has been booked for this candidate."
+	if err := s.Send(candidate.CreatedBy, "Flight booked", message+"\n"+s.candidateLink(candidateID), string(domain.NotificationFlightBooked), "candidate", candidateID); err != nil {
+		return err
+	}
+	if err := s.Send(selection.SelectedBy, "Flight booked", message+"\n"+s.candidateLink(candidateID), string(domain.NotificationFlightBooked), "candidate", candidateID); err != nil {
+		return err
+	}
+	return nil
+}
+
+func (s *NotificationService) NotifyArrived(candidateID string) error {
+	selection, err := s.selectionRepository.GetByCandidateID(candidateID)
+	if err != nil {
+		return err
+	}
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err != nil {
+		return err
+	}
+	message := "The candidate has arrived and the recruitment journey is complete."
+	if err := s.Send(candidate.CreatedBy, "Candidate arrived", message+"\n"+s.candidateLink(candidateID), string(domain.NotificationArrived), "candidate", candidateID); err != nil {
+		return err
+	}
+	if err := s.Send(selection.SelectedBy, "Candidate arrived", message+"\n"+s.candidateLink(candidateID), string(domain.NotificationArrived), "candidate", candidateID); err != nil {
 		return err
 	}
 	return nil

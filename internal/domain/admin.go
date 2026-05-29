@@ -32,6 +32,19 @@ func (Admin) TableName() string {
 	return "admins"
 }
 
+type AdminSetupToken struct {
+	ID        string `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	AdminID   string `gorm:"type:uuid;not null;index"`
+	TokenHash string `gorm:"not null;uniqueIndex"`
+	ExpiresAt time.Time `gorm:"not null"`
+	UsedAt    *time.Time
+	CreatedAt time.Time `gorm:"not null;default:now()"`
+}
+
+func (AdminSetupToken) TableName() string {
+	return "admin_setup_tokens"
+}
+
 type AuditLog struct {
 	ID         string `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	AdminID    string `gorm:"type:uuid;not null"`
@@ -78,6 +91,13 @@ type AdminRepository interface {
 	List() ([]*Admin, error)
 	ListActive() ([]*Admin, error)
 	Update(admin *Admin) error
+}
+
+type AdminSetupTokenRepository interface {
+	Create(token *AdminSetupToken) error
+	GetActiveByHash(tokenHash string) (*AdminSetupToken, error)
+	InvalidateByAdminID(adminID string) error
+	MarkUsed(id string, usedAt time.Time) error
 }
 
 type AuditLogRepository interface {

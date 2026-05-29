@@ -118,7 +118,7 @@ func TestStatusStepUpdate_ErrorMapping(t *testing.T) {
 }
 
 func TestSMTPEmailService_SendSMTPError(t *testing.T) {
-	service, err := NewSMTPEmailService(&config.Config{SMTPHost: "127.0.0.1", SMTPPort: "1", SMTPUser: "u", SMTPPass: "p"})
+	service, err := NewSMTPEmailService(&config.Config{SMTPHost: "127.0.0.1", SMTPPort: "1", SMTPUser: "mailer@example.com", SMTPPass: "p"})
 	require.NoError(t, err)
 	err = service.Send("to@example.com", "s", "b")
 	require.Error(t, err)
@@ -151,6 +151,6 @@ func TestDocumentService_StorageUploadError(t *testing.T) {
 		return "", errors.New("upload failed")
 	}})
 	require.NoError(t, err)
-	_, err = svc.UploadDocument("cand", string(domain.Passport), bytes.NewBufferString("x"), "passport.pdf", 1)
+	_, err = svc.UploadDocument("cand", string(domain.Passport), bytes.NewReader(validPDFBytes()), "passport.pdf", int64(len(validPDFBytes())))
 	require.Error(t, err)
 }
