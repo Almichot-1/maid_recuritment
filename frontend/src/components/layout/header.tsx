@@ -23,6 +23,7 @@ import { useCurrentUser, useLogout } from "@/hooks/use-auth"
 import { useProfileAvatar } from "@/hooks/use-profile-avatar"
 import { useI18n } from "@/lib/i18n"
 import { isRoleHomePath } from "@/lib/role-home"
+import { ThemeToggle } from "@/components/theme-toggle"
 
 const NotificationBell = dynamic(
   () => import("@/components/notifications/notification-bell").then((module) => module.NotificationBell)
@@ -72,6 +73,7 @@ export function Header() {
         <div className="hidden lg:block">
           <LocaleSwitcher compact />
         </div>
+        <ThemeToggle />
         <NotificationBell />
 
         <DropdownMenu>
