@@ -37,7 +37,7 @@ Thumbs.db
 .dev-postgres/
 .dev-s3-data/
 tmp/
-reports/
+/reports/
 *.log
 coverage-service
 coverage_service
