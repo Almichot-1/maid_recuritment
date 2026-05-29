@@ -101,6 +101,19 @@ func main() {
 		log.Fatalf("failed to initialize notification repository: %v", err)
 	}
 
+	chatThreadRepository, err := repository.NewGormChatThreadRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize chat thread repository: %v", err)
+	}
+	chatMessageRepository, err := repository.NewGormChatMessageRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize chat message repository: %v", err)
+	}
+	chatReadRepository, err := repository.NewGormChatReadRepository(cfg)
+	if err != nil {
+		log.Fatalf("failed to initialize chat read repository: %v", err)
+	}
+
 	statusStepRepository, err := repository.NewGormStatusStepRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize status step repository: %v", err)
@@ -127,6 +140,11 @@ func main() {
 	notificationService, err := service.NewNotificationService(cfg, notificationRepository, emailService, userRepository, candidateRepository, selectionRepository)
 	if err != nil {
 		log.Fatalf("failed to initialize notification service: %v", err)
+	}
+
+	chatService, err := service.NewChatService(chatThreadRepository, chatMessageRepository, chatReadRepository, candidateRepository, selectionRepository, pairingService)
+	if err != nil {
+		log.Fatalf("failed to initialize chat service: %v", err)
 	}
 
 	candidateService, err := service.NewCandidateService(candidateRepository, documentRepository, storageService, pdfService)
@@ -188,6 +206,9 @@ func main() {
 	adminSettingsHandler := handler.NewAdminSettingsHandler(platformSettingsService)
 	adminPairingHandler := handler.NewAdminPairingHandler(pairingService, userRepository)
 	notificationService.SetRealtimeNotifier(notificationHandler)
+	chatHandler := handler.NewChatHandler(chatService, cfg.CORSAllowedOrigins)
+	chatHandler.SetContextRepositories(userRepository, candidateRepository, pairingService)
+	chatService.SetRealtimeNotifier(chatHandler)
 
 	if cfg.RunExpiryScheduler {
 		expiryWarningJob, err := jobs.NewExpiryWarningJob(selectionRepository, passportRepository, candidateRepository, notificationService)
@@ -262,6 +283,7 @@ func main() {
 		wsProtected.Use(appmiddleware.PlatformMaintenance(platformSettingsService))
 		wsProtected.Use(appmiddleware.AuthMiddleware(authService))
 		wsProtected.Get("/ws/notifications", notificationHandler.NotificationsWebSocket)
+		wsProtected.With(appmiddleware.PairingContext, appmiddleware.NewIPRateLimitMiddleware("chat-websocket", 12, time.Minute)).Get("/ws/chat", chatHandler.ChatWebSocket)
 	})
 
 	apiRouter.Group(func(protected chi.Router) {
@@ -318,6 +340,16 @@ func main() {
 		protected.Route("/users", func(ur chi.Router) {
 			ur.Patch("/profile", userHandler.UpdateProfile)
 			ur.Post("/change-password", userHandler.ChangePassword)
+		})
+
+		protected.Route("/chat", func(cr chi.Router) {
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-resolve-workspace", 60, time.Minute)).Post("/threads/resolve-workspace", chatHandler.ResolveWorkspaceThread)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-resolve-candidate", 60, time.Minute)).Post("/threads/resolve-candidate", chatHandler.ResolveCandidateThread)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-list-threads", 120, time.Minute)).Get("/threads", chatHandler.ListThreads)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-list-messages", 120, time.Minute)).Get("/threads/{id}/messages", chatHandler.ListMessages)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-send-message", 30, time.Minute)).Post("/threads/{id}/messages", chatHandler.SendMessage)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-mark-read", 60, time.Minute)).Post("/threads/{id}/read", chatHandler.MarkRead)
+			cr.With(appmiddleware.NewIPRateLimitMiddleware("chat-summary", 120, time.Minute)).Get("/summary", chatHandler.GetSummary)
 		})
 	})
 
