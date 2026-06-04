@@ -630,3 +630,4 @@ If you are reviewing this repository as a portfolio project, the best way to rea
 `agency onboarding -> pairing -> candidate intake -> OCR -> CV generation -> sharing -> selection -> approval -> tracking -> alerts -> chat -> admin oversight`
 
 That chain is where the system design value really shows.
+
