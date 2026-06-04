@@ -212,7 +212,8 @@ func TestAuthService_RegisterLoginValidate(t *testing.T) {
 
 	token, err := svc.Register("Agent@Example.com", "password123", "Agent", string(domain.ForeignAgent), "Agency")
 	require.NoError(t, err)
-	assert.Empty(t, token)
+	require.NotNil(t, token)
+	assert.False(t, token.EmailVerified)
 
 	_, err = svc.Register("agent@example.com", "password123", "Agent", string(domain.ForeignAgent), "Agency")
 	require.ErrorIs(t, err, ErrUserExists)

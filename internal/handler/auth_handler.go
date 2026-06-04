@@ -96,7 +96,7 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, err := h.authService.Register(req.Email, req.Password, req.FullName, req.Role, req.CompanyName)
+	user, err := h.authService.Register(req.Email, req.Password, req.FullName, req.Role, req.CompanyName)
 	if err != nil {
 		switch {
 		case errors.Is(err, service.ErrUserExists):
@@ -111,13 +111,19 @@ func (h *AuthHandler) Register(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	user, err := h.userRepository.GetByEmail(strings.ToLower(strings.TrimSpace(req.Email)))
-	if err != nil {
-		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to load user"})
-		return
+	message := "Registration created. Please verify your email to continue."
+	if user.EmailVerified {
+		message = "Registration submitted. Your agency is pending admin approval."
+		if h.approvalService != nil {
+			if err := h.approvalService.RegisterPendingAgency(user); err != nil {
+				_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to submit agency for approval"})
+				return
+			}
+		}
 	}
+
 	_ = utils.WriteJSON(w, http.StatusAccepted, RegisterResponse{
-		Message: "Registration created. Please verify your email to continue.",
+		Message: message,
 		User:    mapUserToAuthUserView(user, ""),
 	})
 }

@@ -49,6 +49,24 @@ export function getLoginErrorMessage(error: unknown): string {
   )
 }
 
+export function getRegisterErrorMessage(error: unknown): string {
+  const response = (error as AxiosError<ApiErrorResponse>).response
+
+  if (response?.status === 409) {
+    return "This email is already registered. Try logging in, or use a different email."
+  }
+
+  if (response?.status === 400) {
+    return response?.data?.error || "Please check the form and try again."
+  }
+
+  return (
+    response?.data?.error ||
+    response?.data?.message ||
+    "We could not complete registration right now. Please try again."
+  )
+}
+
 export function useLogin() {
   const router = useRouter()
   const setAuth = useAuthStore((state) => state.setAuth)
@@ -89,14 +107,17 @@ export function useRegister() {
       const response = await api.post<RegisterResponse>("/auth/register", data)
       return response.data
     },
-    onSuccess: (_, variables) => {
-      toast.success("Registration created. Please verify your email to continue.")
+    onSuccess: (data, variables) => {
+      toast.success(data.message || "Registration created. Please verify your email to continue.")
       const params = new URLSearchParams({
         email: variables.email,
         company_name: variables.company_name,
         role: variables.role,
       })
       router.push(`/register/pending?${params.toString()}`)
+    },
+    onError: (error) => {
+      toast.error(getRegisterErrorMessage(error))
     },
   })
 }

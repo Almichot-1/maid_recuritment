@@ -156,7 +156,7 @@ func main() {
 	} else {
 		operationalEmailService = emailService
 	}
-	authService.SetEmailService(emailService)
+	authService.SetEmailService(operationalEmailService)
 	authService.SetSessionRepository(userSessionRepository)
 	authService.SetPasswordResetRepository(passwordResetRepository)
 	authService.SetEmailVerificationRepository(emailVerificationRepository)

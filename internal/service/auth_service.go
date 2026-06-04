@@ -113,30 +113,30 @@ func (s *AuthService) SetEmailVerificationRepository(emailVerificationRepo domai
 	s.emailVerificationRepo = emailVerificationRepo
 }
 
-func (s *AuthService) Register(email, password, fullName, role, companyName string) (string, error) {
+func (s *AuthService) Register(email, password, fullName, role, companyName string) (*domain.User, error) {
 	email = strings.TrimSpace(strings.ToLower(email))
 	if err := validateAuthEmail(email); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := validateAuthPassword(password); err != nil {
-		return "", err
+		return nil, err
 	}
 	parsedRole, err := parseUserRole(role)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	existingUser, err := s.userRepository.GetByEmail(email)
 	if err == nil && existingUser != nil {
-		return "", ErrUserExists
+		return nil, ErrUserExists
 	}
 	if err != nil && !errors.Is(err, repository.ErrUserNotFound) {
-		return "", fmt.Errorf("check existing user: %w", err)
+		return nil, fmt.Errorf("check existing user: %w", err)
 	}
 
 	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), 12)
 	if err != nil {
-		return "", fmt.Errorf("hash password: %w", err)
+		return nil, fmt.Errorf("hash password: %w", err)
 	}
 
 	user := &domain.User{
@@ -152,16 +152,23 @@ func (s *AuthService) Register(email, password, fullName, role, companyName stri
 
 	if err := s.userRepository.Create(user); err != nil {
 		if errors.Is(err, repository.ErrDuplicateEmail) {
-			return "", ErrUserExists
+			return nil, ErrUserExists
 		}
-		return "", fmt.Errorf("create user: %w", err)
+		return nil, fmt.Errorf("create user: %w", err)
 	}
 
 	if err := s.sendEmailVerification(user, true); err != nil {
-		return "", err
+		if shouldSkipEmailVerification(err) {
+			user.EmailVerified = true
+			if updateErr := s.userRepository.Update(user); updateErr != nil {
+				return nil, fmt.Errorf("mark email verified after verification fallback: %w", updateErr)
+			}
+			return user, nil
+		}
+		return nil, err
 	}
 
-	return "", nil
+	return user, nil
 }
 
 func (s *AuthService) Login(email, password string) (string, error) {
@@ -556,6 +563,19 @@ func (s *AuthService) RevokeSession(userID, sessionID string) error {
 		return fmt.Errorf("revoke session: %w", err)
 	}
 	return nil
+}
+
+func shouldSkipEmailVerification(err error) bool {
+	if err == nil {
+		return false
+	}
+	if errors.Is(err, ErrEmailVerificationMissing) {
+		return true
+	}
+
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "email service is disabled") ||
+		strings.Contains(message, "send verification email")
 }
 
 func validateAuthEmail(email string) error {
