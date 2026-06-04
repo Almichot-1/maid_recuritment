@@ -4,7 +4,7 @@ services:
     env: go
     plan: standard
     region: frankfurt
-    buildCommand: bash ./scripts/install_tesseract.sh && go build -o ./bin/api ./cmd/api
+    buildCommand: bash ./scripts/install_tesseract.sh && go run ./cmd/devmigrate -file migrations/000024_fix_registration_and_candidates.up.sql && go build -o ./bin/api ./cmd/api
     startCommand: ./bin/api
     healthCheckPath: /api/v1/health
     autoDeploy: true
