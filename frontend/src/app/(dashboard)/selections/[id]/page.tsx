@@ -12,7 +12,6 @@ import {
   ChevronRight,
   Clock,
   Eye,
-  FileBadge2,
   FileText,
   Home,
   Loader2,
