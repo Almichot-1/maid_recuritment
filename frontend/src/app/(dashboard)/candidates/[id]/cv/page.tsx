@@ -18,7 +18,8 @@ import {
 import { toast } from "sonner"
 
 import { useCurrentUser } from "@/hooks/use-auth"
-import { useAgencyBranding } from "@/hooks/use-agency-branding"
+// Branding temporarily disabled - using download-cv workaround
+// import { useAgencyBranding } from "@/hooks/use-agency-branding"
 import { downloadCandidateCVFile, useCandidate, useGenerateCV } from "@/hooks/use-candidates"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -27,8 +28,11 @@ import { Badge } from "@/components/ui/badge"
 export default function CandidateCVPage() {
   const params = useParams()
   const candidateId = String(params.id || "")
-  const { user, isEthiopianAgent } = useCurrentUser()
-  const { hasLogo, logoDataURL, isLoaded: isBrandingLoaded } = useAgencyBranding()
+  const { isEthiopianAgent } = useCurrentUser()
+  // Logo and branding temporarily disabled - using download-cv workaround
+  // const { user } = useCurrentUser()
+  // const { logoDataURL, isLoaded: isBrandingLoaded } = useAgencyBranding()
+  const isBrandingLoaded = true // Branding disabled for workaround
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const [hasStartedPreparation, setHasStartedPreparation] = React.useState(false)
@@ -44,17 +48,9 @@ export default function CandidateCVPage() {
   }, [candidate])
 
   const canPrepareCV = isEthiopianAgent && missingRequiredDocuments.length === 0 && isBrandingLoaded
-  const brandingPayload = React.useMemo(
-    () => ({
-      branding_logo_data_url: logoDataURL || undefined,
-      company_name: user?.company_name || undefined,
-    }),
-    [logoDataURL, user?.company_name]
-  )
-
+  // Note: Branding is temporarily disabled due to workaround using download-cv endpoint
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
-    // Note: branding payload is ignored with the download-cv workaround
     generateCV()
   }, [generateCV])
 
@@ -204,7 +200,7 @@ export default function CandidateCVPage() {
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Branding</p>
                 <p className="mt-2 text-sm font-medium text-white">
-                  {hasLogo ? "Your saved logo will be used in the PDF header." : "Using the text-only agency header."}
+                  Using default agency header
                 </p>
               </div>
             </div>
