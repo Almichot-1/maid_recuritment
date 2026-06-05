@@ -67,6 +67,23 @@ func (r *GormCandidateRepository) GetByID(id string) (*domain.Candidate, error) 
 	return &candidate, nil
 }
 
+// GetByIDLean fetches only the columns needed for ownership and status checks.
+// It does NOT load Documents, making it much cheaper than GetByID for
+// operations that only need to verify the caller owns the record.
+func (r *GormCandidateRepository) GetByIDLean(id string) (*domain.Candidate, error) {
+	var candidate domain.Candidate
+	if err := r.db.
+		Select("id", "created_by", "status", "locked_by", "lock_expires_at").
+		Where("id = ?", id).
+		First(&candidate).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrCandidateNotFound
+		}
+		return nil, fmt.Errorf("get candidate by id (lean): %w", err)
+	}
+	return &candidate, nil
+}
+
 func (r *GormCandidateRepository) List(filters domain.CandidateFilters) ([]*domain.Candidate, error) {
 	query, err := applyCandidateFilters(r.db.Model(&domain.Candidate{}), filters)
 	if err != nil {
@@ -118,37 +135,43 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 		return fmt.Errorf("update candidate: id is required")
 	}
 
-	var existing domain.Candidate
-	if err := r.db.Where("id = ?", candidate.ID).First(&existing).Error; err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrCandidateNotFound
-		}
-		return fmt.Errorf("update candidate: load current candidate: %w", err)
+	// Fetch only the current status to validate the transition — avoids loading
+	// the full row (and the Documents preload) just to do a status check.
+	var currentStatus domain.CandidateStatus
+	statusResult := r.db.Model(&domain.Candidate{}).
+		Select("status").
+		Where("id = ?", candidate.ID).
+		Scan(&currentStatus)
+	if statusResult.Error != nil {
+		return fmt.Errorf("update candidate: load current status: %w", statusResult.Error)
+	}
+	if statusResult.RowsAffected == 0 {
+		return ErrCandidateNotFound
 	}
 
-	if !isValidStatusTransition(existing.Status, candidate.Status) {
+	if !isValidStatusTransition(currentStatus, candidate.Status) {
 		return ErrInvalidStatusTransition
 	}
 
 	updates := map[string]any{
-		"full_name":        candidate.FullName,
-		"nationality":      candidate.Nationality,
-		"date_of_birth":    candidate.DateOfBirth,
-		"age":              candidate.Age,
-		"place_of_birth":   candidate.PlaceOfBirth,
-		"religion":         candidate.Religion,
-		"marital_status":   candidate.MaritalStatus,
-		"children_count":        candidate.ChildrenCount,
-		"education_level":       candidate.EducationLevel,
-		"experience_years":      candidate.ExperienceYears,
-		"country_of_experience": candidate.CountryOfExperience,
-		"languages":             candidate.Languages,
-		"skills":           candidate.Skills,
-		"status":           candidate.Status,
-		"locked_by":        candidate.LockedBy,
-		"locked_at":        candidate.LockedAt,
-		"lock_expires_at":  candidate.LockExpiresAt,
-		"cv_pdf_url":       candidate.CVPDFURL,
+		"full_name":              candidate.FullName,
+		"nationality":            candidate.Nationality,
+		"date_of_birth":          candidate.DateOfBirth,
+		"age":                    candidate.Age,
+		"place_of_birth":         candidate.PlaceOfBirth,
+		"religion":               candidate.Religion,
+		"marital_status":         candidate.MaritalStatus,
+		"children_count":         candidate.ChildrenCount,
+		"education_level":        candidate.EducationLevel,
+		"experience_years":       candidate.ExperienceYears,
+		"country_of_experience":  candidate.CountryOfExperience,
+		"languages":              candidate.Languages,
+		"skills":                 candidate.Skills,
+		"status":                 candidate.Status,
+		"locked_by":              candidate.LockedBy,
+		"locked_at":              candidate.LockedAt,
+		"lock_expires_at":        candidate.LockExpiresAt,
+		"cv_pdf_url":             candidate.CVPDFURL,
 	}
 
 	result := r.db.Model(&domain.Candidate{}).Where("id = ?", candidate.ID).Updates(updates)

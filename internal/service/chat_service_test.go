@@ -306,6 +306,10 @@ func (r *chatMemoryCandidateRepository) Update(candidate *domain.Candidate) erro
 	return nil
 }
 
+func (r *chatMemoryCandidateRepository) GetByIDLean(id string) (*domain.Candidate, error) {
+	return r.GetByID(id)
+}
+
 func (r *chatMemoryCandidateRepository) Delete(id string) error { return nil }
 func (r *chatMemoryCandidateRepository) Lock(candidateID, lockedBy string, expiresAt time.Time) error {
 	return nil

@@ -163,6 +163,9 @@ export function CandidateForm({
   const activePassportRequestKeyRef = React.useRef<string | null>(null);
   const activePassportAbortRef = React.useRef<AbortController | null>(null);
   const passportRequestSequenceRef = React.useRef(0);
+  // Debounce timer: prevents firing OCR for every rapid file change.
+  // Only the file selected after 400 ms of inactivity triggers the API call.
+  const passportDebounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const blankFormValues = React.useMemo<CandidateFormValues>(
     () => ({
@@ -342,6 +345,12 @@ export function CandidateForm({
   }, [form]);
 
   const handlePassportFileSelected = React.useCallback((file: File | null) => {
+    // Clear any pending debounced call whenever the file changes.
+    if (passportDebounceTimerRef.current !== null) {
+      clearTimeout(passportDebounceTimerRef.current);
+      passportDebounceTimerRef.current = null;
+    }
+
     if (!file || !file.type.startsWith("image/")) {
       passportRequestSequenceRef.current += 1;
       activePassportAbortRef.current?.abort();
@@ -429,13 +438,22 @@ export function CandidateForm({
       }
     };
 
-    void runExtraction();
+    // Debounce: wait 400 ms before firing OCR so rapid file swaps only
+    // trigger a single API call — important on the free-tier server.
+    passportDebounceTimerRef.current = setTimeout(() => {
+      passportDebounceTimerRef.current = null;
+      void runExtraction();
+    }, 400);
   }, [applyPassportAutofill, parsePassport]);
 
   React.useEffect(() => {
     const activePassportAbortRefValue = activePassportAbortRef.current;
     const passportPreviewInflightRefValue = passportPreviewInflightRef.current;
     return () => {
+      // Cancel any in-flight debounce timer on unmount.
+      if (passportDebounceTimerRef.current !== null) {
+        clearTimeout(passportDebounceTimerRef.current);
+      }
       activePassportAbortRefValue?.abort();
       passportPreviewInflightRefValue.clear();
     };

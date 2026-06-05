@@ -83,6 +83,10 @@ type CandidateFilters struct {
 type CandidateRepository interface {
 	Create(candidate *Candidate) error
 	GetByID(id string) (*Candidate, error)
+	// GetByIDLean fetches only the columns needed for ownership and status
+	// checks (id, created_by, status, locked_by, lock_expires_at). It does NOT
+	// preload Documents, so it is significantly cheaper than GetByID.
+	GetByIDLean(id string) (*Candidate, error)
 	List(filters CandidateFilters) ([]*Candidate, error)
 	Update(candidate *Candidate) error
 	Delete(id string) error

@@ -601,12 +601,21 @@ func (s *CandidateService) applyPassportAutofill(candidateID, updatedBy string, 
 		return nil
 	}
 
-	candidate, err := s.candidateRepository.GetByID(candidateID)
+	// Lean ownership check — fetches only id/created_by/status with no
+	// Documents JOIN. Fails fast on forbidden without paying the full GetByID cost.
+	lean, err := s.candidateRepository.GetByIDLean(candidateID)
 	if err != nil {
 		return err
 	}
-	if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(updatedBy) {
+	if strings.TrimSpace(lean.CreatedBy) != strings.TrimSpace(updatedBy) {
 		return ErrForbidden
+	}
+
+	// Ownership confirmed — now fetch the full candidate so Update can persist
+	// all unchanged fields correctly.
+	candidate, err := s.candidateRepository.GetByID(candidateID)
+	if err != nil {
+		return err
 	}
 
 	if holderName := strings.TrimSpace(passportData.HolderName); holderName != "" {

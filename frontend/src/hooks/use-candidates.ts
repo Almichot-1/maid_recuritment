@@ -193,9 +193,15 @@ export function useCandidate(id?: string) {
 export function useCreateCandidate() {
   return useMutation({
     mutationFn: async (data: Partial<Candidate>) => {
+      // Remove country_of_experience if it's empty (for backward compatibility with unmigratedDBs)
+      const payload = { ...data };
+      if (!payload.country_of_experience) {
+        delete payload.country_of_experience;
+      }
+      
       const response = await api.post<{ candidate: { id: string } }>(
         "/candidates",
-        data,
+        payload,
       );
       return response.data;
     },
@@ -215,9 +221,15 @@ export function useUpdateCandidate(id: string) {
 
   return useMutation({
     mutationFn: async (data: Partial<Candidate>) => {
+      // Remove country_of_experience if it's empty (for backward compatibility with unmigrated DBs)
+      const payload = { ...data };
+      if (!payload.country_of_experience) {
+        delete payload.country_of_experience;
+      }
+      
       const response = await api.put<{ candidate: Candidate }>(
         `/candidates/${id}`,
-        data,
+        payload,
       );
       return response.data;
     },
