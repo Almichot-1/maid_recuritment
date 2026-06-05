@@ -179,7 +179,7 @@ export function CandidateForm({
       children_count: undefined,
       education_level: "",
       experience_years: undefined,
-      country_of_experience: "",
+      country_of_experience: undefined,
       skills: [],
       languages: [
         { language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] },
