@@ -95,18 +95,18 @@ export function ForeignDashboard() {
           </div>
 
           {isLoading ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {Array.from({ length: 4 }).map((_, index) => (
-                <div key={index} className="rounded-2xl border bg-card p-4 shadow-sm">
-                  <Skeleton className="aspect-square w-full rounded-xl" />
-                  <Skeleton className="mt-4 h-6 w-2/3" />
-                  <Skeleton className="mt-2 h-4 w-1/2" />
-                  <Skeleton className="mt-4 h-10 w-full" />
+                <div key={index} className="rounded-xl border bg-card p-3 shadow-sm">
+                  <Skeleton className="aspect-square w-full rounded-lg" />
+                  <Skeleton className="mt-3 h-5 w-2/3" />
+                  <Skeleton className="mt-2 h-3 w-1/2" />
+                  <Skeleton className="mt-3 h-8 w-full" />
                 </div>
               ))}
             </div>
           ) : availableCandidates.length > 0 ? (
-            <div className="grid gap-4 md:grid-cols-2">
+            <div className="grid gap-4 grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4">
               {availableCandidates.map((candidate) => (
                 <CandidateCard key={candidate.id} candidate={candidate} />
               ))}
