@@ -18,8 +18,7 @@ import {
 import { toast } from "sonner"
 
 import { useCurrentUser } from "@/hooks/use-auth"
-// Branding temporarily disabled - using download-cv workaround
-// import { useAgencyBranding } from "@/hooks/use-agency-branding"
+import { useAgencyBranding } from "@/hooks/use-agency-branding"
 import { downloadCandidateCVFile, useCandidate, useGenerateCV } from "@/hooks/use-candidates"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -29,10 +28,8 @@ export default function CandidateCVPage() {
   const params = useParams()
   const candidateId = String(params.id || "")
   const { isEthiopianAgent } = useCurrentUser()
-  // Logo and branding temporarily disabled - using download-cv workaround
-  // const { user } = useCurrentUser()
-  // const { logoDataURL, isLoaded: isBrandingLoaded } = useAgencyBranding()
-  const isBrandingLoaded = true // Branding disabled for workaround
+  const { user } = useCurrentUser()
+  const { logoDataURL, isLoaded: isBrandingLoaded } = useAgencyBranding()
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const [hasStartedPreparation, setHasStartedPreparation] = React.useState(false)
@@ -48,11 +45,14 @@ export default function CandidateCVPage() {
   }, [candidate])
 
   const canPrepareCV = isEthiopianAgent && missingRequiredDocuments.length === 0 && isBrandingLoaded
-  // Note: Branding is temporarily disabled due to workaround using download-cv endpoint
+  
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
-    generateCV()
-  }, [generateCV])
+    generateCV({
+      companyName: user?.agency_name || "",
+      brandingLogoDataURL: logoDataURL || "",
+    })
+  }, [generateCV, user?.agency_name, logoDataURL])
 
   const handleDownload = React.useCallback(async () => {
     if (!candidate?.cv_pdf_url) {

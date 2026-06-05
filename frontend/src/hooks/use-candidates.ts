@@ -388,10 +388,13 @@ export function useGenerateCV(id: string) {
   const activePairingId = usePairingStore((state) => state.activePairingId);
 
   return useMutation({
-    mutationFn: async () => {
+    mutationFn: async (args?: { companyName?: string; brandingLogoDataURL?: string }) => {
       const response = await api.post(
         `/candidates/${id}/generate-cv`,
-        {}
+        {
+          company_name: args?.companyName,
+          branding_logo_data_url: args?.brandingLogoDataURL,
+        }
       );
       return response.data;
     },
