@@ -388,10 +388,9 @@ export function useGenerateCV(id: string) {
 
   return useMutation({
     mutationFn: async () => {
-      // TEMPORARY WORKAROUND: Use download-cv instead of generate-cv
-      // Render deployment is stuck with old code that doesn't have generate-cv route
-      const response = await api.get(
-        `/candidates/${id}/download-cv`,
+      const response = await api.post(
+        `/candidates/${id}/generate-cv`,
+        {}
       );
       return response.data;
     },
