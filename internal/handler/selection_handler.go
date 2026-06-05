@@ -244,7 +244,7 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 	// Create response with pagination info
 	responseData := map[string]interface{}{
 		"selections": responses,
-		"pagination": map[string]int{
+		"pagination": map[string]interface{}{
 			"limit":    limit,
 			"offset":   offset,
 			"total":    totalCount,
