@@ -54,8 +54,9 @@ export default function CandidateCVPage() {
 
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
-    generateCV(brandingPayload)
-  }, [brandingPayload, generateCV])
+    // Note: branding payload is ignored with the download-cv workaround
+    generateCV()
+  }, [generateCV])
 
   const handleDownload = React.useCallback(async () => {
     if (!candidate?.cv_pdf_url) {
