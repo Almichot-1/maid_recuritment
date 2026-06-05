@@ -387,7 +387,7 @@ export function useGenerateCV(id: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (payload?: GenerateCVRequest) => {
+    mutationFn: async () => {
       // TEMPORARY WORKAROUND: Use download-cv instead of generate-cv
       // Render deployment is stuck with old code that doesn't have generate-cv route
       const response = await api.get(
