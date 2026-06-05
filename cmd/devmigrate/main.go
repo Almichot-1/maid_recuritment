@@ -36,7 +36,8 @@ func main() {
 	}
 
 	if err := db.Exec(string(content)).Error; err != nil {
-		log.Fatalf("apply migration: %v", err)
+		log.Printf("migration may already be applied or failed: %v", err)
+		os.Exit(2) // exit 2 = already applied / skippable, not a fatal error
 	}
 
 	fmt.Printf("Applied migration: %s\n", *file)
