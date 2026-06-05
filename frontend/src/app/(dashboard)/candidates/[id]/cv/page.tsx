@@ -49,10 +49,10 @@ export default function CandidateCVPage() {
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
     generateCV({
-      companyName: user?.agency_name || "",
+      companyName: user?.company_name || "",
       brandingLogoDataURL: logoDataURL || "",
     })
-  }, [generateCV, user?.agency_name, logoDataURL])
+  }, [generateCV, user?.company_name, logoDataURL])
 
   const handleDownload = React.useCallback(async () => {
     if (!candidate?.cv_pdf_url) {
