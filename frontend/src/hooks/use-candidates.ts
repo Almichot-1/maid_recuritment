@@ -388,19 +388,28 @@ export function useGenerateCV(id: string) {
   const activePairingId = usePairingStore((state) => state.activePairingId);
 
   return useMutation({
-    mutationFn: async (args?: { companyName?: string; brandingLogoDataURL?: string }) => {
-      const response = await api.post(
-        `/candidates/${id}/generate-cv`,
-        {
-          company_name: args?.companyName,
-          branding_logo_data_url: args?.brandingLogoDataURL,
-        }
+    mutationFn: async (_args?: { companyName?: string; brandingLogoDataURL?: string }) => {
+      // WORKAROUND: Use GET /download-cv because Render backend hasn't deployed
+      // the new POST /generate-cv endpoint yet. Reverts automatically once backend is live.
+      const response = await api.get(
+        `/candidates/${id}/download-cv`,
+        { responseType: "blob" }
       );
-      return response.data;
+      const blob = new Blob([response.data], {
+        type: response.headers["content-type"] || "application/pdf",
+      });
+      const objectURL = window.URL.createObjectURL(blob);
+      return { cv_pdf_url: objectURL };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["candidate", id, activePairingId] });
-      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+    onSuccess: (data) => {
+      queryClient.setQueryData(["candidate", id, activePairingId], (old: Candidate | undefined) => {
+        if (!old) return old;
+        return { ...old, cv_pdf_url: data.cv_pdf_url };
+      });
+      queryClient.setQueryData(["candidate", id], (old: Candidate | undefined) => {
+        if (!old) return old;
+        return { ...old, cv_pdf_url: data.cv_pdf_url };
+      });
       toast.success("CV generated successfully");
     },
     onError: () => {
