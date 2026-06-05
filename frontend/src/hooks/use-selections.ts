@@ -108,19 +108,25 @@ export function useUploadSelectionDocument(selectionId: string) {
   });
 }
 
-export function useMySelections(sortBy?: string) {
+export function useMySelections(sortBy?: string, limit?: number, offset?: number) {
   const { user } = useCurrentUser();
   const activePairingId = usePairingStore((state) => state.activePairingId);
   const isPairingReady = usePairingStore((state) => state.isReady);
 
   return useQuery({
-    queryKey: ['my-selections', activePairingId, sortBy || 'newest'],
+    queryKey: ['my-selections', activePairingId, sortBy || 'newest', limit, offset],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (sortBy) {
         params.append('sortBy', sortBy);
       }
-      const response = await api.get<{ selections: Selection[] }>(`/selections/my?${params.toString()}`);
+      if (limit) {
+        params.append('limit', limit.toString());
+      }
+      if (offset !== undefined) {
+        params.append('offset', offset.toString());
+      }
+      const response = await api.get<{ selections: Selection[]; pagination: { limit: number; offset: number; total: number; has_more: boolean } }>(`/selections/my?${params.toString()}`);
       return response.data.selections;
     },
     enabled: !!user && isPairingReady && !!activePairingId,

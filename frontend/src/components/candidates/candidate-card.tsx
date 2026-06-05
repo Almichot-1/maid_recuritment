@@ -4,7 +4,7 @@ import * as React from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { User, Lock, PencilLine } from "lucide-react"
+import { User, Lock, PencilLine, X } from "lucide-react"
 
 import { Candidate, CandidateStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
@@ -30,6 +30,7 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const [selectDialogOpen, setSelectDialogOpen] = React.useState(false)
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
+  const [isPhotoExpanded, setIsPhotoExpanded] = React.useState(false)
 
   const handleCardClick = () => {
     router.push(`/candidates/${candidate.id}`)
@@ -66,7 +67,15 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
       >
         <CardContent className="p-0">
           {/* Photo */}
-          <div className="relative w-full aspect-square bg-muted overflow-hidden">
+          <div 
+            className="relative w-full aspect-square bg-muted overflow-hidden cursor-zoom-in"
+            onClick={(e) => {
+              if (photoUrl) {
+                e.stopPropagation()
+                setIsPhotoExpanded(true)
+              }
+            }}
+          >
             {photoUrl ? (
               <img
                 src={photoUrl}
@@ -97,14 +106,14 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
           </div>
 
           {/* Content */}
-          <div className="p-4 space-y-3">
+          <div className="p-3 space-y-2">
             {/* Name */}
-            <h3 className="font-semibold text-lg leading-tight line-clamp-1">
+            <h3 className="font-semibold text-base leading-tight line-clamp-1">
               {candidate.full_name}
             </h3>
 
             {/* Age & Experience */}
-            <div className="flex items-center gap-3 text-sm text-muted-foreground">
+            <div className="flex items-center gap-2 text-xs text-muted-foreground">
               <span>{candidate.age ?? "N/A"} years old</span>
               <span>-</span>
               <span>{candidate.experience_years ?? 0} years exp.</span>
@@ -112,9 +121,9 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
 
             {/* Languages */}
             {candidate.languages.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1">
                 {candidate.languages.map((lang) => (
-                  <Badge key={lang} variant="outline" className="text-xs">
+                  <Badge key={lang} variant="outline" className="text-[10px] px-1.5 py-0 h-4">
                     {lang}
                   </Badge>
                 ))}
@@ -123,14 +132,14 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
 
             {/* Skills */}
             {candidate.skills.length > 0 && (
-              <div className="flex flex-wrap gap-1.5">
+              <div className="flex flex-wrap gap-1">
                 {displaySkills.map((skill) => (
-                  <Badge key={skill} variant="secondary" className="text-xs">
+                  <Badge key={skill} variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
                     {skill}
                   </Badge>
                 ))}
                 {remainingSkills > 0 && (
-                  <Badge variant="secondary" className="text-xs">
+                  <Badge variant="secondary" className="text-[10px] px-1.5 py-0 h-4">
                     +{remainingSkills} more
                   </Badge>
                 )}
@@ -199,6 +208,36 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
           </div>
         </CardContent>
       </Card>
+
+      {/* Photo Modal */}
+      {isPhotoExpanded && photoUrl && (
+        <div 
+          className="fixed inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm cursor-zoom-out p-4"
+          onClick={(e) => {
+            e.stopPropagation()
+            setIsPhotoExpanded(false)
+          }}
+        >
+          <div className="relative max-w-4xl max-h-[90vh] w-full h-full flex items-center justify-center">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="absolute top-0 right-0 text-white/70 hover:text-white hover:bg-white/20 rounded-full"
+              onClick={(e) => {
+                e.stopPropagation()
+                setIsPhotoExpanded(false)
+              }}
+            >
+              <X className="h-6 w-6" />
+            </Button>
+            <img 
+              src={photoUrl} 
+              alt={candidate.full_name} 
+              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+            />
+          </div>
+        </div>
+      )}
 
       {/* Selection Dialog */}
       <SelectCandidateDialog

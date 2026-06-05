@@ -1,9 +1,14 @@
 package handler
 
 import (
+	"crypto/md5"
+	"encoding/hex"
+	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -49,11 +54,12 @@ type SelectionDocumentSummary struct {
 }
 
 type SelectionHandler struct {
-	selectionService *service.SelectionService
-	candidateRepo    domain.CandidateRepository
-	approvalRepo     domain.ApprovalRepository
-	pairingService   *service.PairingService
-	documentStorage  secureDocumentStorage
+	selectionService        *service.SelectionService
+	candidateRepo           domain.CandidateRepository
+	approvalRepo            domain.ApprovalRepository
+	pairingService          *service.PairingService
+	documentStorage         secureDocumentStorage
+	selectionUpdatesHandler *SelectionUpdatesHandler
 }
 
 func NewSelectionHandler(selectionService *service.SelectionService, candidateRepo domain.CandidateRepository, approvalRepo domain.ApprovalRepository, pairingService *service.PairingService) *SelectionHandler {
@@ -62,6 +68,10 @@ func NewSelectionHandler(selectionService *service.SelectionService, candidateRe
 
 func (h *SelectionHandler) SetDocumentStorage(storage secureDocumentStorage) {
 	h.documentStorage = storage
+}
+
+func (h *SelectionHandler) SetSelectionUpdatesHandler(handler *SelectionUpdatesHandler) {
+	h.selectionUpdatesHandler = handler
 }
 
 func (h *SelectionHandler) SelectCandidate(w http.ResponseWriter, r *http.Request) {
@@ -147,9 +157,18 @@ func (h *SelectionHandler) GetSelection(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	_ = utils.WriteJSON(w, http.StatusOK, map[string]SelectionResponse{
+	responseData := map[string]SelectionResponse{
 		"selection": response,
-	})
+	}
+
+	// Add caching headers
+	w.Header().Set("Cache-Control", "public, max-age=30")
+
+	// Calculate and set ETag for response caching
+	etag := h.calculateETag(responseData)
+	w.Header().Set("ETag", etag)
+
+	_ = utils.WriteJSON(w, http.StatusOK, responseData)
 }
 
 func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Request) {
@@ -183,8 +202,36 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 	}
 	// Default is "newest" (already sorted by created_at DESC in repository)
 
-	responses := make([]SelectionResponse, 0, len(selections))
-	for _, selection := range selections {
+	// Apply pagination
+	limit := 25
+	offset := 0
+	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
+		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
+			limit = l
+		}
+	}
+	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
+		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
+			offset = o
+		}
+	}
+
+	// Store total count before pagination
+	totalCount := len(selections)
+
+	// Apply pagination to selections
+	endIdx := offset + limit
+	if endIdx > len(selections) {
+		endIdx = len(selections)
+	}
+	if offset >= len(selections) {
+		offset = len(selections)
+		endIdx = len(selections)
+	}
+	paginatedSelections := selections[offset:endIdx]
+
+	responses := make([]SelectionResponse, 0, len(paginatedSelections))
+	for _, selection := range paginatedSelections {
 		// Candidate data is already preloaded by the repository
 		response, err := h.mapSelectionResponse(selection, selection.Candidate)
 		if err != nil {
@@ -194,9 +241,25 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 		responses = append(responses, response)
 	}
 
-	_ = utils.WriteJSON(w, http.StatusOK, map[string][]SelectionResponse{
+	// Create response with pagination info
+	responseData := map[string]interface{}{
 		"selections": responses,
-	})
+		"pagination": map[string]int{
+			"limit":    limit,
+			"offset":   offset,
+			"total":    totalCount,
+			"has_more": endIdx < totalCount,
+		},
+	}
+
+	// Add caching headers
+	w.Header().Set("Cache-Control", "public, max-age=30")
+
+	// Calculate and set ETag for response caching
+	etag := h.calculateETag(responseData)
+	w.Header().Set("ETag", etag)
+
+	_ = utils.WriteJSON(w, http.StatusOK, responseData)
 }
 
 func (h *SelectionHandler) UploadSelectionDocument(w http.ResponseWriter, r *http.Request) {
@@ -406,4 +469,16 @@ func (h *SelectionHandler) mapSelectionDocumentSummary(fileURL, fileName string,
 		summary.UploadedAt = uploadedAt.UTC().Format(time.RFC3339)
 	}
 	return summary
+}
+
+// calculateETag computes an ETag hash for response caching
+func (h *SelectionHandler) calculateETag(data interface{}) string {
+	jsonBytes, err := json.Marshal(data)
+	if err != nil {
+		// Fallback to current timestamp if marshaling fails
+		return fmt.Sprintf(`"%d"`, time.Now().Unix())
+	}
+
+	hash := md5.Sum(jsonBytes)
+	return fmt.Sprintf(`"%s"`, hex.EncodeToString(hash[:]))
 }
