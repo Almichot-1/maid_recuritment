@@ -108,15 +108,19 @@ export function useUploadSelectionDocument(selectionId: string) {
   });
 }
 
-export function useMySelections() {
+export function useMySelections(sortBy?: string) {
   const { user } = useCurrentUser();
   const activePairingId = usePairingStore((state) => state.activePairingId);
   const isPairingReady = usePairingStore((state) => state.isReady);
 
   return useQuery({
-    queryKey: ['my-selections', activePairingId],
+    queryKey: ['my-selections', activePairingId, sortBy || 'newest'],
     queryFn: async () => {
-      const response = await api.get<{ selections: Selection[] }>('/selections/my');
+      const params = new URLSearchParams();
+      if (sortBy) {
+        params.append('sortBy', sortBy);
+      }
+      const response = await api.get<{ selections: Selection[] }>(`/selections/my?${params.toString()}`);
       return response.data.selections;
     },
     enabled: !!user && isPairingReady && !!activePairingId,

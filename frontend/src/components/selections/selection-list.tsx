@@ -3,7 +3,7 @@
 import * as React from "react"
 import { Loader2, Search } from "lucide-react"
 
-import { Selection, SelectionStatus } from "@/types"
+import { Selection } from "@/types"
 import { SelectionCard } from "./selection-card"
 import { Input } from "@/components/ui/input"
 import {
@@ -17,11 +17,23 @@ import {
 interface SelectionListProps {
   selections: Selection[]
   isLoading?: boolean
+  sortBy?: "newest" | "expiring"
+  onSortByChange?: (sortBy: "newest" | "expiring") => void
 }
 
-export function SelectionList({ selections, isLoading }: SelectionListProps) {
+export function SelectionList({ selections, isLoading, sortBy: propSortBy = "newest", onSortByChange }: SelectionListProps) {
   const [searchQuery, setSearchQuery] = React.useState("")
-  const [sortBy, setSortBy] = React.useState<"newest" | "expiring">("newest")
+  const [sortBy, setSortBy] = React.useState<"newest" | "expiring">(propSortBy)
+
+  // Update local sortBy when prop changes
+  React.useEffect(() => {
+    setSortBy(propSortBy)
+  }, [propSortBy])
+
+  const handleSortByChange = (value: "newest" | "expiring") => {
+    setSortBy(value)
+    onSortByChange?.(value)
+  }
 
   // Filter by search query
   const filteredSelections = React.useMemo(() => {
@@ -38,38 +50,12 @@ export function SelectionList({ selections, isLoading }: SelectionListProps) {
     return filtered
   }, [selections, searchQuery])
 
-  // Sort selections
+  // Sort selections (API-based)
   const sortedSelections = React.useMemo(() => {
-    const sorted = [...filteredSelections]
-
-    if (sortBy === "newest") {
-      sorted.sort(
-        (a, b) =>
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-      )
-    } else if (sortBy === "expiring") {
-      // Sort by expiring soon (pending selections first, then by expires_at)
-      sorted.sort((a, b) => {
-        const aPending = a.status === SelectionStatus.PENDING
-        const bPending = b.status === SelectionStatus.PENDING
-
-        if (aPending && !bPending) return -1
-        if (!aPending && bPending) return 1
-
-        if (aPending && bPending) {
-          return (
-            new Date(a.expires_at).getTime() - new Date(b.expires_at).getTime()
-          )
-        }
-
-        return (
-          new Date(b.created_at).getTime() - new Date(a.created_at).getTime()
-        )
-      })
-    }
-
-    return sorted
-  }, [filteredSelections, sortBy])
+    // Selections are already sorted by the API based on sortBy parameter
+    // This just filters for display - sorting is handled server-side
+    return [...filteredSelections]
+  }, [filteredSelections])
 
   if (isLoading) {
     return (
@@ -92,7 +78,7 @@ export function SelectionList({ selections, isLoading }: SelectionListProps) {
             className="pl-9"
           />
         </div>
-        <Select value={sortBy} onValueChange={(value) => setSortBy(value as "newest" | "expiring")}>
+        <Select value={sortBy} onValueChange={(value) => handleSortByChange(value as "newest" | "expiring")}>
           <SelectTrigger className="w-full sm:w-[180px]">
             <SelectValue placeholder="Sort by" />
           </SelectTrigger>

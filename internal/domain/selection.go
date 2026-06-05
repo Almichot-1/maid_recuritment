@@ -24,9 +24,10 @@ type Selection struct {
 	EmployerIDFileName         string
 	EmployerIDUploadedAt       *time.Time
 	WarningSentFlags           int
-	ExpiresAt                  time.Time `gorm:"not null"`
-	CreatedAt                  time.Time `gorm:"not null;default:now()"`
-	UpdatedAt                  time.Time `gorm:"not null;default:now()"`
+	ExpiresAt                  time.Time  `gorm:"not null"`
+	CreatedAt                  time.Time  `gorm:"not null;default:now()"`
+	UpdatedAt                  time.Time  `gorm:"not null;default:now()"`
+	Candidate                  *Candidate `gorm:"foreignKey:CandidateID;references:ID"`
 }
 
 func (Selection) TableName() string {

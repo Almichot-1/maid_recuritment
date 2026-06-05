@@ -3,6 +3,7 @@ package handler
 import (
 	"errors"
 	"net/http"
+	"sort"
 	"strings"
 	"time"
 
@@ -81,6 +82,7 @@ func (h *SelectionHandler) SelectCandidate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Candidate data is loaded in selection service, just fetch it fresh for the response
 	candidate, err := h.candidateRepo.GetByID(selection.CandidateID)
 	if err != nil {
 		h.writeSelectionError(w, err)
@@ -133,18 +135,13 @@ func (h *SelectionHandler) GetSelection(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	candidate, err := h.candidateRepo.GetByID(selection.CandidateID)
-	if err != nil {
-		h.writeSelectionError(w, err)
-		return
-	}
-
-	if !isInvolvedParty(role, userID, selection, candidate) {
+	// Candidate data is already preloaded by the repository
+	if !isInvolvedParty(role, userID, selection, selection.Candidate) {
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
 	}
 
-	response, err := h.mapSelectionResponse(selection, candidate)
+	response, err := h.mapSelectionResponse(selection, selection.Candidate)
 	if err != nil {
 		h.writeSelectionError(w, err)
 		return
@@ -178,14 +175,18 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Support server-side sorting
+	sortBy := r.URL.Query().Get("sortBy")
+	if sortBy == "expiring" {
+		// Sort by expiring soon for pending selections
+		h.sortSelectionsByExpiring(selections)
+	}
+	// Default is "newest" (already sorted by created_at DESC in repository)
+
 	responses := make([]SelectionResponse, 0, len(selections))
 	for _, selection := range selections {
-		candidate, err := h.candidateRepo.GetByID(selection.CandidateID)
-		if err != nil {
-			h.writeSelectionError(w, err)
-			return
-		}
-		response, err := h.mapSelectionResponse(selection, candidate)
+		// Candidate data is already preloaded by the repository
+		response, err := h.mapSelectionResponse(selection, selection.Candidate)
 		if err != nil {
 			h.writeSelectionError(w, err)
 			return
@@ -307,6 +308,31 @@ func isInvolvedParty(role, userID string, selection *domain.Selection, candidate
 	default:
 		return false
 	}
+}
+
+// sortSelectionsByExpiring sorts selections by expiring soon
+// Pending selections are listed first (sorted by expires_at), then other selections (sorted by created_at)
+func (h *SelectionHandler) sortSelectionsByExpiring(selections []*domain.Selection) {
+	sort.SliceStable(selections, func(i, j int) bool {
+		iPending := selections[i].Status == domain.SelectionPending
+		jPending := selections[j].Status == domain.SelectionPending
+
+		// Pending selections come first
+		if iPending && !jPending {
+			return true
+		}
+		if !iPending && jPending {
+			return false
+		}
+
+		// Both pending: sort by expires_at
+		if iPending && jPending {
+			return selections[i].ExpiresAt.Before(selections[j].ExpiresAt)
+		}
+
+		// Both non-pending: sort by created_at (newest first)
+		return selections[i].CreatedAt.After(selections[j].CreatedAt)
+	})
 }
 
 func (h *SelectionHandler) mapSelectionResponse(selection *domain.Selection, candidate *domain.Candidate) (SelectionResponse, error) {

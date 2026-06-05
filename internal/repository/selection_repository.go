@@ -73,7 +73,11 @@ func (r *GormSelectionRepository) Create(selection *domain.Selection) error {
 
 func (r *GormSelectionRepository) GetByID(id string) (*domain.Selection, error) {
 	var selection domain.Selection
-	if err := r.db.Where("id = ?", id).First(&selection).Error; err != nil {
+	if err := r.db.
+		Preload("Candidate").
+		Preload("Candidate.Documents").
+		Where("id = ?", id).
+		First(&selection).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrSelectionNotFound
 		}
@@ -106,7 +110,12 @@ func (r *GormSelectionRepository) GetByCandidateIDAndPairingID(candidateID, pair
 
 func (r *GormSelectionRepository) GetBySelectedBy(userID string) ([]*domain.Selection, error) {
 	selections := make([]*domain.Selection, 0)
-	if err := r.db.Where("selected_by = ?", userID).Order("created_at DESC").Find(&selections).Error; err != nil {
+	if err := r.db.
+		Preload("Candidate").
+		Preload("Candidate.Documents").
+		Where("selected_by = ?", userID).
+		Order("created_at DESC").
+		Find(&selections).Error; err != nil {
 		return nil, fmt.Errorf("get selections by selected_by: %w", err)
 	}
 	return selections, nil
@@ -114,7 +123,12 @@ func (r *GormSelectionRepository) GetBySelectedBy(userID string) ([]*domain.Sele
 
 func (r *GormSelectionRepository) GetBySelectedByAndPairing(userID, pairingID string) ([]*domain.Selection, error) {
 	selections := make([]*domain.Selection, 0)
-	if err := r.db.Where("selected_by = ? AND pairing_id = ?", userID, pairingID).Order("created_at DESC").Find(&selections).Error; err != nil {
+	if err := r.db.
+		Preload("Candidate").
+		Preload("Candidate.Documents").
+		Where("selected_by = ? AND pairing_id = ?", userID, pairingID).
+		Order("created_at DESC").
+		Find(&selections).Error; err != nil {
 		return nil, fmt.Errorf("get selections by selected_by and pairing: %w", err)
 	}
 	return selections, nil
@@ -123,6 +137,8 @@ func (r *GormSelectionRepository) GetBySelectedByAndPairing(userID, pairingID st
 func (r *GormSelectionRepository) GetByCandidateOwner(userID string) ([]*domain.Selection, error) {
 	selections := make([]*domain.Selection, 0)
 	if err := r.db.
+		Preload("Candidate").
+		Preload("Candidate.Documents").
 		Model(&domain.Selection{}).
 		Joins("JOIN candidates ON candidates.id = selections.candidate_id").
 		Where("candidates.created_by = ?", userID).
@@ -136,6 +152,8 @@ func (r *GormSelectionRepository) GetByCandidateOwner(userID string) ([]*domain.
 func (r *GormSelectionRepository) GetByCandidateOwnerAndPairing(userID, pairingID string) ([]*domain.Selection, error) {
 	selections := make([]*domain.Selection, 0)
 	if err := r.db.
+		Preload("Candidate").
+		Preload("Candidate.Documents").
 		Model(&domain.Selection{}).
 		Joins("JOIN candidates ON candidates.id = selections.candidate_id").
 		Where("candidates.created_by = ? AND selections.pairing_id = ?", userID, pairingID).

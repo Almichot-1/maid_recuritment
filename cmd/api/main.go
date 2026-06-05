@@ -83,6 +83,9 @@ func main() {
 		log.Fatalf("failed to initialize platform settings service: %v", err)
 	}
 
+	// Wrap platform settings service with cache (5 minute TTL)
+	settingsCacheService := service.NewSettingsCacheService(platformSettingsService, 5*time.Minute)
+
 	candidateRepository, err := repository.NewGormCandidateRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize candidate repository: %v", err)
@@ -219,10 +222,10 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize approval service: %v", err)
 	}
-	agencyApprovalService.SetPlatformSettingsReader(platformSettingsService)
-	notificationService.SetPlatformSettingsReader(platformSettingsService)
-	selectionService.SetPlatformSettingsReader(platformSettingsService)
-	approvalService.SetPlatformSettingsReader(platformSettingsService)
+	agencyApprovalService.SetPlatformSettingsReader(settingsCacheService)
+	notificationService.SetPlatformSettingsReader(settingsCacheService)
+	selectionService.SetPlatformSettingsReader(settingsCacheService)
+	approvalService.SetPlatformSettingsReader(settingsCacheService)
 
 	authHandler := handler.NewAuthHandler(authService, userRepository, agencyApprovalService)
 	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService, pairingService)

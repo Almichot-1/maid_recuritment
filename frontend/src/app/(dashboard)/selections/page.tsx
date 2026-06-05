@@ -30,7 +30,8 @@ export default function SelectionsPage() {
   const router = useRouter()
   const { isEthiopianAgent } = useCurrentUser()
   const { activeWorkspace } = usePairingContext()
-  const { data: selections, isLoading, refetch } = useMySelections()
+  const [sortBy, setSortBy] = React.useState<"newest" | "expiring">("newest")
+  const { data: selections, isLoading, refetch } = useMySelections(sortBy)
 
   const activeSelections = React.useMemo(
     () => selections?.filter((selection) => selection.status === SelectionStatus.PENDING) || [],
@@ -183,12 +184,12 @@ export default function SelectionsPage() {
         </TabsList>
 
         <TabsContent value="active">
-          {counts.active > 0 ? <SelectionList selections={activeSelections} isLoading={isLoading} /> : emptyState}
+          {counts.active > 0 ? <SelectionList selections={activeSelections} isLoading={isLoading} sortBy={sortBy} onSortByChange={setSortBy} /> : emptyState}
         </TabsContent>
 
         <TabsContent value="approved">
           {counts.approved > 0 ? (
-            <SelectionList selections={approvedSelections} isLoading={isLoading} />
+            <SelectionList selections={approvedSelections} isLoading={isLoading} sortBy={sortBy} onSortByChange={setSortBy} />
           ) : (
             <EmptyPanel text="No fully approved selections yet." />
           )}
@@ -196,7 +197,7 @@ export default function SelectionsPage() {
 
         <TabsContent value="rejected">
           {counts.rejected > 0 ? (
-            <SelectionList selections={rejectedSelections} isLoading={isLoading} />
+            <SelectionList selections={rejectedSelections} isLoading={isLoading} sortBy={sortBy} onSortByChange={setSortBy} />
           ) : (
             <EmptyPanel text="No rejected selections." />
           )}
@@ -204,14 +205,14 @@ export default function SelectionsPage() {
 
         <TabsContent value="expired">
           {counts.expired > 0 ? (
-            <SelectionList selections={expiredSelections} isLoading={isLoading} />
+            <SelectionList selections={expiredSelections} isLoading={isLoading} sortBy={sortBy} onSortByChange={setSortBy} />
           ) : (
             <EmptyPanel text="No expired selections." />
           )}
         </TabsContent>
 
         <TabsContent value="all">
-          {counts.all > 0 ? <SelectionList selections={selections || []} isLoading={isLoading} /> : emptyState}
+          {counts.all > 0 ? <SelectionList selections={selections || []} isLoading={isLoading} sortBy={sortBy} onSortByChange={setSortBy} /> : emptyState}
         </TabsContent>
       </Tabs>
     </div>
