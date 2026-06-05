@@ -33,7 +33,8 @@ export default function PartnersPage() {
     isLoading: isPairingLoading,
     setActivePairingId,
   } = usePairingContext()
-  const { data: selections = [], isLoading: isSelectionsLoading } = useMySelections()
+  const { data: selectionsData, isLoading: isSelectionsLoading } = useMySelections()
+  const selections = selectionsData?.selections || []
   const { mutate: updateSharingPreferences, isPending: isSavingSharingPreferences } = useUpdateSharingPreferences()
   const [autoShareCandidates, setAutoShareCandidates] = React.useState(Boolean(user?.auto_share_candidates))
   const [defaultForeignPairingId, setDefaultForeignPairingId] = React.useState<string>(user?.default_foreign_pairing_id || "none")

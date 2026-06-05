@@ -127,7 +127,7 @@ export function useMySelections(sortBy?: string, limit?: number, offset?: number
         params.append('offset', offset.toString());
       }
       const response = await api.get<{ selections: Selection[]; pagination: { limit: number; offset: number; total: number; has_more: boolean } }>(`/selections/my?${params.toString()}`);
-      return response.data.selections;
+      return response.data;
     },
     enabled: !!user && isPairingReady && !!activePairingId,
     staleTime: 30_000,

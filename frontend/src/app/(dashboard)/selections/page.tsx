@@ -8,6 +8,7 @@ import { ChevronRight, Clock3, Home, Inbox, Search, ShieldCheck, XCircle } from 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useMySelections } from "@/hooks/use-selections"
+import { useSelectionUpdates } from "@/hooks/use-selection-updates"
 import { PageHeader } from "@/components/layout/page-header"
 import { SelectionList } from "@/components/selections/selection-list"
 import { Badge } from "@/components/ui/badge"
@@ -31,7 +32,14 @@ export default function SelectionsPage() {
   const { isEthiopianAgent } = useCurrentUser()
   const { activeWorkspace } = usePairingContext()
   const [sortBy, setSortBy] = React.useState<"newest" | "expiring">("newest")
-  const { data: selections, isLoading, refetch } = useMySelections(sortBy)
+  const [page, setPage] = React.useState(1)
+  const limit = 25
+  const offset = (page - 1) * limit
+  const { data: selectionsData, isLoading, refetch } = useMySelections(sortBy, limit, offset)
+  const selections = selectionsData?.selections || []
+  const pagination = selectionsData?.pagination
+  
+  useSelectionUpdates(activeWorkspace?.id)
 
   const activeSelections = React.useMemo(
     () => selections?.filter((selection) => selection.status === SelectionStatus.PENDING) || [],
@@ -215,6 +223,28 @@ export default function SelectionsPage() {
           {counts.all > 0 ? <SelectionList selections={selections || []} isLoading={isLoading} sortBy={sortBy} onSortByChange={setSortBy} /> : emptyState}
         </TabsContent>
       </Tabs>
+
+      {pagination && (pagination.has_more || page > 1) && (
+        <div className="flex items-center justify-between pt-4 pb-8">
+          <Button
+            variant="outline"
+            disabled={page === 1}
+            onClick={() => setPage((p) => Math.max(1, p - 1))}
+          >
+            Previous
+          </Button>
+          <span className="text-sm text-muted-foreground">
+            Page {page} of {Math.ceil(pagination.total / limit) || 1}
+          </span>
+          <Button
+            variant="outline"
+            disabled={!pagination.has_more}
+            onClick={() => setPage((p) => p + 1)}
+          >
+            Next
+          </Button>
+        </div>
+      )}
     </div>
   )
 }

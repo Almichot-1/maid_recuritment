@@ -16,7 +16,8 @@ import { CandidateStatus, SelectionStatus } from "@/types"
 export default function TrackingHubPage() {
   const { isEthiopianAgent } = useCurrentUser()
   const { activeWorkspace } = usePairingContext()
-  const { data: selections, isLoading } = useMySelections()
+  const { data: selectionsData, isLoading } = useMySelections()
+  const selections = selectionsData?.selections || []
 
   const trackingSelections = React.useMemo(
     () => (selections || []).filter((selection) => selection.status === SelectionStatus.APPROVED && selection.candidate),
