@@ -102,8 +102,7 @@ export default function SelectionDetailPage() {
   const trackingPageHref = `/candidates/${selection.candidate_id}/tracking`
   const canUpdateProgress = isEthiopianAgent && candidate.created_by === user?.id
   const hasEmployerContract = !!selection.employer_contract?.file_url
-  const hasEmployerID = !!selection.employer_id?.file_url
-  const hasRequiredEmployerDocuments = hasEmployerContract && hasEmployerID
+  const hasRequiredEmployerDocuments = hasEmployerContract
   const approvalBlockedByEmployerPackage = isEthiopianAgent && !hasRequiredEmployerDocuments
   const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
   const medicalDocument = trackingCandidate?.documents?.find((document) => document.document_type === "medical")
@@ -309,23 +308,13 @@ export default function SelectionDetailPage() {
                   uploading={activeUploadType === "contract"}
                   progress={uploadProgress.contract}
                 />
-                <SupportingDocumentCard
-                  icon={<FileBadge2 className="h-4 w-4" />}
-                  label="Employer ID"
-                  description="Passport, national ID, or employer identity proof."
-                  document={selection.employer_id}
-                  canReplace={!isEthiopianAgent && isPending}
-                  onReplace={() => setReplacingDocumentType("employer_id")}
-                  uploading={activeUploadType === "employer_id"}
-                  progress={uploadProgress.employer_id}
-                />
               </div>
 
               {isPending && !hasRequiredEmployerDocuments ? (
                 <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
                   {isEthiopianAgent
-                    ? "The employer package is still incomplete. Wait for the foreign agency to upload both the contract and the employer ID before you approve."
-                    : "Upload both the contract and the employer ID here so the Ethiopian agency can review them and complete approval."}
+                    ? "The employer contract is still pending. Wait for the foreign agency to upload the contract before you approve."
+                    : "Upload the employer contract here so the Ethiopian agency can review it and complete approval."}
                 </div>
               ) : null}
 
@@ -350,28 +339,6 @@ export default function SelectionDetailPage() {
                       disabled={isUploadingSelectionDocument && activeUploadType !== "contract"}
                       onRemove={() => setReplacingDocumentType((current) => (current === "contract" ? null : current))}
                       onUpload={(file) => handleUploadSelectionDocument("contract", file)}
-                    />
-                  ) : null}
-
-                  {!hasEmployerID || replacingDocumentType === "employer_id" ? (
-                    <DocumentUpload
-                      documentType="employer_id"
-                      title={hasEmployerID ? "Replace employer ID" : "Upload employer ID"}
-                      description={
-                        activeUploadType === "employer_id" && uploadProgress.employer_id > 0
-                          ? `Uploading... ${uploadProgress.employer_id}%`
-                          : "Drop a PDF, JPG, or PNG identity document."
-                      }
-                      accept={{
-                        "application/pdf": [".pdf"],
-                        "image/jpeg": [".jpg", ".jpeg"],
-                        "image/png": [".png"],
-                      }}
-                      maxSize={10485760}
-                      mode="instant"
-                      disabled={isUploadingSelectionDocument && activeUploadType !== "employer_id"}
-                      onRemove={() => setReplacingDocumentType((current) => (current === "employer_id" ? null : current))}
-                      onUpload={(file) => handleUploadSelectionDocument("employer_id", file)}
                     />
                   ) : null}
                 </div>

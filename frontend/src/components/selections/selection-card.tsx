@@ -44,7 +44,7 @@ export function SelectionCard({ selection }: SelectionCardProps) {
   const isApproved = selection.status === SelectionStatus.APPROVED
   const isRejected = selection.status === SelectionStatus.REJECTED
   const isExpired = selection.status === SelectionStatus.EXPIRED
-  const hasRequiredEmployerDocuments = !!selection.employer_contract?.file_url && !!selection.employer_id?.file_url
+  const hasRequiredEmployerDocuments = !!selection.employer_contract?.file_url
   const approvalBlockedByEmployerPackage = isEthiopianAgent && isPending && !hasRequiredEmployerDocuments
 
   const getStatusBadge = () => {

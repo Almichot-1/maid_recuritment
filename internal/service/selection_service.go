@@ -524,5 +524,5 @@ func selectionHasRequiredSupportingDocuments(selection *domain.Selection) bool {
 		return false
 	}
 
-	return strings.TrimSpace(selection.EmployerContractURL) != "" && strings.TrimSpace(selection.EmployerIDURL) != ""
+	return strings.TrimSpace(selection.EmployerContractURL) != ""
 }
