@@ -38,6 +38,7 @@ import { ApprovalDialog } from "@/components/selections/approval-dialog"
 import { StatusTimeline } from "@/components/candidates/status-timeline"
 import { DocumentUpload } from "@/components/candidates/document-upload"
 import { LockCountdown } from "@/components/selections/lock-countdown"
+import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
@@ -199,11 +200,15 @@ export default function SelectionDetailPage() {
               <div className="flex flex-col gap-6 sm:flex-row">
                 <div className="shrink-0">
                   {candidate.photo_url ? (
-                    <img
-                      src={candidate.photo_url}
-                      alt={candidate.full_name}
-                      className="h-32 w-32 rounded-lg border object-cover shadow-sm"
-                    />
+                    <div className="relative h-32 w-32">
+                      <Image
+                        src={candidate.photo_url}
+                        alt={candidate.full_name}
+                        fill
+                        unoptimized
+                        className="rounded-lg border object-cover shadow-sm"
+                      />
+                    </div>
                   ) : (
                     <div className="flex h-32 w-32 items-center justify-center rounded-lg border border-dashed bg-muted">
                       <User className="h-10 w-10 text-muted-foreground" />

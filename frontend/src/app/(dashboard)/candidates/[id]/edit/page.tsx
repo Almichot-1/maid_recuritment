@@ -2,6 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
+import Image from "next/image"
 import { useParams, useRouter } from "next/navigation"
 import { ChevronRight, Eye, FileText, Home, ImagePlus, Loader2, PencilLine, Video, XCircle } from "lucide-react"
 import { toast } from "sonner"
@@ -251,11 +252,15 @@ function CurrentDocumentCard({
         {document ? (
           <div className="space-y-3 rounded-2xl border border-border/70 bg-muted/20 p-4">
             {isImage ? (
-              <img
-                src={document.file_url}
-                alt={document.file_name}
-                className="h-40 w-full rounded-xl object-cover border border-border/60 bg-background"
-              />
+              <div className="relative h-40 w-full">
+                <Image
+                  src={document.file_url}
+                  alt={document.file_name}
+                  fill
+                  unoptimized
+                  className="rounded-xl object-cover border border-border/60 bg-background"
+                />
+              </div>
             ) : (
               <div className="flex h-40 w-full items-center justify-center rounded-xl border border-dashed border-border/70 bg-background text-muted-foreground">
                 <div className="flex flex-col items-center gap-2 text-center">

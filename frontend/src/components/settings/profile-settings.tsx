@@ -24,6 +24,7 @@ import {
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Badge } from "@/components/ui/badge"
+import Image from "next/image"
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar"
 
 const profileSchema = z.object({
@@ -171,9 +172,9 @@ export function ProfileSettings() {
               </div>
 
               <div className="flex flex-col items-start gap-4 sm:flex-row sm:items-center">
-                <div className="flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border bg-background shadow-sm">
+                <div className="relative flex h-20 w-20 items-center justify-center overflow-hidden rounded-2xl border bg-background shadow-sm">
                   {hasLogo ? (
-                    <img src={logoDataURL} alt={`${user.company_name || user.full_name} logo`} className="h-full w-full object-cover" />
+                    <Image src={logoDataURL!} alt={`${user.company_name || user.full_name} logo`} fill unoptimized className="object-cover" />
                   ) : (
                     <div className="flex h-full w-full items-center justify-center bg-gradient-to-br from-primary/10 via-background to-amber-100 text-primary">
                       <ImagePlus className="h-8 w-8" />

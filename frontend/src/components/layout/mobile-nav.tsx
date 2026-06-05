@@ -25,6 +25,7 @@ import { useUnreadCount } from "@/hooks/use-notifications"
 import { useChatSummary } from "@/hooks/use-chat"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { useProfileAvatar } from "@/hooks/use-profile-avatar"
+import Image from "next/image"
 import { NavItem } from "./sidebar"
 import { cn } from "@/lib/utils"
 import { getRoleHomeLabel, getRoleHomePath, isRoleHomePath } from "@/lib/role-home"
@@ -154,11 +155,13 @@ export function MobileNav() {
         <div className="border-t border-slate-800 p-4">
           {user ? (
             <div className="mb-4 flex items-center gap-3 rounded-2xl border border-slate-800 bg-slate-900/70 p-3">
-              <div className="h-10 w-10 overflow-hidden rounded-full border border-slate-700">
-                <img
+              <div className="relative h-10 w-10 overflow-hidden rounded-full border border-slate-700">
+                <Image
                   src={avatarDataURL || `https://api.dicebear.com/7.x/initials/svg?seed=${user.full_name}`}
                   alt={user.full_name}
-                  className="h-full w-full object-cover"
+                  fill
+                  unoptimized
+                  className="object-cover"
                 />
               </div>
               <div className="min-w-0">

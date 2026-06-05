@@ -1,6 +1,7 @@
 "use client"
 
 import * as React from "react"
+import Image from "next/image"
 import { UploadCloud, File as FileIcon, X, CheckCircle2, AlertCircle, Loader2 } from "lucide-react"
 
 import { cn } from "@/lib/utils"
@@ -293,7 +294,9 @@ export function DocumentUpload({
                 {file.type.startsWith("video/") ? (
                   <video src={objectURL} controls className="h-32 rounded object-cover" />
                 ) : file.type.startsWith("image/") ? (
-                  <img src={objectURL} alt="Preview" className="h-32 rounded object-cover shadow-sm" />
+                  <div className="relative h-32 w-full">
+                    <Image src={objectURL} alt="Preview" fill unoptimized className="rounded object-cover shadow-sm" />
+                  </div>
                 ) : (
                   <div className="flex h-32 w-full items-center justify-center rounded bg-muted">
                     <FileIcon className="h-10 w-10 text-muted-foreground" />

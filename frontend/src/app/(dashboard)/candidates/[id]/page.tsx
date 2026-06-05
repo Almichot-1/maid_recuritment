@@ -23,6 +23,7 @@ import {
   Unplug
 } from "lucide-react"
 import Link from "next/link"
+import Image from "next/image"
 
 import { downloadCandidateCVFile, isPublishPairingSelectionError, useCandidate, useDeleteCandidate, useDeleteCandidateDocument, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
 import { useCurrentUser } from "@/hooks/use-auth"
@@ -279,12 +280,15 @@ export default function CandidateDetailPage() {
                 {/* Photo */}
                 <div className="shrink-0">
                   {getDocument("photo") ? (
-                    <img
-                      src={getDocument("photo")!.file_url}
-                      alt={candidate.full_name}
-                      className="h-32 w-32 rounded-lg object-cover border-2 border-border shadow-md cursor-pointer hover:opacity-90 transition-opacity"
-                      onClick={() => setImagePreview(getDocument("photo")!.file_url)}
-                    />
+                    <div className="relative h-32 w-32 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setImagePreview(getDocument("photo")!.file_url)}>
+                      <Image
+                        src={getDocument("photo")!.file_url}
+                        alt={candidate.full_name}
+                        fill
+                        unoptimized
+                        className="rounded-lg object-cover border-2 border-border shadow-md"
+                      />
+                    </div>
                   ) : (
                     <div className="h-32 w-32 rounded-lg bg-muted flex items-center justify-center border-2 border-dashed">
                       <UserCheck className="h-12 w-12 text-muted-foreground" />
@@ -486,12 +490,13 @@ export default function CandidateDetailPage() {
               <div className="space-y-2">
                 <p className="text-sm font-medium">Full Photo</p>
                 {getDocument("photo") ? (
-                  <div className="relative">
-                    <img
+                  <div className="relative w-full max-w-md h-64 cursor-pointer hover:opacity-90 transition-opacity" onClick={() => setImagePreview(getDocument("photo")!.file_url)}>
+                    <Image
                       src={getDocument("photo")!.file_url}
                       alt="Candidate photo"
-                      className="w-full max-w-md h-64 object-cover rounded-lg border shadow-sm cursor-pointer hover:opacity-90 transition-opacity"
-                      onClick={() => setImagePreview(getDocument("photo")!.file_url)}
+                      fill
+                      unoptimized
+                      className="object-cover rounded-lg border shadow-sm"
                     />
                   </div>
                 ) : (
@@ -930,11 +935,16 @@ export default function CandidateDetailPage() {
             <DialogTitle>Photo Preview</DialogTitle>
           </DialogHeader>
           {imagePreview && (
-            <img
-              src={imagePreview}
-              alt="Preview"
-              className="w-full h-auto rounded-lg"
-            />
+            <div className="relative w-full" style={{ aspectRatio: "auto" }}>
+              <Image
+                src={imagePreview}
+                alt="Preview"
+                unoptimized
+                width={1200}
+                height={800}
+                className="w-full h-auto rounded-lg"
+              />
+            </div>
           )}
         </DialogContent>
       </Dialog>

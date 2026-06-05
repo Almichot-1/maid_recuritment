@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import Link from "next/link"
 import { User, Lock, PencilLine, X } from "lucide-react"
 
+import Image from "next/image"
 import { Candidate, CandidateStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { LockCountdown } from "@/components/selections/lock-countdown"
@@ -77,10 +78,12 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
             }}
           >
             {photoUrl ? (
-              <img
+              <Image
                 src={photoUrl}
                 alt={candidate.full_name}
-                className="h-full w-full object-cover transition-transform duration-300 group-hover:scale-105"
+                fill
+                unoptimized
+                className="object-cover transition-transform duration-300 group-hover:scale-105"
                 loading="lazy"
               />
             ) : (
@@ -230,10 +233,12 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
             >
               <X className="h-6 w-6" />
             </Button>
-            <img 
+            <Image 
               src={photoUrl} 
               alt={candidate.full_name} 
-              className="max-w-full max-h-full object-contain rounded-lg shadow-2xl"
+              fill
+              unoptimized
+              className="object-contain rounded-lg shadow-2xl"
             />
           </div>
         </div>

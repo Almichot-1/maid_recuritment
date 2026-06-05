@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation"
 import { CheckCircle2, Clock, User, Eye, Loader2, Route } from "lucide-react"
 import { format } from "date-fns"
 
+import Image from "next/image"
 import { Selection, SelectionStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useApproveSelection, useRejectSelection } from "@/hooks/use-selections"
@@ -108,12 +109,15 @@ export function SelectionCard({ selection }: SelectionCardProps) {
               {/* Photo */}
               <div className="shrink-0">
                 {photoUrl ? (
-                  <img
-                    src={photoUrl}
-                    alt={candidate.full_name}
-                    className="h-16 w-16 rounded-lg object-cover border-2 border-border cursor-pointer hover:opacity-90 transition-opacity"
-                    onClick={handleViewDetails}
-                  />
+                  <div className="relative h-16 w-16 cursor-pointer hover:opacity-90 transition-opacity" onClick={handleViewDetails}>
+                    <Image
+                      src={photoUrl}
+                      alt={candidate.full_name}
+                      fill
+                      unoptimized
+                      className="rounded-lg object-cover border-2 border-border"
+                    />
+                  </div>
                 ) : (
                   <div className="h-16 w-16 rounded-lg bg-muted flex items-center justify-center border-2 border-dashed">
                     <User className="h-8 w-8 text-muted-foreground" />

@@ -6,6 +6,7 @@ import { useRouter } from "next/navigation"
 import { AlertCircle, CheckCircle2, Loader2, User } from "lucide-react"
 import { toast } from "sonner"
 
+import Image from "next/image"
 import { Candidate } from "@/types"
 import { useSelectCandidate } from "@/hooks/use-selections"
 import { Badge } from "@/components/ui/badge"
@@ -108,11 +109,15 @@ export function SelectCandidateDialog({ candidate, open, onOpenChange }: SelectC
             {/* Photo */}
             <div className="shrink-0">
               {photoUrl ? (
-                <img
-                  src={photoUrl}
-                  alt={candidate.full_name}
-                  className="h-24 w-24 rounded-lg object-cover border-2 border-border"
-                />
+                <div className="relative h-24 w-24">
+                  <Image
+                    src={photoUrl}
+                    alt={candidate.full_name}
+                    fill
+                    unoptimized
+                    className="rounded-lg object-cover border-2 border-border"
+                  />
+                </div>
               ) : (
                 <div className="h-24 w-24 rounded-lg bg-muted flex items-center justify-center border-2 border-dashed">
                   <User className="h-10 w-10 text-muted-foreground" />

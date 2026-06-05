@@ -1,4 +1,5 @@
 import Link from "next/link"
+import Image from "next/image"
 import { APP_NAME, LOGO_DARK_URL, LOGO_URL } from "@/constants/branding"
 import { cn } from "@/lib/utils"
 
@@ -34,18 +35,20 @@ export function Logo({ size = "md", showText = true, href = "/", className }: Lo
 
   const content = (
     <div className={cn("flex items-center", config.container, className)}>
-      <span className={cn("inline-flex shrink-0 items-center justify-center", config.icon)}>
-        <img
+      <span className={cn("relative inline-flex shrink-0 items-center justify-center", config.icon)}>
+        <Image
           src={LOGO_URL}
           alt={`${APP_NAME} logo`}
-          className="h-full w-full object-contain dark:hidden"
-          decoding="async"
+          fill
+          unoptimized
+          className="object-contain dark:hidden"
         />
-        <img
+        <Image
           src={LOGO_DARK_URL}
           alt={`${APP_NAME} logo`}
-          className="hidden h-full w-full object-contain dark:block"
-          decoding="async"
+          fill
+          unoptimized
+          className="hidden object-contain dark:block"
         />
       </span>
       {showText && (

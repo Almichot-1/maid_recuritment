@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from "next/navigation"
 import { Loader2 } from "lucide-react"
 import { toast } from "sonner"
 
+import Image from "next/image"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Button } from "@/components/ui/button"
@@ -127,11 +128,13 @@ function AdminSetupContent() {
               </div>
 
               <div className="grid gap-6 md:grid-cols-[220px_minmax(0,1fr)]">
-                <div className="overflow-hidden rounded-xl border bg-white p-3">
-                  <img
+                <div className="relative overflow-hidden rounded-xl border bg-white p-3" style={{ minHeight: "220px" }}>
+                  <Image
                     src={`https://api.qrserver.com/v1/create-qr-code/?size=220x220&data=${encodeURIComponent(preview.provisioning_url)}`}
                     alt="MFA QR code"
-                    className="h-full w-full object-contain"
+                    fill
+                    unoptimized
+                    className="object-contain"
                   />
                 </div>
                 <div className="space-y-3">
