@@ -63,6 +63,7 @@ export function useSelectionUpdates(pairingId?: string) {
           // This updates the selection in cache without making a network request
           queryClient.setQueryData(
             ['selection', update.selection_id],
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
             (oldData: any) => {
               if (!oldData) return oldData
               return {

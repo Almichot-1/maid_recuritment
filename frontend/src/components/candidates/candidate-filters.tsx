@@ -48,6 +48,7 @@ export function CandidateFilters() {
   // Update URL when debounced search changes
   React.useEffect(() => {
     updateFilters({ search: debouncedSearch || undefined })
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [debouncedSearch])
 
   const updateFilters = (updates: Record<string, string | undefined>) => {
