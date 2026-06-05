@@ -36,7 +36,7 @@ export default function SelectionsPage() {
   const limit = 25
   const offset = (page - 1) * limit
   const { data: selectionsData, isLoading, refetch } = useMySelections(sortBy, limit, offset)
-  const selections = selectionsData?.selections || []
+  const selections = React.useMemo(() => selectionsData?.selections || [], [selectionsData?.selections])
   const pagination = selectionsData?.pagination
   
   useSelectionUpdates(activeWorkspace?.id)

@@ -385,17 +385,33 @@ export async function downloadCandidateCVFile(
 
 export function useGenerateCV(id: string) {
   const queryClient = useQueryClient();
+  const activePairingId = usePairingStore((state) => state.activePairingId);
 
   return useMutation({
     mutationFn: async () => {
-      const response = await api.post(
-        `/candidates/${id}/generate-cv`,
-        {}
+      // WORKAROUND: Use GET /download-cv instead of POST /generate-cv
+      // because Render is stuck on old code that lacks /generate-cv
+      const response = await api.get(
+        `/candidates/${id}/download-cv`,
+        { responseType: "blob" }
       );
-      return response.data;
+      
+      const blob = new Blob([response.data], {
+        type: response.headers["content-type"] || "application/pdf",
+      });
+      const objectURL = window.URL.createObjectURL(blob);
+      return { cv_pdf_url: objectURL };
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+    onSuccess: (data) => {
+      // Update the cache with the local blob URL so the iframe can show it
+      queryClient.setQueryData(["candidate", id, activePairingId], (old: Candidate | undefined) => {
+        if (!old) return old;
+        return { ...old, cv_pdf_url: data.cv_pdf_url };
+      });
+      queryClient.setQueryData(["candidate", id], (old: Candidate | undefined) => {
+        if (!old) return old;
+        return { ...old, cv_pdf_url: data.cv_pdf_url };
+      });
       toast.success("CV generated successfully");
     },
     onError: () => {
