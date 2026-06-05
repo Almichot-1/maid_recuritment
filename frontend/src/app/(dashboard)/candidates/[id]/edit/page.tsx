@@ -110,6 +110,7 @@ export default function EditCandidatePage() {
     children_count: candidate.children_count,
     education_level: candidate.education_level || "",
     experience_years: candidate.experience_years,
+    country_of_experience: candidate.country_of_experience,
     skills: candidate.skills,
     languages: candidate.languages.length
       ? candidate.languages.map((language) => ({ language, proficiency: "Intermediate" }))
@@ -129,6 +130,7 @@ export default function EditCandidatePage() {
         children_count: data.children_count,
         education_level: data.education_level,
         experience_years: data.experience_years,
+        country_of_experience: data.country_of_experience,
         skills: data.skills,
         languages: data.languages.map((item) => item.language),
       })

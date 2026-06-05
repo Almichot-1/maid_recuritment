@@ -5,6 +5,7 @@ import (
 	"os"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -85,13 +86,17 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 		"-c", "user_defined_dpi=300",
 		"-c", "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
 	}
-	languages := uniqueOCRLanguages("eng", p.lang, "ocrb")
+	// ocrb is purpose-built for MRZ fonts — try it first for faster success on clean passports.
+	// Then fall back to eng and the configured language.
+	languages := uniqueOCRLanguages("ocrb", "eng", p.lang)
 	attemptErrors := make([]string, 0, len(languages))
 	bestLine1, bestLine2 := "", ""
 	bestValidationErrors := 1 << 30
 
 	for _, language := range languages {
-		text, err := p.runTesseractTextWithTimeout(mrzImagePath, language, mrzArgs, 8*time.Second)
+		// Use a shorter per-attempt timeout: on free-tier CPU this keeps total
+		// latency bounded even if one language stalls.
+		text, err := p.runTesseractTextWithTimeout(mrzImagePath, language, mrzArgs, 7*time.Second)
 		if err != nil {
 			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", language, err))
 			continue
@@ -105,6 +110,7 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 
 		parsed, parseErr := p.parser.ParseMRZ(line1, line2)
 		if parseErr == nil && parsed != nil && parsed.IsValid {
+			// Perfect result — return immediately without trying remaining languages.
 			return line1, line2, 0, nil
 		}
 
@@ -183,8 +189,25 @@ func (p *OCRProcessor) ExtractText(imagePath string) (string, error) {
 		"-c", "user_defined_dpi=300",
 	}
 
-	textPSM6, err6 := p.runTesseractText(imagePath, p.lang, append([]string{"--psm", "6"}, common...))
-	textPSM11, err11 := p.runTesseractText(imagePath, p.lang, append([]string{"--psm", "11"}, common...))
+	// Run PSM 6 and PSM 11 concurrently — both are needed regardless, so
+	// parallelising halves the wall-clock time on multi-core and keeps parity
+	// on single-core (each Tesseract is already limited to 1 thread via OMP_THREAD_LIMIT=1).
+	var (
+		textPSM6, textPSM11 string
+		err6, err11         error
+		wg                  sync.WaitGroup
+	)
+	wg.Add(2)
+	go func() {
+		defer wg.Done()
+		textPSM6, err6 = p.runTesseractText(imagePath, p.lang, append([]string{"--psm", "6"}, common...))
+	}()
+	go func() {
+		defer wg.Done()
+		textPSM11, err11 = p.runTesseractText(imagePath, p.lang, append([]string{"--psm", "11"}, common...))
+	}()
+	wg.Wait()
+
 	if err6 != nil && err11 != nil {
 		return "", err6
 	}

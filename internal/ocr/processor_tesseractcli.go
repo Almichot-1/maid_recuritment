@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"time"
@@ -36,7 +37,7 @@ func mergeOCRTextLines(texts ...string) string {
 }
 
 func (p *OCRProcessor) runTesseractText(imagePath, lang string, extraArgs []string) (string, error) {
-	return p.runTesseractTextWithTimeout(imagePath, lang, extraArgs, 20*time.Second)
+	return p.runTesseractTextWithTimeout(imagePath, lang, extraArgs, 25*time.Second)
 }
 
 func (p *OCRProcessor) runTesseractTextWithTimeout(imagePath, lang string, extraArgs []string, timeout time.Duration) (string, error) {
@@ -57,6 +58,16 @@ func (p *OCRProcessor) runTesseractTextWithTimeout(imagePath, lang string, extra
 		"OMP_THREAD_LIMIT=1",
 		"OMP_NUM_THREADS=1",
 	)
+	// Help Tesseract find its traineddata files immediately without searching
+	// multiple directories on each process spawn.
+	if exePath := p.tesseractExe(); exePath != "tesseract" {
+		if dir := filepath.Dir(exePath); dir != "" && dir != "." {
+			tessdata := filepath.Join(dir, "tessdata")
+			if info, err := os.Stat(tessdata); err == nil && info.IsDir() {
+				cmd.Env = append(cmd.Env, "TESSDATA_PREFIX="+tessdata)
+			}
+		}
+	}
 
 	var stdout bytes.Buffer
 	var stderr bytes.Buffer

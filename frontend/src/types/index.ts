@@ -71,6 +71,7 @@ export interface Candidate {
   children_count?: number;
   education_level?: string;
   experience_years?: number;
+  country_of_experience?: string;
   languages: string[];
   skills: string[];
   status: CandidateStatus;

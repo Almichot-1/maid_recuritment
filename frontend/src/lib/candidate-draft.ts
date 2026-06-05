@@ -11,6 +11,7 @@ export type CandidateDraftFormValues = {
   children_count?: number | string;
   education_level?: string;
   experience_years?: number | string;
+  country_of_experience?: string;
   skills?: string[];
   languages?: Array<{ language: string; proficiency: string }>;
 };

@@ -533,13 +533,19 @@ func (s *PDFService) drawHeroCard(
 	pdf.SetXY(20, cardY+51)
 	pdf.SetTextColor(51, 65, 85)
 	pdf.SetFont("Arial", "", 10)
+	
+	experienceText := fmt.Sprintf("%s years", formatIntPointer(candidate.ExperienceYears))
+	if strings.TrimSpace(candidate.CountryOfExperience) != "" {
+		experienceText = fmt.Sprintf("%s years in %s", formatIntPointer(candidate.ExperienceYears), strings.ToUpper(candidate.CountryOfExperience))
+	}
+	
 	pdf.MultiCell(
 		112,
 		5.5,
 		fmt.Sprintf(
-			"%s brings %s years of domestic work experience, with strengths in %s and communication in %s.",
+			"%s brings %s of domestic work experience, with strengths in %s and communication in %s.",
 			candidateProfileName(candidate, nil),
-			formatIntPointer(candidate.ExperienceYears),
+			experienceText,
 			formatListForPDF(skills),
 			formatListForPDF(languages),
 		),
@@ -628,14 +634,20 @@ func (s *PDFService) drawSummaryBlock(pdf *gofpdf.Fpdf, candidate *domain.Candid
 	if agencyName == "" {
 		agencyName = "the recruitment agency"
 	}
+	
+	experienceText := fmt.Sprintf("%s years", formatIntPointer(candidate.ExperienceYears))
+	if strings.TrimSpace(candidate.CountryOfExperience) != "" {
+		experienceText = fmt.Sprintf("%s years in %s", formatIntPointer(candidate.ExperienceYears), candidate.CountryOfExperience)
+	}
+	
 	pdf.MultiCell(
 		172,
 		5.5,
 		fmt.Sprintf(
-			"%s is being presented by %s with %s years of experience, practical strengths in %s, and spoken languages including %s. The latest photo appears on this profile, and the passport copy is included at the end for final review.",
+			"%s is being presented by %s with %s of experience, practical strengths in %s, and spoken languages including %s. The latest photo appears on this profile, and the passport copy is included at the end for final review.",
 			candidateProfileName(candidate, nil),
 			agencyName,
-			formatIntPointer(candidate.ExperienceYears),
+			experienceText,
 			formatListForPDF(skills),
 			formatListForPDF(languages),
 		),

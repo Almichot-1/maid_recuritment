@@ -106,6 +106,7 @@ export type CandidateFormValues = {
   children_count?: number | string;
   education_level?: string;
   experience_years?: number | string;
+  country_of_experience?: string;
   skills: string[];
   languages: Array<{ language: string; proficiency: string }>;
 };
@@ -175,6 +176,7 @@ export function CandidateForm({
       children_count: undefined,
       education_level: "",
       experience_years: undefined,
+      country_of_experience: "",
       skills: [],
       languages: [
         { language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] },
@@ -862,6 +864,28 @@ export function CandidateForm({
                       </FormItem>
                     )}
                   />
+
+                  {form.watch("experience_years") && Number(form.watch("experience_years")) > 0 && (
+                    <FormField
+                      control={form.control}
+                      name="country_of_experience"
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>Country of experience</FormLabel>
+                          <FormControl>
+                            <Input
+                              placeholder="e.g., Saudi Arabia, UAE, Kuwait"
+                              {...field}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            Where did she gain this work experience? (Optional)
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  )}
                 </div>
               </CardContent>
             </Card>

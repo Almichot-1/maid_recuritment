@@ -59,6 +59,7 @@ export interface CandidateApiResponse {
   children_count?: number;
   education_level?: string;
   experience_years?: number;
+  country_of_experience?: string;
   languages?: string[];
   skills?: string[];
   status: Candidate["status"];
@@ -99,6 +100,7 @@ export function normalizeCandidate(candidate: CandidateApiResponse): Candidate {
     children_count: candidate.children_count,
     education_level: candidate.education_level,
     experience_years: candidate.experience_years,
+    country_of_experience: candidate.country_of_experience,
     languages: candidate.languages || [],
     skills: candidate.skills || [],
     status: candidate.status,

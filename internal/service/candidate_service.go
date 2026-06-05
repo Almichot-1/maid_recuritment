@@ -34,10 +34,11 @@ type CandidateInput struct {
 	PlaceOfBirth    string
 	Religion        string
 	MaritalStatus   string
-	ChildrenCount   *int
-	EducationLevel  string
-	ExperienceYears *int
-	Languages       []string
+	ChildrenCount       *int
+	EducationLevel      string
+	ExperienceYears     *int
+	CountryOfExperience string
+	Languages           []string
 	Skills          []string
 }
 
@@ -149,20 +150,21 @@ func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput
 	}
 
 	candidate := &domain.Candidate{
-		CreatedBy:       strings.TrimSpace(createdBy),
-		FullName:        strings.TrimSpace(data.FullName),
-		Nationality:     strings.TrimSpace(data.Nationality),
-		DateOfBirth:     normalizeCandidateDate(data.DateOfBirth),
-		Age:             data.Age,
-		PlaceOfBirth:    strings.TrimSpace(data.PlaceOfBirth),
-		Religion:        strings.TrimSpace(data.Religion),
-		MaritalStatus:   strings.TrimSpace(data.MaritalStatus),
-		ChildrenCount:   data.ChildrenCount,
-		EducationLevel:  strings.TrimSpace(data.EducationLevel),
-		ExperienceYears: data.ExperienceYears,
-		Languages:       languages,
-		Skills:          skills,
-		Status:          domain.CandidateStatusDraft,
+		CreatedBy:           strings.TrimSpace(createdBy),
+		FullName:            strings.TrimSpace(data.FullName),
+		Nationality:         strings.TrimSpace(data.Nationality),
+		DateOfBirth:         normalizeCandidateDate(data.DateOfBirth),
+		Age:                 data.Age,
+		PlaceOfBirth:        strings.TrimSpace(data.PlaceOfBirth),
+		Religion:            strings.TrimSpace(data.Religion),
+		MaritalStatus:       strings.TrimSpace(data.MaritalStatus),
+		ChildrenCount:       data.ChildrenCount,
+		EducationLevel:      strings.TrimSpace(data.EducationLevel),
+		ExperienceYears:     data.ExperienceYears,
+		CountryOfExperience: strings.TrimSpace(data.CountryOfExperience),
+		Languages:           languages,
+		Skills:              skills,
+		Status:              domain.CandidateStatusDraft,
 	}
 	if candidate.Age == nil {
 		candidate.Age = deriveAgePointer(candidate.DateOfBirth)
@@ -225,6 +227,7 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 	candidate.ChildrenCount = data.ChildrenCount
 	candidate.EducationLevel = strings.TrimSpace(data.EducationLevel)
 	candidate.ExperienceYears = data.ExperienceYears
+	candidate.CountryOfExperience = strings.TrimSpace(data.CountryOfExperience)
 	candidate.Languages = languages
 	candidate.Skills = skills
 

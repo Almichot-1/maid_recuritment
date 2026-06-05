@@ -21,33 +21,35 @@ import (
 )
 
 type CreateCandidateRequest struct {
-	FullName        string   `json:"full_name" validate:"required"`
-	Nationality     string   `json:"nationality"`
-	DateOfBirth     string   `json:"date_of_birth"`
-	Age             *int     `json:"age" validate:"omitempty,min=18,max=65"`
-	PlaceOfBirth    string   `json:"place_of_birth"`
-	Religion        string   `json:"religion"`
-	MaritalStatus   string   `json:"marital_status"`
-	ChildrenCount   *int     `json:"children_count" validate:"omitempty,min=0"`
-	EducationLevel  string   `json:"education_level"`
-	ExperienceYears *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
-	Languages       []string `json:"languages"`
-	Skills          []string `json:"skills"`
+	FullName            string   `json:"full_name" validate:"required"`
+	Nationality         string   `json:"nationality"`
+	DateOfBirth         string   `json:"date_of_birth"`
+	Age                 *int     `json:"age" validate:"omitempty,min=18,max=65"`
+	PlaceOfBirth        string   `json:"place_of_birth"`
+	Religion            string   `json:"religion"`
+	MaritalStatus       string   `json:"marital_status"`
+	ChildrenCount       *int     `json:"children_count" validate:"omitempty,min=0"`
+	EducationLevel      string   `json:"education_level"`
+	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
+	CountryOfExperience string   `json:"country_of_experience"`
+	Languages           []string `json:"languages"`
+	Skills              []string `json:"skills"`
 }
 
 type UpdateCandidateRequest struct {
-	FullName        string   `json:"full_name" validate:"required"`
-	Nationality     string   `json:"nationality"`
-	DateOfBirth     string   `json:"date_of_birth"`
-	Age             *int     `json:"age" validate:"omitempty,min=18,max=65"`
-	PlaceOfBirth    string   `json:"place_of_birth"`
-	Religion        string   `json:"religion"`
-	MaritalStatus   string   `json:"marital_status"`
-	ChildrenCount   *int     `json:"children_count" validate:"omitempty,min=0"`
-	EducationLevel  string   `json:"education_level"`
-	ExperienceYears *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
-	Languages       []string `json:"languages"`
-	Skills          []string `json:"skills"`
+	FullName            string   `json:"full_name" validate:"required"`
+	Nationality         string   `json:"nationality"`
+	DateOfBirth         string   `json:"date_of_birth"`
+	Age                 *int     `json:"age" validate:"omitempty,min=18,max=65"`
+	PlaceOfBirth        string   `json:"place_of_birth"`
+	Religion            string   `json:"religion"`
+	MaritalStatus       string   `json:"marital_status"`
+	ChildrenCount       *int     `json:"children_count" validate:"omitempty,min=0"`
+	EducationLevel      string   `json:"education_level"`
+	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
+	CountryOfExperience string   `json:"country_of_experience"`
+	Languages           []string `json:"languages"`
+	Skills              []string `json:"skills"`
 }
 
 type ListCandidatesQuery struct {
@@ -86,10 +88,11 @@ type CandidateResponse struct {
 	PlaceOfBirth    string                      `json:"place_of_birth,omitempty"`
 	Religion        string                      `json:"religion,omitempty"`
 	MaritalStatus   string                      `json:"marital_status,omitempty"`
-	ChildrenCount   *int                        `json:"children_count,omitempty"`
-	EducationLevel  string                      `json:"education_level,omitempty"`
-	ExperienceYears *int                        `json:"experience_years,omitempty"`
-	Languages       []string                    `json:"languages"`
+	ChildrenCount       *int                        `json:"children_count,omitempty"`
+	EducationLevel      string                      `json:"education_level,omitempty"`
+	ExperienceYears     *int                        `json:"experience_years,omitempty"`
+	CountryOfExperience string                      `json:"country_of_experience,omitempty"`
+	Languages           []string                    `json:"languages"`
 	Skills          []string                    `json:"skills"`
 	Status          string                      `json:"status"`
 	LockedBy        *string                     `json:"locked_by,omitempty"`
@@ -199,18 +202,19 @@ func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	candidate, err := h.candidateService.CreateCandidate(userID, service.CandidateInput{
-		FullName:        req.FullName,
-		Nationality:     req.Nationality,
-		DateOfBirth:     dateOfBirth,
-		Age:             req.Age,
-		PlaceOfBirth:    req.PlaceOfBirth,
-		Religion:        req.Religion,
-		MaritalStatus:   req.MaritalStatus,
-		ChildrenCount:   req.ChildrenCount,
-		EducationLevel:  req.EducationLevel,
-		ExperienceYears: req.ExperienceYears,
-		Languages:       req.Languages,
-		Skills:          req.Skills,
+		FullName:            req.FullName,
+		Nationality:         req.Nationality,
+		DateOfBirth:         dateOfBirth,
+		Age:                 req.Age,
+		PlaceOfBirth:        req.PlaceOfBirth,
+		Religion:            req.Religion,
+		MaritalStatus:       req.MaritalStatus,
+		ChildrenCount:       req.ChildrenCount,
+		EducationLevel:      req.EducationLevel,
+		ExperienceYears:     req.ExperienceYears,
+		CountryOfExperience: req.CountryOfExperience,
+		Languages:           req.Languages,
+		Skills:              req.Skills,
 	})
 	if err != nil {
 		h.writeServiceError(w, err)
@@ -251,18 +255,19 @@ func (h *CandidateHandler) UpdateCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	err = h.candidateService.UpdateCandidate(id, userID, service.CandidateInput{
-		FullName:        req.FullName,
-		Nationality:     req.Nationality,
-		DateOfBirth:     dateOfBirth,
-		Age:             req.Age,
-		PlaceOfBirth:    req.PlaceOfBirth,
-		Religion:        req.Religion,
-		MaritalStatus:   req.MaritalStatus,
-		ChildrenCount:   req.ChildrenCount,
-		EducationLevel:  req.EducationLevel,
-		ExperienceYears: req.ExperienceYears,
-		Languages:       req.Languages,
-		Skills:          req.Skills,
+		FullName:            req.FullName,
+		Nationality:         req.Nationality,
+		DateOfBirth:         dateOfBirth,
+		Age:                 req.Age,
+		PlaceOfBirth:        req.PlaceOfBirth,
+		Religion:            req.Religion,
+		MaritalStatus:       req.MaritalStatus,
+		ChildrenCount:       req.ChildrenCount,
+		EducationLevel:      req.EducationLevel,
+		ExperienceYears:     req.ExperienceYears,
+		CountryOfExperience: req.CountryOfExperience,
+		Languages:           req.Languages,
+		Skills:              req.Skills,
 	})
 	if err != nil {
 		h.writeServiceError(w, err)

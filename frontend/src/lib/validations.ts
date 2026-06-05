@@ -68,6 +68,7 @@ export const candidateSchema = z.object({
   children_count: optionalNumber.refine((value) => value === undefined || value >= 0, 'Children count cannot be negative.'),
   education_level: optionalTrimmedString,
   experience_years: z.coerce.number().min(0).max(30),
+  country_of_experience: optionalTrimmedString,
   skills: z.array(z.string()).min(1, 'At least one skill must be selected.'),
   languages: z.array(z.object({
     language: z.string(),

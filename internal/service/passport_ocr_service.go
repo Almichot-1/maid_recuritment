@@ -123,7 +123,9 @@ func (s *PassportOCRService) ParseAndStore(candidateID, requestedBy string, file
 		return nil, ErrFileTooLarge
 	}
 
-	cacheKey := fingerprintPassportFile(buffer)
+	// Use the fast fingerprint for the in-memory preview cache check.
+	// On a cache hit we never need the full SHA-256, saving CPU on every repeated upload.
+	cacheKey := fastFingerprint(buffer)
 	if cached := s.getCachedPreview(cacheKey); cached != nil {
 		passportData := clonePassportData(cached)
 		passportData.CandidateID = candidateID
@@ -246,7 +248,8 @@ func (s *PassportOCRService) ParsePreviewWithMetrics(file io.Reader, fileName st
 }
 
 func (s *PassportOCRService) parsePreviewBuffer(buffer []byte, fileName string) (*domain.PassportData, bool, time.Duration, error) {
-	cacheKey := fingerprintPassportFile(buffer)
+	// Use the fast fingerprint for the in-memory preview cache check.
+	cacheKey := fastFingerprint(buffer)
 	if cached := s.getCachedPreview(cacheKey); cached != nil {
 		return clonePassportData(cached), true, 0, nil
 	}
@@ -403,9 +406,26 @@ func isPassportOCRUnavailable(err error) bool {
 	}
 }
 
+// fingerprintPassportFile computes the canonical SHA-256 fingerprint of the
+// full image buffer. Used for DB-level deduplication and the persistent cache.
 func fingerprintPassportFile(buffer []byte) string {
 	sum := sha256.Sum256(buffer)
 	return hex.EncodeToString(sum[:])
+}
+
+// fastFingerprint is a cheap cache key that hashes only the first 64 KB of
+// the buffer plus the total file length. Collisions are theoretically possible
+// but vanishingly rare for passport images — and the in-memory preview cache
+// is ephemeral anyway. Use this only for the in-memory preview cache lookup;
+// the full SHA-256 is still used for storage and upsert logic.
+func fastFingerprint(buffer []byte) string {
+	const sampleSize = 64 * 1024
+	sample := buffer
+	if len(sample) > sampleSize {
+		sample = buffer[:sampleSize]
+	}
+	sum := sha256.Sum256(sample)
+	return fmt.Sprintf("%s-%d", hex.EncodeToString(sum[:8]), len(buffer))
 }
 
 func (s *PassportOCRService) getCachedPreview(key string) *domain.PassportData {
@@ -533,28 +553,30 @@ func (s *PassportOCRService) extractPreviewFallbackFields(tempPath string, dateO
 
 	if rawText, err := s.ocrProcessor.ExtractFastText(tempPath); err == nil {
 		placeOfBirth, issueDate := resolveFromText(rawText)
+
+		// If FastText already resolved everything we need, skip the slower full
+		// ExtractText call entirely — saves one Tesseract spawn on the free tier.
 		if (!needPlaceOfBirth || placeOfBirth != "") && (!needIssueDate || !issueDate.IsZero()) {
 			return placeOfBirth, issueDate
 		}
 
-		needPlaceOfBirth = needPlaceOfBirth && placeOfBirth == ""
-		needIssueDate = needIssueDate && issueDate.IsZero()
-		if !needPlaceOfBirth && !needIssueDate {
-			return placeOfBirth, issueDate
-		}
+		// Update which fields still need resolution before the heavy call.
+		residualNeedPlace := needPlaceOfBirth && placeOfBirth == ""
+		residualNeedDate := needIssueDate && issueDate.IsZero()
 
 		if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
 			fullPlaceOfBirth, fullIssueDate := resolveFromText(rawText)
-			if placeOfBirth == "" {
+			if residualNeedPlace && fullPlaceOfBirth != "" {
 				placeOfBirth = fullPlaceOfBirth
 			}
-			if issueDate.IsZero() {
+			if residualNeedDate && !fullIssueDate.IsZero() {
 				issueDate = fullIssueDate
 			}
 		}
 		return placeOfBirth, issueDate
 	}
 
+	// FastText failed entirely — try the full extraction directly.
 	if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
 		return resolveFromText(rawText)
 	}

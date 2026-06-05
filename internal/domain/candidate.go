@@ -30,10 +30,11 @@ type Candidate struct {
 	PlaceOfBirth    string
 	Religion        string
 	MaritalStatus   string
-	ChildrenCount   *int
-	EducationLevel  string
-	ExperienceYears *int
-	Languages       json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
+	ChildrenCount        *int
+	EducationLevel       string
+	ExperienceYears      *int
+	CountryOfExperience  string
+	Languages            json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
 	Skills          json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
 	Status          CandidateStatus `gorm:"type:candidate_status;not null;default:draft"`
 	LockedBy        *string         `gorm:"type:uuid"`
