@@ -30,6 +30,7 @@ export default function LoginPage() {
   const isAuthenticated = useAuthStore((state) => state.isAuthenticated)
   const user = useAuthStore((state) => state.user)
   const [showPassword, setShowPassword] = React.useState(false)
+  const [rememberMe, setRememberMe] = React.useState(false)
 
   React.useEffect(() => {
     if (isAuthenticated) {
@@ -44,6 +45,16 @@ export default function LoginPage() {
       password: "",
     },
   })
+
+  // Load remembered email on component mount
+  React.useEffect(() => {
+    const savedEmail = localStorage.getItem("remembered_email")
+    if (savedEmail) {
+      form.setValue("email", savedEmail)
+      setRememberMe(true)
+    }
+  }, [form])
+
   const watchedEmail = form.watch("email")
   const watchedPassword = form.watch("password")
 
@@ -55,6 +66,14 @@ export default function LoginPage() {
 
   function onSubmit(data: LoginInput) {
     form.clearErrors("root")
+    
+    // Handle remember me functionality
+    if (rememberMe) {
+      localStorage.setItem("remembered_email", data.email)
+    } else {
+      localStorage.removeItem("remembered_email")
+    }
+    
     login(data, {
       onError: (error) => {
         form.setError("root", {
@@ -133,7 +152,11 @@ export default function LoginPage() {
             />
 
             <div className="flex items-center space-x-2 pt-1">
-              <Checkbox id="remember" />
+              <Checkbox 
+                id="remember" 
+                checked={rememberMe}
+                onCheckedChange={(checked) => setRememberMe(checked as boolean)}
+              />
               <label
                 htmlFor="remember"
                 className="cursor-pointer text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
