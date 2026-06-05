@@ -28,8 +28,7 @@ export default function CandidateCVPage() {
   const params = useParams()
   const candidateId = String(params.id || "")
   const { isEthiopianAgent } = useCurrentUser()
-  const { user } = useCurrentUser()
-  const { logoDataURL, isLoaded: isBrandingLoaded } = useAgencyBranding()
+  const { isLoaded: isBrandingLoaded } = useAgencyBranding()
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const [hasStartedPreparation, setHasStartedPreparation] = React.useState(false)
@@ -48,11 +47,8 @@ export default function CandidateCVPage() {
   
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
-    generateCV({
-      companyName: user?.company_name || "",
-      brandingLogoDataURL: logoDataURL || "",
-    })
-  }, [generateCV, user?.company_name, logoDataURL])
+    generateCV()
+  }, [generateCV])
 
   const handleDownload = React.useCallback(async () => {
     if (!candidate?.cv_pdf_url) {

@@ -388,7 +388,7 @@ export function useGenerateCV(id: string) {
   const activePairingId = usePairingStore((state) => state.activePairingId);
 
   return useMutation({
-    mutationFn: async (_args?: { companyName?: string; brandingLogoDataURL?: string }) => {
+    mutationFn: async () => {
       // WORKAROUND: Use GET /download-cv because Render backend hasn't deployed
       // the new POST /generate-cv endpoint yet. Reverts automatically once backend is live.
       const response = await api.get(
