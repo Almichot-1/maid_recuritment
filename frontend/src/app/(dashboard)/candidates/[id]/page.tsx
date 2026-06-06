@@ -12,6 +12,7 @@ import {
   FileText, 
   Loader2, 
   PencilLine,
+  Rocket,
   Trash2, 
   Upload,
   UserCheck,
@@ -680,16 +681,18 @@ export default function CandidateDetailPage() {
                     </Button>
                   )}
 
-                  {candidate.status === CandidateStatus.DRAFT && (
+                  {isOwner && candidate.status === CandidateStatus.DRAFT && (
                     <Button 
-                      className="w-full" 
-                      variant="outline"
+                      className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-md" 
                       onClick={() => setPublishDialogOpen(true)}
                       disabled={isPublishing}
                     >
-                      {isPublishing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                      <Upload className="h-4 w-4 mr-2" />
-                      Publish Candidate
+                      {isPublishing ? (
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      ) : (
+                        <Rocket className="h-4 w-4 mr-2" />
+                      )}
+                      {isPublishing ? "Publishing..." : "Publish Candidate"}
                     </Button>
                   )}
 

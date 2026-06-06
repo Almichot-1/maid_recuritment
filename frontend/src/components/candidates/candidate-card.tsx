@@ -4,11 +4,12 @@ import * as React from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { User, Lock, PencilLine, X } from "lucide-react"
+import { Loader2, Lock, PencilLine, Rocket, User, X } from "lucide-react"
 
 import Image from "next/image"
 import { Candidate, CandidateStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
+import { usePublishCandidate } from "@/hooks/use-candidates"
 import { LockCountdown } from "@/components/selections/lock-countdown"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -32,6 +33,8 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
   const [selectDialogOpen, setSelectDialogOpen] = React.useState(false)
   const [shareDialogOpen, setShareDialogOpen] = React.useState(false)
   const [isPhotoExpanded, setIsPhotoExpanded] = React.useState(false)
+
+  const { mutate: publishCandidate, isPending: isPublishing } = usePublishCandidate(candidate.id)
 
   const handleCardClick = () => {
     router.push(`/candidates/${candidate.id}`)
@@ -157,6 +160,26 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
                 size="sm"
               >
                 Select Candidate
+              </Button>
+            )}
+
+            {/* Publish Button for Draft Candidates (Ethiopian Agent Owner) */}
+            {isOwner && candidate.status === CandidateStatus.DRAFT && (
+              <Button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  publishCandidate({})
+                }}
+                disabled={isPublishing}
+                className="w-full mt-2 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-sm"
+                size="sm"
+              >
+                {isPublishing ? (
+                  <Loader2 className="h-3.5 w-3.5 mr-1.5 animate-spin" />
+                ) : (
+                  <Rocket className="h-3.5 w-3.5 mr-1.5" />
+                )}
+                {isPublishing ? "Publishing..." : "Publish Now"}
               </Button>
             )}
 

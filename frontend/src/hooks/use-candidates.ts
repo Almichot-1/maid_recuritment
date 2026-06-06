@@ -235,6 +235,7 @@ export function useUpdateCandidate(id: string) {
 
 export function usePublishCandidate(id: string) {
   const queryClient = useQueryClient();
+  const activePairingId = usePairingStore((state) => state.activePairingId);
 
   return useMutation({
     mutationFn: async ({ pairingId }: { pairingId?: string } = {}) => {
@@ -244,7 +245,9 @@ export function usePublishCandidate(id: string) {
       return response.data;
     },
     onSuccess: (data) => {
+      // Invalidate both with and without pairingId in the key
       queryClient.invalidateQueries({ queryKey: ["candidate", id] });
+      queryClient.invalidateQueries({ queryKey: ["candidate", id, activePairingId] });
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
       if (data?.auto_shared) {
         toast.success("Candidate published and shared successfully");
@@ -260,9 +263,8 @@ export function usePublishCandidate(id: string) {
       ) {
         return;
       }
-      toast.error(
-        responseError.response?.data?.error || "Failed to publish candidate",
-      );
+      const message = responseError.response?.data?.error || responseError.response?.data?.message;
+      toast.error(message || "Failed to publish candidate");
     },
   });
 }
