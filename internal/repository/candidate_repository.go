@@ -173,19 +173,13 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 		"locked_at":              candidate.LockedAt,
 		"lock_expires_at":        candidate.LockExpiresAt,
 		"cv_pdf_url":             candidate.CVPDFURL,
+		"updated_at":             time.Now().UTC(),
 	}
 
-	// Debug: log the exact SQL and conditions being used
-	debugQuery := r.db.ToSQL(func(tx *gorm.DB) *gorm.DB {
-		return tx.Model(&domain.Candidate{}).Where("id = ?", candidate.ID).Updates(updates)
-	})
-	fmt.Printf("DEBUG Update SQL: %s\n", debugQuery)
-	
 	result := r.db.Model(&domain.Candidate{}).Where("id = ?", candidate.ID).Updates(updates)
 	if result.Error != nil {
 		return fmt.Errorf("update candidate: %w", result.Error)
 	}
-	fmt.Printf("DEBUG Update RowsAffected: %d\n", result.RowsAffected)
 	if result.RowsAffected == 0 {
 		return ErrCandidateNotFound
 	}
