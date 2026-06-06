@@ -47,7 +47,7 @@ export default function CandidateCVPage() {
   
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
-    generateCV()
+    generateCV({})
   }, [generateCV])
 
   const handleDownload = React.useCallback(async () => {
