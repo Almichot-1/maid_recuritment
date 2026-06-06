@@ -57,7 +57,8 @@ func (r *GormCandidateRepository) Create(candidate *domain.Candidate) error {
 
 func (r *GormCandidateRepository) GetByID(id string) (*domain.Candidate, error) {
 	var candidate domain.Candidate
-	if err := r.db.Preload("Documents").Where("id = ?", id).First(&candidate).Error; err != nil {
+	// Temporarily removing Preload to debug
+	if err := r.db.Where("id = ?", id).First(&candidate).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, ErrCandidateNotFound
 		}
