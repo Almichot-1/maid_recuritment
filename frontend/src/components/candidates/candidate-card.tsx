@@ -83,7 +83,7 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
                 alt={candidate.full_name}
                 fill
                 unoptimized
-                className="object-cover transition-transform duration-300 group-hover:scale-105"
+                className="object-cover object-top transition-transform duration-300 group-hover:scale-105"
                 loading="lazy"
               />
             ) : (

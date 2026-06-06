@@ -39,23 +39,26 @@ export default function TrackingHubPage() {
       </nav>
 
       <Card className="overflow-hidden border-0 bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.18),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.18),_transparent_22%),linear-gradient(135deg,rgba(255,255,255,0.88),rgba(244,250,249,0.96))] shadow-glow dark:bg-[radial-gradient(circle_at_top_left,_rgba(56,189,248,0.24),_transparent_28%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.22),_transparent_22%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(15,118,110,0.24))]">
-        <CardContent className="grid gap-6 p-6 lg:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="space-y-4">
-            <PageHeader
-              className="pb-0"
-              heading="Process Tracking"
-              text={
-                isEthiopianAgent
-                  ? "Open any approved recruitment and update the shared progress timeline from medical through arrival."
-                  : "Monitor every approved recruitment from one place so you always know what is happening with each candidate."
-              }
-            />
-            {activeWorkspace ? (
-              <Badge variant="outline" className="w-fit rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em]">
-                {activeWorkspace.partner_agency.company_name || activeWorkspace.partner_agency.full_name}
-              </Badge>
-            ) : null}
-            <div className="flex flex-wrap gap-3">
+        <CardContent className="flex flex-col gap-5 p-6">
+          {/* Header row */}
+          <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+            <div className="space-y-3">
+              <PageHeader
+                className="pb-0"
+                heading="Process Tracking"
+                text={
+                  isEthiopianAgent
+                    ? "Open any approved recruitment and update the shared progress timeline from medical through arrival."
+                    : "Monitor every approved recruitment from one place so you always know what is happening with each candidate."
+                }
+              />
+              {activeWorkspace ? (
+                <Badge variant="outline" className="w-fit rounded-full px-3 py-1 text-[11px] uppercase tracking-[0.2em]">
+                  {activeWorkspace.partner_agency.company_name || activeWorkspace.partner_agency.full_name}
+                </Badge>
+              ) : null}
+            </div>
+            <div className="flex flex-wrap gap-3 shrink-0">
               <Button asChild>
                 <Link href="/selections">
                   <Sparkles className="mr-2 h-4 w-4" />
@@ -71,10 +74,11 @@ export default function TrackingHubPage() {
             </div>
           </div>
 
-          <div className="grid gap-3">
-            <SummaryCard label="Approved recruitments" value={trackingSelections.length} tone="from-sky-500/20 to-sky-400/5 text-sky-950 dark:text-sky-100" icon={<Sparkles className="h-5 w-5" />} />
-            <SummaryCard label="In progress" value={activeRecruitments.length} tone="from-amber-500/20 to-amber-400/5 text-amber-950 dark:text-amber-100" icon={<TimerReset className="h-5 w-5" />} />
-            <SummaryCard label="Completed" value={completedRecruitments.length} tone="from-emerald-500/20 to-emerald-400/5 text-emerald-950 dark:text-emerald-100" icon={<CheckCircle2 className="h-5 w-5" />} />
+          {/* Stats row */}
+          <div className="grid grid-cols-3 gap-3">
+            <SummaryCard label="Approved" value={trackingSelections.length} tone="from-sky-500/20 to-sky-400/5 text-sky-950 dark:text-sky-100" icon={<Sparkles className="h-4 w-4" />} />
+            <SummaryCard label="In Progress" value={activeRecruitments.length} tone="from-amber-500/20 to-amber-400/5 text-amber-950 dark:text-amber-100" icon={<TimerReset className="h-4 w-4" />} />
+            <SummaryCard label="Completed" value={completedRecruitments.length} tone="from-emerald-500/20 to-emerald-400/5 text-emerald-950 dark:text-emerald-100" icon={<CheckCircle2 className="h-4 w-4" />} />
           </div>
         </CardContent>
       </Card>
@@ -161,12 +165,12 @@ function SummaryCard({
 }) {
   return (
     <Card className={`overflow-hidden border-white/20 bg-gradient-to-br ${tone} shadow-soft`}>
-      <CardContent className="flex items-center justify-between p-5">
+      <CardContent className="flex items-center justify-between p-4">
         <div>
-          <p className="text-sm text-muted-foreground">{label}</p>
-          <p className="mt-1 text-3xl font-semibold">{value}</p>
+          <p className="text-xs text-muted-foreground font-medium">{label}</p>
+          <p className="mt-0.5 text-2xl font-bold">{value}</p>
         </div>
-        <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/70 text-current shadow-sm dark:bg-white/10">
+        <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-white/70 text-current shadow-sm dark:bg-white/10">
           {icon}
         </div>
       </CardContent>

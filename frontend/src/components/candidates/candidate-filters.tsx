@@ -17,6 +17,8 @@ import {
 import { Badge } from "@/components/ui/badge"
 
 const LANGUAGES_OPTIONS = ["Arabic", "English", "Amharic", "French", "Swahili"]
+const RELIGION_OPTIONS = ["Muslim", "Christian", "Orthodox", "Catholic", "Protestant", "Other"]
+const MARITAL_STATUS_OPTIONS = ["Single", "Married", "Divorced", "Widowed"]
 const ALL_VALUE = "all"
 const EXPERIENCE_OPTIONS = [
   { label: "Any Experience", value: ALL_VALUE },
@@ -83,6 +85,8 @@ export function CandidateFilters() {
     if (searchParams.get("min_age")) count++
     if (searchParams.get("max_age")) count++
     if (searchParams.get("languages")) count++
+    if (searchParams.get("religion")) count++
+    if (searchParams.get("marital_status")) count++
     if (searchParams.get("min_experience") || searchParams.get("max_experience")) count++
     return count
   }, [searchParams])
@@ -211,6 +215,38 @@ export function CandidateFilters() {
           </SelectContent>
         </Select>
 
+        {/* Religion */}
+        <Select
+          value={searchParams.get("religion") || ALL_VALUE}
+          onValueChange={(value) => updateFilters({ religion: value === ALL_VALUE ? undefined : value })}
+        >
+          <SelectTrigger className="w-full lg:w-[150px] h-10 shadow-sm">
+            <SelectValue placeholder="Religion" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_VALUE}>All Religions</SelectItem>
+            {RELIGION_OPTIONS.map((r) => (
+              <SelectItem key={r} value={r}>{r}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
+        {/* Marital Status */}
+        <Select
+          value={searchParams.get("marital_status") || ALL_VALUE}
+          onValueChange={(value) => updateFilters({ marital_status: value === ALL_VALUE ? undefined : value })}
+        >
+          <SelectTrigger className="w-full lg:w-[160px] h-10 shadow-sm">
+            <SelectValue placeholder="Marital Status" />
+          </SelectTrigger>
+          <SelectContent>
+            <SelectItem value={ALL_VALUE}>All Statuses</SelectItem>
+            {MARITAL_STATUS_OPTIONS.map((s) => (
+              <SelectItem key={s} value={s}>{s}</SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+
         {/* Clear Filters */}
         {activeFilterCount > 0 && (
           <Button
@@ -276,6 +312,28 @@ export function CandidateFilters() {
               Language: {searchParams.get("languages")}
               <button
                 onClick={() => updateFilters({ languages: undefined })}
+                className="hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {searchParams.get("religion") && (
+            <Badge variant="secondary" className="gap-1">
+              Religion: {searchParams.get("religion")}
+              <button
+                onClick={() => updateFilters({ religion: undefined })}
+                className="hover:text-destructive"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            </Badge>
+          )}
+          {searchParams.get("marital_status") && (
+            <Badge variant="secondary" className="gap-1">
+              Marital: {searchParams.get("marital_status")}
+              <button
+                onClick={() => updateFilters({ marital_status: undefined })}
                 className="hover:text-destructive"
               >
                 <X className="h-3 w-3" />
