@@ -330,24 +330,34 @@ func (s *CandidateService) PublishCandidate(id, publishedBy string, input Publis
 		return nil, repository.ErrInvalidStatusTransition
 	}
 
+	log.Printf("publish_candidate: calling resolvePublishPairingTarget for user=%s", publishedBy)
 	autoShareTarget, err := s.resolvePublishPairingTarget(strings.TrimSpace(publishedBy), strings.TrimSpace(input.PairingID))
 	if err != nil {
+		log.Printf("publish_candidate: resolvePublishPairingTarget failed: %v", err)
 		return nil, err
 	}
+	log.Printf("publish_candidate: resolvePublishPairingTarget succeeded, autoShareTarget=%v", autoShareTarget != nil)
 
 	candidate.Status = domain.CandidateStatusAvailable
+	log.Printf("publish_candidate: calling Update for candidate=%s", id)
 	if err := s.candidateRepository.Update(candidate); err != nil {
+		log.Printf("publish_candidate: Update failed: %v", err)
 		return nil, err
 	}
+	log.Printf("publish_candidate: Update succeeded")
 
 	result := &PublishCandidateResult{}
 	if autoShareTarget == nil || s.pairingService == nil {
+		log.Printf("publish_candidate: no auto-share needed, returning success")
 		return result, nil
 	}
 
+	log.Printf("publish_candidate: calling ShareCandidate")
 	if err := s.pairingService.ShareCandidate(candidate.ID, autoShareTarget.ID, publishedBy); err != nil && !errors.Is(err, ErrCandidateAlreadyShared) {
+		log.Printf("publish_candidate: ShareCandidate failed: %v", err)
 		return nil, err
 	}
+	log.Printf("publish_candidate: ShareCandidate succeeded")
 
 	result.AutoShared = true
 	result.SharedPairingID = autoShareTarget.ID
