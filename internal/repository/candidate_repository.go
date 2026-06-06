@@ -136,8 +136,7 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 		return fmt.Errorf("update candidate: id is required")
 	}
 
-	// Fetch only the current status to validate the transition — avoids loading
-	// the full row (and the Documents preload) just to do a status check.
+	// Fetch only the current status to validate the transition
 	var currentStatus domain.CandidateStatus
 	statusResult := r.db.Model(&domain.Candidate{}).
 		Select("status").
@@ -154,29 +153,9 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 		return ErrInvalidStatusTransition
 	}
 
-	updates := map[string]any{
-		"full_name":              candidate.FullName,
-		"nationality":            candidate.Nationality,
-		"date_of_birth":          candidate.DateOfBirth,
-		"age":                    candidate.Age,
-		"place_of_birth":         candidate.PlaceOfBirth,
-		"religion":               candidate.Religion,
-		"marital_status":         candidate.MaritalStatus,
-		"children_count":         candidate.ChildrenCount,
-		"education_level":        candidate.EducationLevel,
-		"experience_years":       candidate.ExperienceYears,
-		"country_of_experience":  candidate.CountryOfExperience,
-		"languages":              candidate.Languages,
-		"skills":                 candidate.Skills,
-		"status":                 candidate.Status,
-		"locked_by":              candidate.LockedBy,
-		"locked_at":              candidate.LockedAt,
-		"lock_expires_at":        candidate.LockExpiresAt,
-		"cv_pdf_url":             candidate.CVPDFURL,
-		"updated_at":             time.Now().UTC(),
-	}
-
-	result := r.db.Model(&domain.Candidate{}).Where("id = ?", candidate.ID).Updates(updates)
+	// Use Save instead of Updates - Save works with the full struct
+	candidate.UpdatedAt = time.Now().UTC()
+	result := r.db.Save(candidate)
 	if result.Error != nil {
 		return fmt.Errorf("update candidate: %w", result.Error)
 	}
