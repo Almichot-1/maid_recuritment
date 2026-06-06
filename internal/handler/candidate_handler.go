@@ -451,6 +451,7 @@ func (h *CandidateHandler) PublishCandidate(w http.ResponseWriter, r *http.Reque
 			})
 			return
 		}
+		log.Printf("publish_candidate: failed for candidate=%s user=%s: %v", id, userID, err)
 		h.writeServiceError(w, err)
 		return
 	}
@@ -866,6 +867,8 @@ func (h *CandidateHandler) writeServiceError(w http.ResponseWriter, err error) {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
 	case errors.Is(err, service.ErrPassportDataNotFound), errors.Is(err, repository.ErrPassportDataNotFound):
 		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "passport data not found"})
+	case errors.Is(err, repository.ErrUserNotFound):
+		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "user account not found — please log out and log back in"})
 	default:
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 	}
