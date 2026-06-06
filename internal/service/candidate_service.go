@@ -318,8 +318,10 @@ func (s *CandidateService) PublishCandidate(id, publishedBy string, input Publis
 
 	candidate, err := s.candidateRepository.GetByID(id)
 	if err != nil {
+		log.Printf("publish_candidate: GetByID failed for candidate=%s: %v", id, err)
 		return nil, err
 	}
+	log.Printf("publish_candidate: GetByID succeeded for candidate=%s, status=%s, created_by=%s", id, candidate.Status, candidate.CreatedBy)
 
 	if candidate.CreatedBy != strings.TrimSpace(publishedBy) {
 		return nil, ErrForbidden
