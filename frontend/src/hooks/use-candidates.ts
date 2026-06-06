@@ -193,13 +193,9 @@ export function useCandidate(id?: string) {
 export function useCreateCandidate() {
   return useMutation({
     mutationFn: async (data: Partial<Candidate>) => {
-      // TEMPORARY: Always remove country_of_experience until production DB is migrated
-      const payload = { ...data };
-      delete payload.country_of_experience;
-      
       const response = await api.post<{ candidate: { id: string } }>(
         "/candidates",
-        payload,
+        data,
       );
       return response.data;
     },
@@ -219,13 +215,9 @@ export function useUpdateCandidate(id: string) {
 
   return useMutation({
     mutationFn: async (data: Partial<Candidate>) => {
-      // TEMPORARY: Always remove country_of_experience until production DB is migrated
-      const payload = { ...data };
-      delete payload.country_of_experience;
-      
       const response = await api.put<{ candidate: Candidate }>(
         `/candidates/${id}`,
-        payload,
+        data,
       );
       return response.data;
     },
@@ -388,18 +380,12 @@ export function useGenerateCV(id: string) {
   const activePairingId = usePairingStore((state) => state.activePairingId);
 
   return useMutation({
-    mutationFn: async () => {
-      // WORKAROUND: Use GET /download-cv because Render backend hasn't deployed
-      // the new POST /generate-cv endpoint yet. Reverts automatically once backend is live.
-      const response = await api.get(
-        `/candidates/${id}/download-cv`,
-        { responseType: "blob" }
+    mutationFn: async (branding?: GenerateCVRequest) => {
+      const response = await api.post<{ cv_pdf_url: string }>(
+        `/candidates/${id}/generate-cv`,
+        branding ?? {}
       );
-      const blob = new Blob([response.data], {
-        type: response.headers["content-type"] || "application/pdf",
-      });
-      const objectURL = window.URL.createObjectURL(blob);
-      return { cv_pdf_url: objectURL };
+      return response.data;
     },
     onSuccess: (data) => {
       queryClient.setQueryData(["candidate", id, activePairingId], (old: Candidate | undefined) => {
@@ -410,10 +396,14 @@ export function useGenerateCV(id: string) {
         if (!old) return old;
         return { ...old, cv_pdf_url: data.cv_pdf_url };
       });
+      // Invalidate to ensure fresh data on next visit
+      queryClient.invalidateQueries({ queryKey: ["candidate", id] });
       toast.success("CV generated successfully");
     },
-    onError: () => {
-      toast.error("Failed to generate CV");
+    onError: (error) => {
+      const axiosError = error as import("axios").AxiosError<{ error?: string }>;
+      const message = axiosError.response?.data?.error;
+      toast.error(message || "Failed to generate CV");
     },
   });
 }
