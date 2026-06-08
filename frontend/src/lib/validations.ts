@@ -69,11 +69,13 @@ export const candidateSchema = z.object({
   education_level: optionalTrimmedString,
   experience_years: z.coerce.number().min(0).max(30),
   country_of_experience: optionalTrimmedString.optional(),
-  skills: z.array(z.string()).min(1, 'At least one skill must be selected.'),
+  country_applied: optionalTrimmedString.optional(),
+  salary_offered: optionalTrimmedString.optional(),
+  skills: z.array(z.string()).optional().default([]),
   languages: z.array(z.object({
     language: z.string(),
     proficiency: z.string()
-  })).min(1, 'At least one language must be selected.'),
+  })).optional().default([]),
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

@@ -72,6 +72,8 @@ export interface Candidate {
   education_level?: string;
   experience_years?: number;
   country_of_experience?: string;
+  country_applied?: string;
+  salary_offered?: string;
   languages: string[];
   skills: string[];
   status: CandidateStatus;

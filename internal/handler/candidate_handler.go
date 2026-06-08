@@ -32,6 +32,8 @@ type CreateCandidateRequest struct {
 	EducationLevel      string   `json:"education_level"`
 	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
 	CountryOfExperience string   `json:"country_of_experience"`
+	CountryApplied      string   `json:"country_applied"`
+	SalaryOffered       string   `json:"salary_offered"`
 	Languages           []string `json:"languages"`
 	Skills              []string `json:"skills"`
 }
@@ -48,6 +50,8 @@ type UpdateCandidateRequest struct {
 	EducationLevel      string   `json:"education_level"`
 	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
 	CountryOfExperience string   `json:"country_of_experience"`
+	CountryApplied      string   `json:"country_applied"`
+	SalaryOffered       string   `json:"salary_offered"`
 	Languages           []string `json:"languages"`
 	Skills              []string `json:"skills"`
 }
@@ -92,6 +96,8 @@ type CandidateResponse struct {
 	EducationLevel      string                      `json:"education_level,omitempty"`
 	ExperienceYears     *int                        `json:"experience_years,omitempty"`
 	CountryOfExperience string                      `json:"country_of_experience,omitempty"`
+	CountryApplied      string                      `json:"country_applied,omitempty"`
+	SalaryOffered       string                      `json:"salary_offered,omitempty"`
 	Languages           []string                    `json:"languages"`
 	Skills          []string                    `json:"skills"`
 	Status          string                      `json:"status"`
@@ -139,8 +145,13 @@ type PassportDataResponse struct {
 }
 
 type GenerateCVRequest struct {
+	// Ethiopian agency (right side)
 	BrandingLogoDataURL string `json:"branding_logo_data_url"`
 	CompanyName         string `json:"company_name"`
+	
+	// Foreign agency (left side)
+	ForeignAgencyLogoDataURL string `json:"foreign_agency_logo_data_url"`
+	ForeignAgencyName        string `json:"foreign_agency_name"`
 }
 
 type PublishCandidateRequest struct {
@@ -213,6 +224,8 @@ func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Reques
 		EducationLevel:      req.EducationLevel,
 		ExperienceYears:     req.ExperienceYears,
 		CountryOfExperience: req.CountryOfExperience,
+		CountryApplied:      req.CountryApplied,
+		SalaryOffered:       req.SalaryOffered,
 		Languages:           req.Languages,
 		Skills:              req.Skills,
 	})
@@ -266,6 +279,8 @@ func (h *CandidateHandler) UpdateCandidate(w http.ResponseWriter, r *http.Reques
 		EducationLevel:      req.EducationLevel,
 		ExperienceYears:     req.ExperienceYears,
 		CountryOfExperience: req.CountryOfExperience,
+		CountryApplied:      req.CountryApplied,
+		SalaryOffered:       req.SalaryOffered,
 		Languages:           req.Languages,
 		Skills:              req.Skills,
 	})
@@ -535,15 +550,17 @@ func (h *CandidateHandler) GenerateCV(w http.ResponseWriter, r *http.Request) {
 
 	var req GenerateCVRequest
 	if r.Body != nil {
-		if err := decodeJSONBody(w, r, &req, 64<<10); err != nil && !errors.Is(err, io.EOF) {
+		if err := decodeJSONBody(w, r, &req, 4<<20); err != nil && !errors.Is(err, io.EOF) {
 			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 			return
 		}
 	}
 
 	if err := h.candidateService.GenerateCV(id, userID, service.CandidateCVBranding{
-		CompanyName: strings.TrimSpace(req.CompanyName),
-		LogoDataURL: strings.TrimSpace(req.BrandingLogoDataURL),
+		CompanyName:              strings.TrimSpace(req.CompanyName),
+		LogoDataURL:              strings.TrimSpace(req.BrandingLogoDataURL),
+		ForeignAgencyName:        strings.TrimSpace(req.ForeignAgencyName),
+		ForeignAgencyLogoDataURL: strings.TrimSpace(req.ForeignAgencyLogoDataURL),
 	}); err != nil {
 		h.writeServiceError(w, err)
 		return

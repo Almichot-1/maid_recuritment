@@ -144,55 +144,43 @@ func (s *PDFService) appendPassportDetailsSection(pdf *gofpdf.Fpdf, passportData
 
 func (s *PDFService) drawBrandingHeader(pdf *gofpdf.Fpdf, branding CandidateCVBranding) {
 	pdf.SetFillColor(255, 255, 255)
-	pdf.SetDrawColor(196, 196, 196)
-	pdf.Rect(12, 12, 186, 18, "D")
-	pdf.SetXY(12, 18)
-	pdf.SetTextColor(92, 130, 54)
-	pdf.SetFont("Arial", "B", 19)
-	pdf.CellFormat(186, 6, "Application Form", "", 1, "C", false, 0, "")
-	pdf.SetY(34)
+	pdf.SetXY(12, 14)
+	pdf.SetTextColor(30, 58, 138)
+	pdf.SetFont("Arial", "B", 18)
+	pdf.CellFormat(186, 8, "CANDIDATE APPLICATION PROFILE", "", 1, "C", false, 0, "")
+	pdf.SetY(26)
 }
 
 func (s *PDFService) drawHeader(pdf *gofpdf.Fpdf, branding CandidateCVBranding) {
 	headerY := pdf.GetY()
-	pdf.SetFillColor(244, 244, 244)
-	pdf.SetDrawColor(196, 196, 196)
-	pdf.Rect(12, headerY, 186, 28, "DF")
+	
+	pdf.SetFillColor(248, 250, 252)
+	pdf.SetDrawColor(203, 213, 225)
+	pdf.Rect(12, headerY, 186, 24, "DF")
 
 	companyName := compactValue(strings.TrimSpace(branding.CompanyName), "Maid Recruitment Agency")
+	foreignName := compactValue(strings.TrimSpace(branding.ForeignAgencyName), "Foreign Employment File")
 
-	pdf.SetXY(16, headerY+4)
-	pdf.SetTextColor(233, 122, 45)
-	pdf.SetFont("Arial", "B", 8.5)
-	pdf.CellFormat(50, 4.5, companyName, "", 1, "L", false, 0, "")
-	pdf.SetX(16)
-	pdf.SetTextColor(233, 122, 45)
-	pdf.SetFont("Arial", "", 7.2)
-	pdf.MultiCell(50, 3.7, "Ethiopia, Addis Ababa\nPrepared for employer review\nEmail delivery and CV package ready", "", "L", false)
+	pdf.SetXY(16, headerY+8)
+	pdf.SetTextColor(15, 23, 42)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.CellFormat(60, 8, companyName, "", 0, "L", false, 0, "")
 
-	logoX := 82.0
+	logoWidth := 34.0
+	logoHeight := 20.0
+	logoX := 105.0 - (logoWidth / 2)
 	logoY := headerY + 2
-	pdf.SetFillColor(255, 255, 255)
-	pdf.SetDrawColor(214, 214, 214)
-	pdf.RoundedRect(82, logoY, 46, 24, 12, "1234", "DF")
+	
 	if logoBytes, logoContentType, err := decodeLogoDataURL(branding.LogoDataURL); err == nil && len(logoBytes) > 0 {
-		_ = addImageFromBytesFit(pdf, logoBytes, logoContentType, "agency_logo_header", logoX+7, logoY+2.5, 32, 19)
-	} else {
-		pdf.SetTextColor(230, 147, 19)
-		pdf.SetFont("Arial", "B", 22)
-		pdf.SetXY(82, headerY+8)
-		pdf.CellFormat(46, 7, "A", "", 1, "C", false, 0, "")
+		_ = addImageFromBytesFit(pdf, logoBytes, logoContentType, "agency_logo_header", logoX, logoY, logoWidth, logoHeight)
 	}
 
-	pdf.SetXY(140, headerY+4)
-	pdf.SetTextColor(233, 122, 45)
-	pdf.SetFont("Arial", "B", 8.5)
-	pdf.CellFormat(50, 4.5, "Foreign Employment File", "", 1, "R", false, 0, "")
-	pdf.SetX(140)
-	pdf.SetTextColor(233, 122, 45)
-	pdf.SetFont("Arial", "", 7.2)
-	pdf.MultiCell(50, 3.7, "Housemaid placement profile\nPassport and body photo attached\nReady for review and approval", "", "R", false)
-	pdf.SetY(headerY + 31)
+	pdf.SetXY(134, headerY+8)
+	pdf.SetTextColor(15, 23, 42)
+	pdf.SetFont("Arial", "B", 11)
+	pdf.CellFormat(60, 8, foreignName, "", 1, "R", false, 0, "")
+
+	pdf.SetY(headerY + 28)
 }
 
 func (s *PDFService) drawApplicationProfileSheet(
@@ -224,11 +212,11 @@ func (s *PDFService) drawApplicationProfileSheet(
 	})
 	s.drawFormInfoRow(pdf, 75, regY, 55, 22, 7, [][2]string{
 		{"Applied for", "HOUSEMAID"},
-		{"Monthly Sal", "1000"},
+		{"Monthly Sal", manualCandidateUpper(candidate.SalaryOffered, "N/A")},
 		{"Ref. No", shortReference(candidate.ID)},
 	})
 	s.drawFormInfoRow(pdf, 135, regY, 60, 25, 7, [][2]string{
-		{"Applied Cont.", "K S A"},
+		{"Applied Cont.", manualCandidateUpper(candidate.CountryApplied, "N/A")},
 		{"B.Met Rg./s.", "-"},
 		{"Experience", formatExperienceLevel(candidate.ExperienceYears)},
 	})
@@ -286,11 +274,17 @@ func (s *PDFService) drawApplicationProfileSheet(
 	s.drawFormTable(pdf, rightX, bottomY, rightW, "Work Experience", experienceRows, 30)
 
 	expY := bottomY
-	s.drawExperiencedAbroadSection(pdf, 15, expY, 103, [][2]string{
-		{"NO", "-"},
-		{"NO", "-"},
-		{"NO", "-"},
-	})
+	var expRows [][2]string
+	if candidate.ExperienceYears != nil && *candidate.ExperienceYears > 0 && strings.TrimSpace(candidate.CountryOfExperience) != "" {
+		expRows = append(expRows, [2]string{
+			manualCandidateUpper(candidate.CountryOfExperience, "-"),
+			fmt.Sprintf("%d YRS", *candidate.ExperienceYears),
+		})
+	}
+	for len(expRows) < 3 {
+		expRows = append(expRows, [2]string{"NO", "-"})
+	}
+	s.drawExperiencedAbroadSection(pdf, 15, expY, 103, expRows)
 
 	remarkY := expY + 46
 	s.drawRemarkSection(pdf, 15, remarkY, 103, "Remark", "")

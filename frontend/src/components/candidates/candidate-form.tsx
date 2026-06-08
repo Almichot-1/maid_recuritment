@@ -17,6 +17,7 @@ import { toast } from "sonner";
 import { useParsePassport } from "@/hooks/use-passport-ocr";
 import { CandidateInput, candidateSchema } from "@/lib/validations";
 import { useAgencyBranding } from "@/hooks/use-agency-branding";
+import { useCandidateDefaults } from "@/hooks/use-candidate-defaults";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -107,6 +108,8 @@ export type CandidateFormValues = {
   education_level?: string;
   experience_years?: number | string;
   country_of_experience?: string;
+  country_applied?: string;
+  salary_offered?: string;
   skills: string[];
   languages: Array<{ language: string; proficiency: string }>;
 };
@@ -150,6 +153,7 @@ export function CandidateForm({
 }: CandidateFormProps) {
   const { user } = useCurrentUser();
   const { hasLogo } = useAgencyBranding();
+  const { defaults, saveDefaults, isLoaded: defaultsLoaded } = useCandidateDefaults();
   const { mutateAsync: parsePassport, isPending: isParsingPassport } =
     useParsePassport(candidateId);
   const [documentResetKey, setDocumentResetKey] = React.useState(0);
@@ -180,6 +184,8 @@ export function CandidateForm({
       education_level: "",
       experience_years: undefined,
       country_of_experience: undefined,
+      country_applied: undefined,
+      salary_offered: undefined,
       skills: [],
       languages: [
         { language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] },
@@ -206,6 +212,21 @@ export function CandidateForm({
       language: LANGUAGES_OPTIONS[0],
       proficiency: PROFICIENCY_OPTIONS[0],
     });
+
+  // Load defaults for new candidates
+  React.useEffect(() => {
+    if (mode !== "create" || !defaultsLoaded || initialData) {
+      return;
+    }
+
+    if (defaults.country_applied && !form.getValues("country_applied")) {
+      form.setValue("country_applied", defaults.country_applied);
+    }
+
+    if (defaults.salary_offered && !form.getValues("salary_offered")) {
+      form.setValue("salary_offered", defaults.salary_offered);
+    }
+  }, [mode, defaultsLoaded, defaults, form, initialData]);
 
   React.useEffect(() => {
     if (!onDraftChange) {
@@ -275,6 +296,15 @@ export function CandidateForm({
       submitter?.dataset.submitMode === "create_another"
         ? "create_another"
         : "default";
+    
+    // Save country_applied and salary_offered as defaults for next candidate
+    if (mode === "create" && (data.country_applied || data.salary_offered)) {
+      saveDefaults({
+        country_applied: data.country_applied,
+        salary_offered: data.salary_offered,
+      });
+    }
+    
     const result = await onSubmit(data, { submitter: submitMode });
 
     if (!isEditing && submitMode === "create_another" && result?.resetForm) {
@@ -905,6 +935,80 @@ export function CandidateForm({
                     />
                   )}
                 </div>
+              </CardContent>
+            </Card>
+
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader>
+                <SectionTitle
+                  icon={<BriefcaseBusiness className="h-5 w-5" />}
+                  title="Job details"
+                  description="Destination country and salary offered for this placement."
+                />
+              </CardHeader>
+              <CardContent className="space-y-5">
+                <div className="grid gap-5 sm:grid-cols-2">
+                  <FormField
+                    control={form.control}
+                    name="country_applied"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Country applied</FormLabel>
+                        <FormControl>
+                          <select
+                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                            {...field}
+                            value={field.value || ""}
+                          >
+                            <option value="">Select a country...</option>
+                            <option value="Saudi Arabia">Saudi Arabia</option>
+                            <option value="United Arab Emirates">United Arab Emirates</option>
+                            <option value="Kuwait">Kuwait</option>
+                            <option value="Qatar">Qatar</option>
+                            <option value="Bahrain">Bahrain</option>
+                            <option value="Oman">Oman</option>
+                            <option value="Lebanon">Lebanon</option>
+                            <option value="Jordan">Jordan</option>
+                          </select>
+                        </FormControl>
+                        <FormDescription>
+                          Where is this candidate being recruited to work?
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="salary_offered"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Salary offered</FormLabel>
+                        <FormControl>
+                          <Input
+                            placeholder="e.g., 1000 SR, 400 USD, 150 KWD"
+                            {...field}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Monthly salary with currency (e.g., 1000 SR)
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </div>
+
+                {mode === "create" && (defaults.country_applied || defaults.salary_offered) && (
+                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
+                    <p className="font-medium">💡 Smart defaults active</p>
+                    <p className="mt-1 text-blue-700">
+                      These values are remembered from your last candidate and auto-filled to save time. 
+                      You can change them anytime.
+                    </p>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

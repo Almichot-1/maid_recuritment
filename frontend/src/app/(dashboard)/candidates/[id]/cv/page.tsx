@@ -28,7 +28,7 @@ export default function CandidateCVPage() {
   const params = useParams()
   const candidateId = String(params.id || "")
   const { isEthiopianAgent } = useCurrentUser()
-  const { isLoaded: isBrandingLoaded } = useAgencyBranding()
+  const { isLoaded: isBrandingLoaded, logoDataURL } = useAgencyBranding()
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const [hasStartedPreparation, setHasStartedPreparation] = React.useState(false)
@@ -47,8 +47,12 @@ export default function CandidateCVPage() {
   
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
-    generateCV({})
-  }, [generateCV])
+    const brandingData: { branding_logo_data_url?: string } = {}
+    if (logoDataURL) {
+      brandingData.branding_logo_data_url = logoDataURL
+    }
+    generateCV(brandingData)
+  }, [generateCV, logoDataURL])
 
   const handleDownload = React.useCallback(async () => {
     if (!candidate?.cv_pdf_url) {
@@ -196,7 +200,7 @@ export default function CandidateCVPage() {
               <div className="rounded-2xl border border-white/10 bg-white/5 p-4">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-300">Branding</p>
                 <p className="mt-2 text-sm font-medium text-white">
-                  Using default agency header
+                  {logoDataURL ? "Using custom logo" : "Using default agency header"}
                 </p>
               </div>
             </div>

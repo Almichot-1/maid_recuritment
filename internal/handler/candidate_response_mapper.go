@@ -61,6 +61,8 @@ func mapCandidateResponse(candidate *domain.Candidate, documents []*domain.Docum
 		EducationLevel:      candidate.EducationLevel,
 		ExperienceYears:     candidate.ExperienceYears,
 		CountryOfExperience: candidate.CountryOfExperience,
+		CountryApplied:      candidate.CountryApplied,
+		SalaryOffered:       candidate.SalaryOffered,
 		Languages:           decodeStringSlice(candidate.Languages),
 		Skills:          decodeStringSlice(candidate.Skills),
 		Status:          string(candidate.Status),

@@ -27,19 +27,21 @@ var (
 )
 
 type CandidateInput struct {
-	FullName        string
-	Nationality     string
-	DateOfBirth     *time.Time
-	Age             *int
-	PlaceOfBirth    string
-	Religion        string
-	MaritalStatus   string
+	FullName            string
+	Nationality         string
+	DateOfBirth         *time.Time
+	Age                 *int
+	PlaceOfBirth        string
+	Religion            string
+	MaritalStatus       string
 	ChildrenCount       *int
 	EducationLevel      string
 	ExperienceYears     *int
 	CountryOfExperience string
+	CountryApplied      string
+	SalaryOffered       string
 	Languages           []string
-	Skills          []string
+	Skills              []string
 }
 
 type UploadCandidateDocumentInput struct {
@@ -50,8 +52,13 @@ type UploadCandidateDocumentInput struct {
 }
 
 type CandidateCVBranding struct {
+	// Ethiopian agency (right side)
 	CompanyName string
 	LogoDataURL string
+	
+	// Foreign agency (left side)
+	ForeignAgencyName        string
+	ForeignAgencyLogoDataURL string
 }
 
 type PublishCandidateInput struct {
@@ -162,6 +169,8 @@ func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput
 		EducationLevel:      strings.TrimSpace(data.EducationLevel),
 		ExperienceYears:     data.ExperienceYears,
 		CountryOfExperience: strings.TrimSpace(data.CountryOfExperience),
+		CountryApplied:      strings.TrimSpace(data.CountryApplied),
+		SalaryOffered:       strings.TrimSpace(data.SalaryOffered),
 		Languages:           languages,
 		Skills:              skills,
 		Status:              domain.CandidateStatusDraft,
@@ -228,6 +237,8 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 	candidate.EducationLevel = strings.TrimSpace(data.EducationLevel)
 	candidate.ExperienceYears = data.ExperienceYears
 	candidate.CountryOfExperience = strings.TrimSpace(data.CountryOfExperience)
+	candidate.CountryApplied = strings.TrimSpace(data.CountryApplied)
+	candidate.SalaryOffered = strings.TrimSpace(data.SalaryOffered)
 	candidate.Languages = languages
 	candidate.Skills = skills
 
