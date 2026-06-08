@@ -161,6 +161,8 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 		"education_level":       candidate.EducationLevel,
 		"experience_years":      candidate.ExperienceYears,
 		"country_of_experience": candidate.CountryOfExperience,
+		"country_applied":       candidate.CountryApplied,
+		"salary_offered":        candidate.SalaryOffered,
 		"languages":             candidate.Languages,
 		"skills":                candidate.Skills,
 		"status":                candidate.Status,
