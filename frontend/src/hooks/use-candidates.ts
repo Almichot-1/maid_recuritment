@@ -310,7 +310,7 @@ export function useBatchPublishCandidates() {
         toast.success(`Published ${result.success_count} candidates successfully`);
       }
     },
-    onError: (error) => {
+    onError: () => {
       toast.error("Failed to batch publish candidates");
     },
   });
@@ -405,7 +405,7 @@ export async function downloadCandidateCVFile(
   const fallbackFileName = `${candidateName?.trim() || "candidate"}.pdf`;
   const fileName = headerFileName || fallbackFileName;
   const blob = new Blob([response.data], {
-    type: response.headers["content-type"] || "application/pdf",
+    type: (response.headers["content-type"] as string) || "application/pdf",
   });
   const objectURL = window.URL.createObjectURL(blob);
   const anchor = document.createElement("a");
