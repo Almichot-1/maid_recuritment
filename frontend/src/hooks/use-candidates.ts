@@ -29,6 +29,16 @@ export interface UploadCandidateDocumentArgs {
 export interface GenerateCVRequest {
   branding_logo_data_url?: string;
   company_name?: string;
+  foreign_agency_logo_data_url?: string;
+  foreign_agency_name?: string;
+  /** When set, per-pairing country/salary overrides are applied. */
+  pairing_id?: string;
+}
+
+export interface SetPairOverrideRequest {
+  pairing_id: string;
+  country_applied?: string;
+  salary_offered?: string;
 }
 
 export interface PublishCandidateResponse {
@@ -71,6 +81,7 @@ export interface CandidateApiResponse {
   locked_at?: string;
   lock_expires_at?: string;
   documents?: CandidateDocumentApiResponse[];
+  pair_overrides?: Array<{ pairing_id: string; country_applied: string; salary_offered: string }>;
   created_at: string;
   updated_at: string;
 }
@@ -122,6 +133,7 @@ export function normalizeCandidate(candidate: CandidateApiResponse): Candidate {
       file_size: document.file_size,
       uploaded_at: document.uploaded_at,
     })),
+    pair_overrides: candidate.pair_overrides,
     created_at: candidate.created_at,
     updated_at: candidate.updated_at,
   };
@@ -260,15 +272,46 @@ export function usePublishCandidate(id: string) {
       toast.success("Candidate published successfully");
     },
     onError: (error) => {
-      const responseError = error as AxiosError<PublishCandidateResponse & { error?: string }>;
+      const responseError = error as AxiosError<PublishCandidateResponse & { error?: string; requires_defaults?: boolean }>;
       if (
         responseError.response?.status === 409 &&
         responseError.response.data?.requires_pairing_selection
       ) {
         return;
       }
+      if (
+        responseError.response?.status === 400 &&
+        responseError.response.data?.requires_defaults
+      ) {
+        return;
+      }
       const message = responseError.response?.data?.error || responseError.response?.data?.message;
       toast.error(message || "Failed to publish candidate");
+    },
+  });
+}
+
+export function useBatchPublishCandidates() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async ({ candidateIds, pairingIds }: { candidateIds: string[]; pairingIds: string[] }) => {
+      const response = await api.post<{ result: { success_count: number; error_count: number; errors: string[] } }>(
+        `/candidates/batch-publish`,
+        { candidate_ids: candidateIds, pairing_ids: pairingIds }
+      );
+      return response.data.result;
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      if (result.error_count > 0) {
+        toast.warning(`Published ${result.success_count} successfully, ${result.error_count} failed`);
+      } else {
+        toast.success(`Published ${result.success_count} candidates successfully`);
+      }
+    },
+    onError: (error) => {
+      toast.error("Failed to batch publish candidates");
     },
   });
 }
@@ -359,10 +402,7 @@ export async function downloadCandidateCVFile(
     | string
     | undefined;
   const headerFileName = contentDisposition?.match(/filename="([^"]+)"/)?.[1];
-  const fallbackFileName = `${(candidateName || "candidate")
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-+|-+$/g, "") || "candidate"}-cv.pdf`;
+  const fallbackFileName = `${candidateName?.trim() || "candidate"}.pdf`;
   const fileName = headerFileName || fallbackFileName;
   const blob = new Blob([response.data], {
     type: response.headers["content-type"] || "application/pdf",
@@ -402,7 +442,6 @@ export function useGenerateCV(id: string) {
         if (!old) return old;
         return { ...old, cv_pdf_url: data.cv_pdf_url };
       });
-      // Invalidate to ensure fresh data on next visit
       queryClient.invalidateQueries({ queryKey: ["candidate", id] });
       toast.success("CV generated successfully");
     },
@@ -410,6 +449,35 @@ export function useGenerateCV(id: string) {
       const axiosError = error as import("axios").AxiosError<{ error?: string }>;
       const message = axiosError.response?.data?.error;
       toast.error(message || "Failed to generate CV");
+    },
+  });
+}
+
+/**
+ * Saves a per-pairing country/salary override for the given candidate.
+ * Only the candidate owner (Ethiopian agent) can call this.
+ */
+export function useSetPairOverride(candidateId: string) {
+  const queryClient = useQueryClient();
+  const activePairingId = usePairingStore((state) => state.activePairingId);
+
+  return useMutation({
+    mutationFn: async (req: SetPairOverrideRequest) => {
+      const response = await api.put<{ message: string }>(
+        `/candidates/${candidateId}/pair-override`,
+        req,
+      );
+      return response.data;
+    },
+    onSuccess: () => {
+      // Refresh the candidate so pair_overrides array is up-to-date
+      queryClient.invalidateQueries({ queryKey: ["candidate", candidateId] });
+      queryClient.invalidateQueries({ queryKey: ["candidate", candidateId, activePairingId] });
+      toast.success("Partner override saved");
+    },
+    onError: (error) => {
+      const axiosError = error as import("axios").AxiosError<{ error?: string }>;
+      toast.error(axiosError.response?.data?.error || "Failed to save override");
     },
   });
 }

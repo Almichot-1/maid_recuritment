@@ -82,6 +82,14 @@ type CandidateDocumentResponse struct {
 	UploadedAt   string `json:"uploaded_at"`
 }
 
+// CandidatePairOverrideResponse is the per-pairing country/salary override
+// returned as part of a CandidateResponse (visible to owners only).
+type CandidatePairOverrideResponse struct {
+	PairingID      string `json:"pairing_id"`
+	CountryApplied string `json:"country_applied"`
+	SalaryOffered  string `json:"salary_offered"`
+}
+
 type CandidateResponse struct {
 	ID              string                      `json:"id"`
 	CreatedBy       CandidateCreatedByInfo      `json:"created_by"`
@@ -106,6 +114,9 @@ type CandidateResponse struct {
 	LockExpiresAt   *string                     `json:"lock_expires_at,omitempty"`
 	CVPDFURL        string                      `json:"cv_pdf_url,omitempty"`
 	Documents       []CandidateDocumentResponse `json:"documents"`
+	// PairOverrides is non-nil only for the candidate owner; it lists the
+	// per-pairing country/salary overrides so the UI can show a per-partner table.
+	PairOverrides   []CandidatePairOverrideResponse `json:"pair_overrides,omitempty"`
 	CreatedAt       string                      `json:"created_at"`
 	UpdatedAt       string                      `json:"updated_at"`
 }
@@ -148,10 +159,21 @@ type GenerateCVRequest struct {
 	// Ethiopian agency (right side)
 	BrandingLogoDataURL string `json:"branding_logo_data_url"`
 	CompanyName         string `json:"company_name"`
-	
+
 	// Foreign agency (left side)
 	ForeignAgencyLogoDataURL string `json:"foreign_agency_logo_data_url"`
 	ForeignAgencyName        string `json:"foreign_agency_name"`
+
+	// Optional – when set, per-pairing overrides (country, salary) are applied.
+	PairingID string `json:"pairing_id"`
+}
+
+// SetPairOverrideRequest carries the per-pairing country/salary values
+// an Ethiopian agent wants to save for a specific foreign agency.
+type SetPairOverrideRequest struct {
+	PairingID      string `json:"pairing_id"      validate:"required"`
+	CountryApplied string `json:"country_applied"`
+	SalaryOffered  string `json:"salary_offered"`
 }
 
 type PublishCandidateRequest struct {
@@ -327,6 +349,21 @@ func (h *CandidateHandler) GetCandidate(w http.ResponseWriter, r *http.Request) 
 	}
 	sanitizeCandidateForViewer(candidate, userID, role)
 
+	// For the owner, also return per-pairing overrides so the UI can render
+	// the partner-country/salary table without an extra round-trip.
+	isOwner := strings.TrimSpace(candidate.CreatedBy) == strings.TrimSpace(userID)
+	if isOwner {
+		overrides, err := h.candidateService.GetPairOverridesForCandidate(id)
+		if err != nil {
+			log.Printf("get_candidate: failed to load pair overrides for candidate=%s: %v", id, err)
+			overrides = nil
+		}
+		_ = utils.WriteJSON(w, http.StatusOK, map[string]CandidateResponse{
+			"candidate": h.mapCandidateResponseWithOverrides(candidate, documents, overrides),
+		})
+		return
+	}
+
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]CandidateResponse{
 		"candidate": h.mapCandidateResponse(candidate, documents),
 	})
@@ -466,6 +503,13 @@ func (h *CandidateHandler) PublishCandidate(w http.ResponseWriter, r *http.Reque
 			})
 			return
 		}
+		if errors.Is(err, service.ErrPairingDefaultsRequired) {
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]any{
+				"error":             "Pairing defaults (country, currency) must be configured before publishing.",
+				"requires_defaults": true,
+			})
+			return
+		}
 		log.Printf("publish_candidate: failed for candidate=%s user=%s: %v", id, userID, err)
 		h.writeServiceError(w, err)
 		return
@@ -480,6 +524,37 @@ func (h *CandidateHandler) PublishCandidate(w http.ResponseWriter, r *http.Reque
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *CandidateHandler) BatchPublishCandidates(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req service.BatchPublishCandidatesInput
+	if err := decodeJSONBody(w, r, &req, 1<<20); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+	if len(req.PairingIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "pairing_ids is required"})
+		return
+	}
+
+	result, err := h.candidateService.BatchPublishCandidates(userID, req)
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"result": result})
 }
 
 func (h *CandidateHandler) UploadCandidateDocument(w http.ResponseWriter, r *http.Request) {
@@ -556,7 +631,7 @@ func (h *CandidateHandler) GenerateCV(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	if err := h.candidateService.GenerateCV(id, userID, service.CandidateCVBranding{
+	if err := h.candidateService.GenerateCV(id, userID, strings.TrimSpace(req.PairingID), service.CandidateCVBranding{
 		CompanyName:              strings.TrimSpace(req.CompanyName),
 		LogoDataURL:              strings.TrimSpace(req.BrandingLogoDataURL),
 		ForeignAgencyName:        strings.TrimSpace(req.ForeignAgencyName),
@@ -789,6 +864,45 @@ func (h *CandidateHandler) DeleteCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "candidate deleted"})
+}
+
+// SetPairOverride handles PUT /candidates/{id}/pair-override.
+// It lets an Ethiopian agent save or update per-pairing country/salary overrides
+// for a specific candidate. Only the candidate owner may call this.
+func (h *CandidateHandler) SetPairOverride(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate id is required"})
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req SetPairOverrideRequest
+	if err := decodeJSONBody(w, r, &req, 8<<10); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "pairing_id is required"})
+		return
+	}
+
+	if err := h.candidateService.SetPairOverride(userID, service.SetCandidatePairOverrideInput{
+		PairingID:      strings.TrimSpace(req.PairingID),
+		CandidateID:    id,
+		CountryApplied: strings.TrimSpace(req.CountryApplied),
+		SalaryOffered:  strings.TrimSpace(req.SalaryOffered),
+	}); err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "pair override saved"})
 }
 
 func writePassportPreviewTimingHeaders(w http.ResponseWriter, metrics service.PassportPreviewMetrics, requestDuration time.Duration) {
@@ -1033,29 +1147,53 @@ func (h *CandidateHandler) mapCandidateResponse(candidate *domain.Candidate, doc
 	}
 
 	return CandidateResponse{
-		ID:              candidate.ID,
-		CreatedBy:       CandidateCreatedByInfo{ID: candidate.CreatedBy},
-		FullName:        candidate.FullName,
-		Nationality:     candidate.Nationality,
-		DateOfBirth:     formatOptionalDate(candidate.DateOfBirth),
-		Age:             candidate.Age,
-		PlaceOfBirth:    candidate.PlaceOfBirth,
-		Religion:        candidate.Religion,
-		MaritalStatus:   candidate.MaritalStatus,
-		ChildrenCount:   candidate.ChildrenCount,
-		EducationLevel:  candidate.EducationLevel,
-		ExperienceYears: candidate.ExperienceYears,
-		Languages:       decodeStringSlice(candidate.Languages),
-		Skills:          decodeStringSlice(candidate.Skills),
-		Status:          string(candidate.Status),
-		LockedBy:        candidate.LockedBy,
-		LockedAt:        lockedAt,
-		LockExpiresAt:   lockExpiresAt,
-		CVPDFURL:        h.buildCandidateCVURL(candidate),
-		Documents:       responseDocuments,
-		CreatedAt:       createdAt,
-		UpdatedAt:       updatedAt,
+		ID:                  candidate.ID,
+		CreatedBy:           CandidateCreatedByInfo{ID: candidate.CreatedBy},
+		FullName:            candidate.FullName,
+		Nationality:         candidate.Nationality,
+		DateOfBirth:         formatOptionalDate(candidate.DateOfBirth),
+		Age:                 candidate.Age,
+		PlaceOfBirth:        candidate.PlaceOfBirth,
+		Religion:            candidate.Religion,
+		MaritalStatus:       candidate.MaritalStatus,
+		ChildrenCount:       candidate.ChildrenCount,
+		EducationLevel:      candidate.EducationLevel,
+		ExperienceYears:     candidate.ExperienceYears,
+		CountryOfExperience: candidate.CountryOfExperience,
+		CountryApplied:      candidate.CountryApplied,
+		SalaryOffered:       candidate.SalaryOffered,
+		Languages:           decodeStringSlice(candidate.Languages),
+		Skills:              decodeStringSlice(candidate.Skills),
+		Status:              string(candidate.Status),
+		LockedBy:            candidate.LockedBy,
+		LockedAt:            lockedAt,
+		LockExpiresAt:       lockExpiresAt,
+		CVPDFURL:            h.buildCandidateCVURL(candidate),
+		Documents:           responseDocuments,
+		CreatedAt:           createdAt,
+		UpdatedAt:           updatedAt,
 	}
+}
+
+// mapCandidateResponseWithOverrides is like mapCandidateResponse but also
+// attaches per-pairing overrides. Used in GetCandidate for the owner so the
+// frontend can render the partner-specific country/salary table.
+func (h *CandidateHandler) mapCandidateResponseWithOverrides(candidate *domain.Candidate, documents []*domain.Document, overrides []*domain.CandidatePairOverride) CandidateResponse {
+	resp := h.mapCandidateResponse(candidate, documents)
+	if len(overrides) > 0 {
+		resp.PairOverrides = make([]CandidatePairOverrideResponse, 0, len(overrides))
+		for _, o := range overrides {
+			if o == nil {
+				continue
+			}
+			resp.PairOverrides = append(resp.PairOverrides, CandidatePairOverrideResponse{
+				PairingID:      o.PairingID,
+				CountryApplied: o.CountryApplied,
+				SalaryOffered:  o.SalaryOffered,
+			})
+		}
+	}
+	return resp
 }
 
 func (h *CandidateHandler) mapDocumentResponse(document *domain.Document) CandidateDocumentResponse {
@@ -1174,35 +1312,12 @@ func dereferenceInt64(value *int64) int64 {
 }
 
 func buildCandidateCVFileName(fullName string) string {
-	trimmed := strings.TrimSpace(strings.ToLower(fullName))
+	trimmed := strings.TrimSpace(fullName)
 	if trimmed == "" {
-		return "candidate-cv.pdf"
+		return "candidate.pdf"
 	}
 
-	var builder strings.Builder
-	previousHyphen := false
-	for _, character := range trimmed {
-		switch {
-		case character >= 'a' && character <= 'z':
-			builder.WriteRune(character)
-			previousHyphen = false
-		case character >= '0' && character <= '9':
-			builder.WriteRune(character)
-			previousHyphen = false
-		default:
-			if !previousHyphen {
-				builder.WriteRune('-')
-				previousHyphen = true
-			}
-		}
-	}
-
-	name := strings.Trim(builder.String(), "-")
-	if name == "" {
-		name = "candidate"
-	}
-
-	return fmt.Sprintf("%s-cv.pdf", name)
+	return fmt.Sprintf("%s.pdf", trimmed)
 }
 
 func mapPassportDataResponse(passportData *domain.PassportData) PassportDataResponse {
