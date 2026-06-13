@@ -67,6 +67,10 @@ func (s *PairingService) ListAdminPairings(filters domain.AgencyPairingFilters) 
 	return s.pairingRepository.List(filters)
 }
 
+func (s *PairingService) GetPairingByID(pairingID string) (*domain.AgencyPairing, error) {
+	return s.pairingRepository.GetByID(strings.TrimSpace(pairingID))
+}
+
 func (s *PairingService) ListAgencyPairings(agencyID string) ([]*domain.AgencyPairing, error) {
 	return s.pairingRepository.List(domain.AgencyPairingFilters{UserID: strings.TrimSpace(agencyID)})
 }
@@ -251,6 +255,52 @@ func (s *PairingService) UnshareCandidate(candidateID, pairingID, sharedBy strin
 	}
 
 	return nil
+}
+
+func (s *PairingService) UpdatePairingDefaults(pairingID, userID, country, currency string) (*domain.AgencyPairing, error) {
+	pairing, err := s.pairingRepository.GetByID(strings.TrimSpace(pairingID))
+	if err != nil {
+		if errors.Is(err, repository.ErrAgencyPairingNotFound) {
+			return nil, ErrPairingNotFound
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(userID) != strings.TrimSpace(pairing.EthiopianUserID) {
+		return nil, ErrPairingAccessDenied
+	}
+
+	c := strings.TrimSpace(country)
+	curr := strings.TrimSpace(currency)
+	pairing.DefaultCountry = &c
+	pairing.DefaultCurrency = &curr
+
+	if err := s.pairingRepository.Update(pairing); err != nil {
+		return nil, err
+	}
+
+	return pairing, nil
+}
+
+func (s *PairingService) UpdatePairingLogo(pairingID, userID, logoURL string) (*domain.AgencyPairing, error) {
+	pairing, err := s.pairingRepository.GetByID(strings.TrimSpace(pairingID))
+	if err != nil {
+		if errors.Is(err, repository.ErrAgencyPairingNotFound) {
+			return nil, ErrPairingNotFound
+		}
+		return nil, err
+	}
+	if strings.TrimSpace(userID) != strings.TrimSpace(pairing.EthiopianUserID) {
+		return nil, ErrPairingAccessDenied
+	}
+
+	url := strings.TrimSpace(logoURL)
+	pairing.PartnerLogoURL = &url
+
+	if err := s.pairingRepository.Update(pairing); err != nil {
+		return nil, err
+	}
+
+	return pairing, nil
 }
 
 func (s *PairingService) IsCandidateSharedWithPairing(candidateID, pairingID string) (bool, error) {

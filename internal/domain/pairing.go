@@ -19,8 +19,12 @@ type AgencyPairing struct {
 	ApprovedAt        *time.Time
 	EndedAt           *time.Time
 	Notes             *string
-	CreatedAt         time.Time `gorm:"not null;default:now()"`
-	UpdatedAt         time.Time `gorm:"not null;default:now()"`
+	// CV Defaults — set once by the Ethiopian agent per partner
+	DefaultCountry  *string `gorm:"type:text"`
+	DefaultCurrency *string `gorm:"type:text"`
+	PartnerLogoURL  *string `gorm:"type:text"`
+	CreatedAt       time.Time `gorm:"not null;default:now()"`
+	UpdatedAt       time.Time `gorm:"not null;default:now()"`
 }
 
 func (AgencyPairing) TableName() string {
@@ -64,4 +68,31 @@ type CandidatePairShareRepository interface {
 	ListByCandidateID(candidateID string, activeOnly bool) ([]*CandidatePairShare, error)
 	ListByPairingID(pairingID string, activeOnly bool) ([]*CandidatePairShare, error)
 	Deactivate(pairingID, candidateID string, unsharedAt time.Time) error
+}
+
+// CandidatePairOverride stores per-pairing overrides for country_applied and
+// salary_offered. When generating a CV for a specific agency pairing the
+// service resolves these values first, falling back to the candidate's global
+// defaults when no override exists.
+type CandidatePairOverride struct {
+	ID             string    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	PairingID      string    `gorm:"type:uuid;not null;index"`
+	CandidateID    string    `gorm:"type:uuid;not null"`
+	CountryApplied string
+	SalaryOffered  string
+	CreatedAt      time.Time `gorm:"not null;default:now()"`
+	UpdatedAt      time.Time `gorm:"not null;default:now()"`
+}
+
+func (CandidatePairOverride) TableName() string {
+	return "candidate_pair_overrides"
+}
+
+type CandidatePairOverrideRepository interface {
+	// Upsert inserts or updates the override for the given (pairing, candidate) pair.
+	Upsert(override *CandidatePairOverride) error
+	// GetByPairingAndCandidate returns the override, or nil if none exists.
+	GetByPairingAndCandidate(pairingID, candidateID string) (*CandidatePairOverride, error)
+	// ListByCandidateID returns all overrides for a candidate across all pairings.
+	ListByCandidateID(candidateID string) ([]*CandidatePairOverride, error)
 }

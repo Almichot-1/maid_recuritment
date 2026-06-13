@@ -115,6 +115,9 @@ func (r *GormAgencyPairingRepository) Update(pairing *domain.AgencyPairing) erro
 			"approved_at":          pairing.ApprovedAt,
 			"ended_at":             pairing.EndedAt,
 			"notes":                pairing.Notes,
+			"default_country":      pairing.DefaultCountry,
+			"default_currency":     pairing.DefaultCurrency,
+			"partner_logo_url":     pairing.PartnerLogoURL,
 		})
 	if result.Error != nil {
 		if isDuplicateActivePairingError(result.Error) {

@@ -7,7 +7,7 @@ import api from "@/lib/api"
 import adminApi from "@/lib/admin-api"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { usePairingStore } from "@/stores/pairing-store"
-import { AdminPairing, CandidatePairShare, PairingContext } from "@/types"
+import { AdminPairing, CandidatePairShare, PairingContext, WorkspaceSummary } from "@/types"
 
 export function usePairingContext() {
   const { user } = useCurrentUser()
@@ -162,6 +162,40 @@ export function useUpdateAdminPairing() {
         queryClient.invalidateQueries({ queryKey: ["admin-pairings"] }),
         queryClient.invalidateQueries({ queryKey: ["admin-agency-pairings"] }),
       ])
+    },
+  })
+}
+
+export function useUpdatePairingDefaults() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, default_country, default_currency }: { id: string; default_country: string; default_currency: string }) => {
+      const response = await api.patch<{ pairing: WorkspaceSummary }>(`/pairings/${id}/defaults`, { default_country, default_currency })
+      return response.data.pairing
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pairings", "me"] })
+      toast.success("Partner defaults updated successfully")
+    },
+  })
+}
+
+export function useUpdatePairingLogo() {
+  const queryClient = useQueryClient()
+
+  return useMutation({
+    mutationFn: async ({ id, file }: { id: string; file: File }) => {
+      const formData = new FormData()
+      formData.append("file", file)
+      const response = await api.post<{ pairing: WorkspaceSummary }>(`/pairings/${id}/logo`, formData, {
+        headers: { "Content-Type": "multipart/form-data" },
+      })
+      return response.data.pairing
+    },
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: ["pairings", "me"] })
+      toast.success("Partner logo updated successfully")
     },
   })
 }

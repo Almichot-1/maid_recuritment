@@ -56,6 +56,8 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize candidate pair share repository: %v", err)
 	}
+
+
 	passwordResetRepository, err := repository.NewGormPasswordResetRequestRepository(cfg)
 	if err != nil {
 		log.Fatalf("failed to initialize password reset repository: %v", err)
@@ -90,6 +92,9 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize candidate repository: %v", err)
 	}
+
+	// pairOverrideRepository stores per-pairing country/salary overrides for CVs.
+	pairOverrideRepository := repository.NewGormCandidatePairOverrideRepository(candidateRepository.DB())
 
 	documentRepository, err := repository.NewGormDocumentRepository(cfg)
 	if err != nil {
@@ -217,6 +222,7 @@ func main() {
 	}
 	statusStepService.SetDocumentRepository(documentRepository)
 	candidateService.SetStatusStepService(statusStepService)
+	candidateService.SetPairOverrideRepository(pairOverrideRepository)
 
 	approvalService, err := service.NewApprovalService(approvalRepository, selectionRepository, candidateRepository, statusStepService, notificationService)
 	if err != nil {
@@ -241,7 +247,7 @@ func main() {
 	notificationHandler := handler.NewNotificationHandler(notificationRepository, cfg.CORSAllowedOrigins)
 	chatHandler := handler.NewChatHandler(chatService, cfg.CORSAllowedOrigins)
 	chatHandler.SetContextRepositories(userRepository, candidateRepository, pairingService)
-	pairingHandler := handler.NewPairingHandler(pairingService, userRepository, candidateRepository)
+	pairingHandler := handler.NewPairingHandler(pairingService, userRepository, candidateRepository, storageService)
 	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, adminRepository)
 	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
 	adminAgencyHandler := handler.NewAdminAgencyHandler(userRepository, agencyApprovalRepository, agencyApprovalService, candidateRepository, selectionRepository)
@@ -344,6 +350,8 @@ func main() {
 			pr.Get("/me", pairingHandler.GetMyPairingContext)
 			pr.Post("/{pairingId}/candidates/{candidateId}/share", pairingHandler.ShareCandidate)
 			pr.Delete("/{pairingId}/candidates/{candidateId}/share", pairingHandler.UnshareCandidate)
+			pr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Patch("/{id}/defaults", pairingHandler.UpdateDefaults)
+			pr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/logo", pairingHandler.UploadLogo)
 		})
 
 		protected.Route("/candidates", func(cr chi.Router) {
@@ -355,12 +363,14 @@ func main() {
 			cr.Get("/{id}", candidateHandler.GetCandidate)
 			cr.Get("/", candidateHandler.ListCandidates)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/shares", pairingHandler.GetCandidateShares)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/batch-publish", candidateHandler.BatchPublishCandidates)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/publish", candidateHandler.PublishCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/documents", candidateHandler.UploadCandidateDocument)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/passport/parse", candidateHandler.ParsePassport)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/passport", candidateHandler.GetPassport)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent)), appmiddleware.NewIPRateLimitMiddleware("candidate-generate-cv", 8, time.Minute)).Post("/{id}/generate-cv", candidateHandler.GenerateCV)
 			cr.Get("/{id}/download-cv", candidateHandler.DownloadCV)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}/pair-override", candidateHandler.SetPairOverride)
 			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/select", selectionHandler.SelectCandidate)
 			cr.Get("/{id}/status-steps", statusHandler.GetCandidateStatusSteps)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Patch("/{id}/status-steps/{step_name}", statusHandler.UpdateStatusStep)

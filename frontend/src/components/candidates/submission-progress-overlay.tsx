@@ -33,59 +33,73 @@ export function SubmissionProgressOverlay({
   }
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/50 px-4 backdrop-blur-sm">
-      <Card className="w-full max-w-xl overflow-hidden border-0 shadow-2xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-background/80 backdrop-blur-md px-4 animate-in fade-in duration-200">
+      <Card className="w-full max-w-2xl overflow-hidden border shadow-2xl animate-in zoom-in-95 duration-300">
         <CardContent className="space-y-6 p-0">
-          <div className="bg-[radial-gradient(circle_at_top_left,_rgba(59,130,246,0.16),_transparent_26%),radial-gradient(circle_at_top_right,_rgba(16,185,129,0.18),_transparent_24%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96))] px-6 py-5 text-white">
-            <div className="flex items-start gap-4">
-              <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-white/10">
-                <Loader2 className="h-6 w-6 animate-spin text-sky-200" />
+          <div className="relative overflow-hidden bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900 px-8 py-8">
+            <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_rgba(59,130,246,0.15),transparent_50%),radial-gradient(ellipse_at_bottom_left,_rgba(16,185,129,0.15),transparent_50%)]" />
+            <div className="relative flex items-start gap-5">
+              <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500/20 to-emerald-500/20 ring-1 ring-white/10">
+                <Loader2 className="h-8 w-8 animate-spin text-blue-400" />
               </div>
-              <div className="space-y-1">
-                <p className="text-xs uppercase tracking-[0.24em] text-sky-200">Processing</p>
-                <h2 className="text-2xl font-semibold tracking-tight">{title}</h2>
-                <p className="text-sm text-slate-200/90">{description}</p>
+              <div className="space-y-2 pt-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-semibold uppercase tracking-wider text-blue-300">Processing</span>
+                </div>
+                <h2 className="text-3xl font-bold tracking-tight text-white">{title}</h2>
+                <p className="text-base leading-relaxed text-slate-300">{description}</p>
               </div>
             </div>
           </div>
 
-          <div className="space-y-3 px-6 pb-6">
+          <div className="space-y-4 px-8 pb-8">
             {steps.map((step) => (
               <div
                 key={step.label}
                 className={cn(
-                  "flex items-start gap-3 rounded-2xl border px-4 py-3 transition-all duration-300",
-                  step.status === "complete" && "border-emerald-200 bg-emerald-50",
-                  step.status === "active" && "border-sky-200 bg-sky-50 shadow-sm",
-                  step.status === "pending" && "border-border/70 bg-card"
+                  "group flex items-start gap-4 rounded-xl border-2 px-5 py-4 transition-all duration-300",
+                  step.status === "complete" && "border-emerald-500/50 bg-emerald-50 dark:border-emerald-500/30 dark:bg-emerald-950/20",
+                  step.status === "active" && "border-blue-500/50 bg-blue-50 shadow-lg shadow-blue-500/10 dark:border-blue-500/30 dark:bg-blue-950/20",
+                  step.status === "pending" && "border-slate-200 bg-slate-50 dark:border-slate-800 dark:bg-slate-900/50"
                 )}
               >
-                <div className="mt-0.5">
+                <div className="mt-0.5 shrink-0">
                   {step.status === "complete" ? (
-                    <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                    <CheckCircle2 className="h-6 w-6 text-emerald-600 dark:text-emerald-400" />
                   ) : step.status === "active" ? (
-                    <Loader2 className="h-5 w-5 animate-spin text-sky-600" />
+                    <Loader2 className="h-6 w-6 animate-spin text-blue-600 dark:text-blue-400" />
                   ) : (
-                    <CircleDashed className="h-5 w-5 text-muted-foreground" />
+                    <CircleDashed className="h-6 w-6 text-slate-400 dark:text-slate-600" />
                   )}
                 </div>
-                <div className="space-y-1">
+                <div className="min-w-0 flex-1 space-y-1.5">
                   <p
                     className={cn(
-                      "text-sm font-semibold",
-                      step.status === "pending" ? "text-foreground" : ""
+                      "text-base font-semibold leading-snug",
+                      step.status === "complete" && "text-emerald-900 dark:text-emerald-100",
+                      step.status === "active" && "text-blue-900 dark:text-blue-100",
+                      step.status === "pending" && "text-slate-700 dark:text-slate-300"
                     )}
                   >
                     {step.label}
                   </p>
-                  <p className="text-sm text-muted-foreground">{step.description}</p>
+                  <p 
+                    className={cn(
+                      "text-sm leading-relaxed",
+                      step.status === "complete" && "text-emerald-700 dark:text-emerald-300",
+                      step.status === "active" && "text-blue-700 dark:text-blue-300",
+                      step.status === "pending" && "text-slate-600 dark:text-slate-400"
+                    )}
+                  >
+                    {step.description}
+                  </p>
                 </div>
               </div>
             ))}
 
             {footer ? (
-              <div className="rounded-2xl border border-dashed border-border/70 bg-muted/20 px-4 py-3 text-sm text-muted-foreground">
-                {footer}
+              <div className="mt-6 rounded-xl border-2 border-dashed border-slate-300 bg-slate-100 px-5 py-4 dark:border-slate-700 dark:bg-slate-900/50">
+                <p className="text-sm leading-relaxed text-slate-700 dark:text-slate-300">{footer}</p>
               </div>
             ) : null}
           </div>

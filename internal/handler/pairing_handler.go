@@ -13,6 +13,10 @@ import (
 	"maid-recruitment-tracking/internal/repository"
 	"maid-recruitment-tracking/internal/service"
 	"maid-recruitment-tracking/pkg/utils"
+
+	"io"
+	"bytes"
+	"github.com/go-playground/validator/v10"
 )
 
 type PairingAgencySummary struct {
@@ -31,6 +35,9 @@ type PairingWorkspaceSummary struct {
 	PartnerAgency    PairingAgencySummary `json:"partner_agency"`
 	ApprovedAt       string               `json:"approved_at,omitempty"`
 	Notes            string               `json:"notes,omitempty"`
+	DefaultCountry   string               `json:"default_country,omitempty"`
+	DefaultCurrency  string               `json:"default_currency,omitempty"`
+	PartnerLogoURL   string               `json:"partner_logo_url,omitempty"`
 }
 
 type PairingContextResponse struct {
@@ -50,16 +57,20 @@ type CandidatePairShareResponse struct {
 }
 
 type PairingHandler struct {
-	pairingService     *service.PairingService
-	userRepository     domain.UserRepository
+	pairingService      *service.PairingService
+	userRepository      domain.UserRepository
 	candidateRepository *repository.GormCandidateRepository
+	storageService      service.StorageService
+	inputValidator      *validator.Validate
 }
 
-func NewPairingHandler(pairingService *service.PairingService, userRepository domain.UserRepository, candidateRepository *repository.GormCandidateRepository) *PairingHandler {
+func NewPairingHandler(pairingService *service.PairingService, userRepository domain.UserRepository, candidateRepository *repository.GormCandidateRepository, storageService service.StorageService) *PairingHandler {
 	return &PairingHandler{
 		pairingService:      pairingService,
 		userRepository:      userRepository,
 		candidateRepository: candidateRepository,
+		storageService:      storageService,
+		inputValidator:      validator.New(),
 	}
 }
 
@@ -214,6 +225,107 @@ func (h *PairingHandler) GetCandidateShares(w http.ResponseWriter, r *http.Reque
 	_ = utils.WriteJSON(w, http.StatusOK, map[string][]CandidatePairShareResponse{"shares": response})
 }
 
+type UpdatePairingDefaultsRequest struct {
+	DefaultCountry  string `json:"default_country" validate:"required"`
+	DefaultCurrency string `json:"default_currency" validate:"required"`
+}
+
+func (h *PairingHandler) UpdateDefaults(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	pairingID := chi.URLParam(r, "id")
+	if strings.TrimSpace(pairingID) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "pairing id is required"})
+		return
+	}
+
+	var req UpdatePairingDefaultsRequest
+	if err := decodeJSONBody(w, r, &req, 16<<10); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.inputValidator.Struct(req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		return
+	}
+
+	pairing, err := h.pairingService.UpdatePairingDefaults(pairingID, userID, req.DefaultCountry, req.DefaultCurrency)
+	if err != nil {
+		h.writePairingError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"pairing": pairing})
+}
+
+func (h *PairingHandler) UploadLogo(w http.ResponseWriter, r *http.Request) {
+	if h.storageService == nil {
+		_ = utils.WriteJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "logo upload is not configured"})
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	pairingID := chi.URLParam(r, "id")
+	if strings.TrimSpace(pairingID) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "pairing id is required"})
+		return
+	}
+
+	r.Body = http.MaxBytesReader(w, r.Body, 2*1024*1024+1024)
+	if err := r.ParseMultipartForm(2*1024*1024 + 1024); err != nil {
+		var maxBytesErr *http.MaxBytesError
+		if errors.As(err, &maxBytesErr) {
+			_ = utils.WriteJSON(w, http.StatusRequestEntityTooLarge, map[string]string{"error": "logo must be smaller than 2 MB"})
+			return
+		}
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid multipart form"})
+		return
+	}
+
+	file, fileHeader, err := r.FormFile("file")
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "file is required"})
+		return
+	}
+	defer file.Close()
+
+	bufferedFile, contentType, err := service.ValidateAndBufferUploadForProfile(file, fileHeader.Filename)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+
+	bufferedBytes, err := io.ReadAll(bufferedFile)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to read logo photo"})
+		return
+	}
+
+	logoURL, err := h.storageService.Upload(bytes.NewReader(bufferedBytes), fileHeader.Filename, contentType)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to upload logo photo"})
+		return
+	}
+
+	pairing, err := h.pairingService.UpdatePairingLogo(pairingID, userID, logoURL)
+	if err != nil {
+		_ = h.storageService.Delete(logoURL)
+		h.writePairingError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"pairing": pairing})
+}
+
 func (h *PairingHandler) mapWorkspace(pairing *domain.AgencyPairing, userID, role string) (PairingWorkspaceSummary, error) {
 	ethiopianUser, err := h.userRepository.GetByID(pairing.EthiopianUserID)
 	if err != nil {
@@ -243,6 +355,15 @@ func (h *PairingHandler) mapWorkspace(pairing *domain.AgencyPairing, userID, rol
 	}
 	if pairing.Notes != nil {
 		workspace.Notes = *pairing.Notes
+	}
+	if pairing.DefaultCountry != nil {
+		workspace.DefaultCountry = *pairing.DefaultCountry
+	}
+	if pairing.DefaultCurrency != nil {
+		workspace.DefaultCurrency = *pairing.DefaultCurrency
+	}
+	if pairing.PartnerLogoURL != nil {
+		workspace.PartnerLogoURL = *pairing.PartnerLogoURL
 	}
 
 	return workspace, nil

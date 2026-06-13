@@ -26,6 +26,8 @@ type User struct {
 	AvatarURL               string
 	AutoShareCandidates     bool
 	DefaultForeignPairingID *string       `gorm:"type:uuid"`
+	OperatingCountry        *string       `gorm:"type:text"`
+	DefaultCurrency         *string       `gorm:"type:text"`
 	AccountStatus           AccountStatus `gorm:"type:account_status;not null;default:active"`
 	IsActive                bool          `gorm:"not null;default:true"`
 	CreatedAt               time.Time     `gorm:"not null;default:now()"`
