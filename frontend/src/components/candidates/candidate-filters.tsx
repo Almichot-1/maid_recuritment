@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Search, X, Filter } from "lucide-react"
+import { Search, X, Filter, ChevronDown, ChevronUp } from "lucide-react"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { Input } from "@/components/ui/input"
@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Badge } from "@/components/ui/badge"
+import { cn } from "@/lib/utils"
 
 const LANGUAGES_OPTIONS = ["Arabic", "English", "Amharic", "French", "Swahili"]
 const RELIGION_OPTIONS = ["Muslim", "Christian", "Orthodox", "Catholic", "Protestant", "Other"]
@@ -31,6 +32,7 @@ export function CandidateFilters() {
   const router = useRouter()
   const searchParams = useSearchParams()
   const { isEthiopianAgent } = useCurrentUser()
+  const [filtersExpanded, setFiltersExpanded] = React.useState(false)
 
   const [search, setSearch] = React.useState(searchParams.get("search") || "")
   const [debouncedSearch, setDebouncedSearch] = React.useState(search)
@@ -109,8 +111,8 @@ export function CandidateFilters() {
 
   return (
     <div className="space-y-4">
-      <div className="flex flex-col lg:flex-row gap-3">
-        {/* Search */}
+      {/* Search row - always visible */}
+      <div className="flex flex-col sm:flex-row gap-3">
         <div className="relative flex-1 min-w-[200px]">
           <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
           <Input
@@ -129,139 +131,179 @@ export function CandidateFilters() {
           )}
         </div>
 
-        {/* Status */}
-        <Select
-          value={searchParams.get("status") || ALL_VALUE}
-          onValueChange={(value) => updateFilters({ status: value === ALL_VALUE ? undefined : value })}
-        >
-          <SelectTrigger className="w-full lg:w-[180px] h-10 shadow-sm">
-            <SelectValue placeholder="Status" />
-          </SelectTrigger>
-          <SelectContent>
-            {statusOptions.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
+        <div className="flex gap-2">
+          {/* Status - visible on all screens */}
+          <Select
+            value={searchParams.get("status") || ALL_VALUE}
+            onValueChange={(value) => updateFilters({ status: value === ALL_VALUE ? undefined : value })}
+          >
+            <SelectTrigger className="w-[140px] sm:w-[180px] h-10 shadow-sm">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              {statusOptions.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
-        {/* Age Range */}
-        <div className="flex gap-2 items-center">
-          <Input
-            type="number"
-            placeholder="Min age"
-            min={18}
-            max={65}
-            value={searchParams.get("min_age") || ""}
-            onChange={(e) => updateFilters({ min_age: e.target.value || undefined })}
-            className="w-24 h-10 shadow-sm"
-          />
-          <span className="text-muted-foreground">-</span>
-          <Input
-            type="number"
-            placeholder="Max age"
-            min={18}
-            max={65}
-            value={searchParams.get("max_age") || ""}
-            onChange={(e) => updateFilters({ max_age: e.target.value || undefined })}
-            className="w-24 h-10 shadow-sm"
-          />
-        </div>
-
-        {/* Languages */}
-        <Select
-          value={searchParams.get("languages") || ALL_VALUE}
-          onValueChange={(value) => updateFilters({ languages: value === ALL_VALUE ? undefined : value })}
-        >
-          <SelectTrigger className="w-full lg:w-[160px] h-10 shadow-sm">
-            <SelectValue placeholder="Language" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_VALUE}>All Languages</SelectItem>
-            {LANGUAGES_OPTIONS.map((lang) => (
-              <SelectItem key={lang} value={lang}>
-                {lang}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Experience */}
-        <Select
-          value={experienceValue}
-          onValueChange={(value) => {
-            const next =
-              value === "1-2"
-                ? { min_experience: "1", max_experience: "2" }
-                : value === "3-5"
-                  ? { min_experience: "3", max_experience: "5" }
-                  : value === "5+"
-                    ? { min_experience: "5", max_experience: undefined }
-                    : { min_experience: undefined, max_experience: undefined }
-
-            updateFilters(next)
-          }}
-        >
-          <SelectTrigger className="w-full lg:w-[160px] h-10 shadow-sm">
-            <SelectValue placeholder="Experience" />
-          </SelectTrigger>
-          <SelectContent>
-            {EXPERIENCE_OPTIONS.map((option) => (
-              <SelectItem key={option.value} value={option.value}>
-                {option.label}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Religion */}
-        <Select
-          value={searchParams.get("religion") || ALL_VALUE}
-          onValueChange={(value) => updateFilters({ religion: value === ALL_VALUE ? undefined : value })}
-        >
-          <SelectTrigger className="w-full lg:w-[150px] h-10 shadow-sm">
-            <SelectValue placeholder="Religion" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_VALUE}>All Religions</SelectItem>
-            {RELIGION_OPTIONS.map((r) => (
-              <SelectItem key={r} value={r}>{r}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Marital Status */}
-        <Select
-          value={searchParams.get("marital_status") || ALL_VALUE}
-          onValueChange={(value) => updateFilters({ marital_status: value === ALL_VALUE ? undefined : value })}
-        >
-          <SelectTrigger className="w-full lg:w-[160px] h-10 shadow-sm">
-            <SelectValue placeholder="Marital Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value={ALL_VALUE}>All Statuses</SelectItem>
-            {MARITAL_STATUS_OPTIONS.map((s) => (
-              <SelectItem key={s} value={s}>{s}</SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-
-        {/* Clear Filters */}
-        {activeFilterCount > 0 && (
+          {/* Toggle filters button (mobile only) */}
           <Button
             variant="outline"
             size="sm"
-            onClick={clearFilters}
-            className="h-10 shadow-sm whitespace-nowrap"
+            onClick={() => setFiltersExpanded(!filtersExpanded)}
+            className="h-10 lg:hidden shrink-0"
           >
-            <X className="mr-2 h-4 w-4" />
-            Clear
-            <Badge variant="secondary" className="ml-2 px-1.5 min-w-[20px] justify-center">
-              {activeFilterCount}
-            </Badge>
+            <Filter className="h-4 w-4 mr-1" />
+            <span className="hidden sm:inline">Filters</span>
+            {activeFilterCount > 0 && (
+              <Badge variant="secondary" className="ml-1 px-1.5 min-w-[18px] justify-center">
+                {activeFilterCount}
+              </Badge>
+            )}
+            {filtersExpanded ? <ChevronUp className="h-4 w-4 ml-1" /> : <ChevronDown className="h-4 w-4 ml-1" />}
           </Button>
-        )}
+
+          {/* Clear Filters - always visible when active */}
+          {activeFilterCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearFilters}
+              className="h-10 shadow-sm whitespace-nowrap hidden sm:flex"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Clear
+              <Badge variant="secondary" className="ml-2 px-1.5 min-w-[20px] justify-center">
+                {activeFilterCount}
+              </Badge>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {/* Collapsible extra filters (hidden on desktop) */}
+      <div className={cn("space-y-3 lg:space-y-0", filtersExpanded ? "block" : "hidden lg:block")}>
+        <div className="flex flex-col lg:flex-row gap-3 flex-wrap">
+          {/* Age Range */}
+          <div className="flex gap-2 items-center">
+            <Input
+              type="number"
+              placeholder="Min age"
+              min={18}
+              max={65}
+              value={searchParams.get("min_age") || ""}
+              onChange={(e) => updateFilters({ min_age: e.target.value || undefined })}
+              className="w-24 h-10 shadow-sm"
+            />
+            <span className="text-muted-foreground">-</span>
+            <Input
+              type="number"
+              placeholder="Max age"
+              min={18}
+              max={65}
+              value={searchParams.get("max_age") || ""}
+              onChange={(e) => updateFilters({ max_age: e.target.value || undefined })}
+              className="w-24 h-10 shadow-sm"
+            />
+          </div>
+
+          {/* Languages */}
+          <Select
+            value={searchParams.get("languages") || ALL_VALUE}
+            onValueChange={(value) => updateFilters({ languages: value === ALL_VALUE ? undefined : value })}
+          >
+            <SelectTrigger className="w-full lg:w-[160px] h-10 shadow-sm">
+              <SelectValue placeholder="Language" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_VALUE}>All Languages</SelectItem>
+              {LANGUAGES_OPTIONS.map((lang) => (
+                <SelectItem key={lang} value={lang}>
+                  {lang}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Experience */}
+          <Select
+            value={experienceValue}
+            onValueChange={(value) => {
+              const next =
+                value === "1-2"
+                  ? { min_experience: "1", max_experience: "2" }
+                  : value === "3-5"
+                    ? { min_experience: "3", max_experience: "5" }
+                    : value === "5+"
+                      ? { min_experience: "5", max_experience: undefined }
+                      : { min_experience: undefined, max_experience: undefined }
+
+              updateFilters(next)
+            }}
+          >
+            <SelectTrigger className="w-full lg:w-[160px] h-10 shadow-sm">
+              <SelectValue placeholder="Experience" />
+            </SelectTrigger>
+            <SelectContent>
+              {EXPERIENCE_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Religion */}
+          <Select
+            value={searchParams.get("religion") || ALL_VALUE}
+            onValueChange={(value) => updateFilters({ religion: value === ALL_VALUE ? undefined : value })}
+          >
+            <SelectTrigger className="w-full lg:w-[150px] h-10 shadow-sm">
+              <SelectValue placeholder="Religion" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_VALUE}>All Religions</SelectItem>
+              {RELIGION_OPTIONS.map((r) => (
+                <SelectItem key={r} value={r}>{r}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Marital Status */}
+          <Select
+            value={searchParams.get("marital_status") || ALL_VALUE}
+            onValueChange={(value) => updateFilters({ marital_status: value === ALL_VALUE ? undefined : value })}
+          >
+            <SelectTrigger className="w-full lg:w-[160px] h-10 shadow-sm">
+              <SelectValue placeholder="Marital Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value={ALL_VALUE}>All Statuses</SelectItem>
+              {MARITAL_STATUS_OPTIONS.map((s) => (
+                <SelectItem key={s} value={s}>{s}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+
+          {/* Clear Filters - mobile only */}
+          {activeFilterCount > 0 && (
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={clearFilters}
+              className="h-10 sm:hidden shadow-sm"
+            >
+              <X className="mr-2 h-4 w-4" />
+              Clear Filters
+              <Badge variant="secondary" className="ml-2 px-1.5 min-w-[20px] justify-center">
+                {activeFilterCount}
+              </Badge>
+            </Button>
+          )}
+        </div>
       </div>
 
       {/* Active Filters Display */}

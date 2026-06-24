@@ -107,11 +107,11 @@ export default function SelectionDetailPage() {
   const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
   const medicalDocument = trackingCandidate?.documents?.find((document) => document.document_type === "medical")
 
-  const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
+  const handleUpdateStep = (stepName: string, status: string, notes?: string, cocStatus?: string, arrivalCity?: string) => {
     if (!candidateId || !canUpdateProgress) {
       return
     }
-    updateStep({ step_name: stepName, status, notes })
+    updateStep({ step_name: stepName, status, notes, coc_status: cocStatus, arrival_city: arrivalCity })
   }
 
   const handleRemoveMedicalDocument = async () => {

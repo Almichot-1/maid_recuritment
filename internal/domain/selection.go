@@ -34,6 +34,17 @@ func (Selection) TableName() string {
 	return "selections"
 }
 
+type SelectionFilters struct {
+	SelectedBy    string
+	CandidateOwner string
+	PairingID     string
+	Statuses      []SelectionStatus
+	SortBy        string
+	SortOrder     string
+	Page          int
+	PageSize      int
+}
+
 type SelectionRepository interface {
 	Create(selection *Selection) error
 	GetByID(id string) (*Selection, error)
@@ -43,6 +54,8 @@ type SelectionRepository interface {
 	GetBySelectedByAndPairing(userID, pairingID string) ([]*Selection, error)
 	GetByCandidateOwner(userID string) ([]*Selection, error)
 	GetByCandidateOwnerAndPairing(userID, pairingID string) ([]*Selection, error)
+	List(filters SelectionFilters) ([]*Selection, error)
+	Count(filters SelectionFilters) (int64, error)
 	UpdateStatus(id string, status SelectionStatus) error
 	GetExpiredSelections() ([]*Selection, error)
 }

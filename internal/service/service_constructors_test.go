@@ -35,6 +35,12 @@ func (m *statusStepCandidateInitMock) Lock(candidateID, lockedBy string, expires
 	return nil
 }
 func (m *statusStepCandidateInitMock) Unlock(candidateID string) error { return nil }
+func (m *statusStepCandidateInitMock) GetByIDs(ids []string) ([]*domain.Candidate, error) {
+	return nil, nil
+}
+func (m *statusStepCandidateInitMock) GetByIDLean(id string) (*domain.Candidate, error) {
+	return m.GetByID(id)
+}
 
 func TestServiceConstructorsValidation(t *testing.T) {
 	_, err := NewSelectionService(nil, &candidateRepositoryMock{}, &notificationSenderMock{foreignByID: map[string]bool{}})
@@ -42,9 +48,9 @@ func TestServiceConstructorsValidation(t *testing.T) {
 	_, err = NewSelectionService(&selectionRepositoryMock{}, nil, &notificationSenderMock{foreignByID: map[string]bool{}})
 	require.Error(t, err)
 
-	_, err = NewCandidateService(nil, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{})
+	_, err = NewCandidateService(nil, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
-	_, err = NewCandidateService(&candidateRepoBehaviorMock{}, nil, &storageServiceMock{}, &PDFService{})
+	_, err = NewCandidateService(&candidateRepoBehaviorMock{}, nil, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
 	require.Error(t, err)
 
 	_, err = NewApprovalService(nil, &selectionRepositoryMock{}, &candidateRepositoryMock{}, &StatusStepService{}, &notificationSenderMock{foreignByID: map[string]bool{}})

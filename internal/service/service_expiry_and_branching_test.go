@@ -73,6 +73,12 @@ func (m *selectionRepoExpiredOnlyMock) UpdateStatus(id string, status domain.Sel
 func (m *selectionRepoExpiredOnlyMock) GetExpiredSelections() ([]*domain.Selection, error) {
 	return m.expired, nil
 }
+func (m *selectionRepoExpiredOnlyMock) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	return nil, nil
+}
+func (m *selectionRepoExpiredOnlyMock) Count(filters domain.SelectionFilters) (int64, error) {
+	return 0, nil
+}
 
 type statusStepRepoWithDBMock struct {
 	db *gorm.DB
@@ -81,6 +87,12 @@ type statusStepRepoWithDBMock struct {
 func (m *statusStepRepoWithDBMock) DB() *gorm.DB                         { return m.db }
 func (m *statusStepRepoWithDBMock) Create(step *domain.StatusStep) error { return nil }
 func (m *statusStepRepoWithDBMock) GetByCandidateID(candidateID string) ([]*domain.StatusStep, error) {
+	return nil, nil
+}
+func (m *statusStepRepoWithDBMock) GetByCandidateIDs(candidateIDs []string) ([]*domain.StatusStep, error) {
+	return nil, nil
+}
+func (m *statusStepRepoWithDBMock) GetByCandidateIDAndStepName(candidateID, stepName string) (*domain.StatusStep, error) {
 	return nil, nil
 }
 func (m *statusStepRepoWithDBMock) Update(step *domain.StatusStep) error { return nil }
@@ -237,6 +249,12 @@ type statusStepRepoNoDBMock struct{}
 
 func (m *statusStepRepoNoDBMock) Create(step *domain.StatusStep) error { return nil }
 func (m *statusStepRepoNoDBMock) GetByCandidateID(candidateID string) ([]*domain.StatusStep, error) {
+	return nil, nil
+}
+func (m *statusStepRepoNoDBMock) GetByCandidateIDs(candidateIDs []string) ([]*domain.StatusStep, error) {
+	return nil, nil
+}
+func (m *statusStepRepoNoDBMock) GetByCandidateIDAndStepName(candidateID, stepName string) (*domain.StatusStep, error) {
 	return nil, nil
 }
 func (m *statusStepRepoNoDBMock) Update(step *domain.StatusStep) error { return nil }

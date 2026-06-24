@@ -16,6 +16,7 @@ func (noopAuditLogRepository) Create(*domain.AuditLog) error { return nil }
 func (noopAuditLogRepository) List(domain.AuditLogFilters) ([]*domain.AuditLog, error) {
 	return []*domain.AuditLog{}, nil
 }
+func (noopAuditLogRepository) Count(domain.AuditLogFilters) (int64, error) { return 0, nil }
 
 func main() {
 	cfg, err := config.Load()

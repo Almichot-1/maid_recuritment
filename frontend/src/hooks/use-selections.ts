@@ -108,25 +108,25 @@ export function useUploadSelectionDocument(selectionId: string) {
   });
 }
 
-export function useMySelections(sortBy?: string, limit?: number, offset?: number) {
+export function useMySelections(sortBy?: string, page?: number, pageSize?: number) {
   const { user } = useCurrentUser();
   const activePairingId = usePairingStore((state) => state.activePairingId);
   const isPairingReady = usePairingStore((state) => state.isReady);
 
   return useQuery({
-    queryKey: ['my-selections', activePairingId, sortBy || 'newest', limit, offset],
+    queryKey: ['my-selections', activePairingId, sortBy || 'newest', page, pageSize],
     queryFn: async () => {
       const params = new URLSearchParams();
       if (sortBy) {
         params.append('sortBy', sortBy);
       }
-      if (limit) {
-        params.append('limit', limit.toString());
+      if (page) {
+        params.append('page', page.toString());
       }
-      if (offset !== undefined) {
-        params.append('offset', offset.toString());
+      if (pageSize) {
+        params.append('page_size', pageSize.toString());
       }
-      const response = await api.get<{ selections: Selection[]; pagination: { limit: number; offset: number; total: number; has_more: boolean } }>(`/selections/my?${params.toString()}`);
+      const response = await api.get<{ selections: Selection[]; pagination: { page: number; page_size: number; total: number; has_more: boolean } }>(`/selections/my?${params.toString()}`);
       return response.data;
     },
     enabled: !!user && isPairingReady && !!activePairingId,

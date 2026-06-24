@@ -1,4 +1,4 @@
-import { useEffect, useRef, useCallback } from 'react'
+import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
 
 interface SelectionUpdateMessage {
@@ -21,6 +21,8 @@ export function useSelectionUpdates(pairingId?: string) {
   const queryClient = useQueryClient()
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null)
   const isConnectingRef = useRef(false)
+  const [isConnected, setIsConnected] = useState(false)
+  const retryDelayRef = useRef(1000)
 
   const connect = useCallback(() => {
     // Don't reconnect if already connecting/connected
@@ -41,6 +43,8 @@ export function useSelectionUpdates(pairingId?: string) {
       ws.onopen = () => {
         console.log('[SelectionUpdates] WebSocket connected')
         isConnectingRef.current = false
+        setIsConnected(true)
+        retryDelayRef.current = 1000
         // Clear any pending reconnect attempts
         if (reconnectTimeoutRef.current) {
           clearTimeout(reconnectTimeoutRef.current)
@@ -93,12 +97,16 @@ export function useSelectionUpdates(pairingId?: string) {
       ws.onclose = () => {
         console.log('[SelectionUpdates] WebSocket disconnected')
         isConnectingRef.current = false
+        setIsConnected(false)
 
-        // Attempt to reconnect after 3 seconds
-        reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('[SelectionUpdates] Attempting to reconnect...')
-          connect()
-        }, 3000)
+        const reconnectWithBackoff = () => {
+          reconnectTimeoutRef.current = setTimeout(() => {
+            console.log('[SelectionUpdates] Attempting to reconnect...')
+            retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000)
+            connect()
+          }, retryDelayRef.current)
+        }
+        reconnectWithBackoff()
       }
 
       wsRef.current = ws
@@ -106,8 +114,14 @@ export function useSelectionUpdates(pairingId?: string) {
       console.error('[SelectionUpdates] Failed to create WebSocket:', error)
       isConnectingRef.current = false
 
-      // Attempt to reconnect
-      reconnectTimeoutRef.current = setTimeout(connect, 3000)
+      const reconnectWithBackoff = () => {
+        reconnectTimeoutRef.current = setTimeout(() => {
+          console.log('[SelectionUpdates] Attempting to reconnect...')
+          retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000)
+          connect()
+        }, retryDelayRef.current)
+      }
+      reconnectWithBackoff()
     }
   }, [queryClient, pairingId])
 
@@ -134,7 +148,7 @@ export function useSelectionUpdates(pairingId?: string) {
   }, [connect, disconnect])
 
   return {
-    isConnected: wsRef.current?.readyState === WebSocket.OPEN,
+    isConnected,
     disconnect,
     reconnect: connect,
   }

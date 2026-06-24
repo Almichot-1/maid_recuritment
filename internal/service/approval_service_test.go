@@ -96,6 +96,12 @@ func (m *statusStepRepositoryMock) Create(step *domain.StatusStep) error { retur
 func (m *statusStepRepositoryMock) GetByCandidateID(candidateID string) ([]*domain.StatusStep, error) {
 	return nil, nil
 }
+func (m *statusStepRepositoryMock) GetByCandidateIDs(candidateIDs []string) ([]*domain.StatusStep, error) {
+	return nil, nil
+}
+func (m *statusStepRepositoryMock) GetByCandidateIDAndStepName(candidateID, stepName string) (*domain.StatusStep, error) {
+	return nil, nil
+}
 func (m *statusStepRepositoryMock) Update(step *domain.StatusStep) error { return nil }
 
 func setupApprovalService(t *testing.T) (*ApprovalService, *gorm.DB) {

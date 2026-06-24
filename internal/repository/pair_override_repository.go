@@ -94,3 +94,43 @@ func (r *GormCandidatePairOverrideRepository) ListByCandidateID(candidateID stri
 	}
 	return overrides, nil
 }
+
+const pairOverrideBatchSize = 100
+
+// BulkUpsert inserts or updates overrides for multiple candidates in one batch.
+// Rows are chunked into batches of 100 to stay within SQL parameter limits.
+func (r *GormCandidatePairOverrideRepository) BulkUpsert(overrides []*domain.CandidatePairOverride) error {
+	if len(overrides) == 0 {
+		return nil
+	}
+
+	now := time.Now().UTC()
+	for _, o := range overrides {
+		o.UpdatedAt = now
+		if o.CreatedAt.IsZero() {
+			o.CreatedAt = now
+		}
+	}
+
+	for i := 0; i < len(overrides); i += pairOverrideBatchSize {
+		end := i + pairOverrideBatchSize
+		if end > len(overrides) {
+			end = len(overrides)
+		}
+		batch := overrides[i:end]
+		if err := r.db.
+			Clauses(clause.OnConflict{
+				Columns: []clause.Column{
+					{Name: "pairing_id"},
+					{Name: "candidate_id"},
+				},
+				DoUpdates: clause.AssignmentColumns([]string{
+					"country_applied", "salary_offered", "updated_at",
+				}),
+			}).
+			Create(batch).Error; err != nil {
+			return fmt.Errorf("bulk upsert pair overrides: %w", err)
+		}
+	}
+	return nil
+}

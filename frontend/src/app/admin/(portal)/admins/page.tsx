@@ -80,7 +80,7 @@ export default function AdminManagementPage() {
       ) : null}
 
       <Card className="border-slate-200 bg-white/90">
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>

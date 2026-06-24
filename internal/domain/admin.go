@@ -103,6 +103,7 @@ type AdminSetupTokenRepository interface {
 type AuditLogRepository interface {
 	Create(log *AuditLog) error
 	List(filters AuditLogFilters) ([]*AuditLog, error)
+	Count(filters AuditLogFilters) (int64, error)
 }
 
 type AuditLogFilters struct {

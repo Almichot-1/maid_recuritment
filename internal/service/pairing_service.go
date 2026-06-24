@@ -257,7 +257,7 @@ func (s *PairingService) UnshareCandidate(candidateID, pairingID, sharedBy strin
 	return nil
 }
 
-func (s *PairingService) UpdatePairingDefaults(pairingID, userID, country, currency string) (*domain.AgencyPairing, error) {
+func (s *PairingService) UpdatePairingDefaults(pairingID, userID, country, currency, salary string) (*domain.AgencyPairing, error) {
 	pairing, err := s.pairingRepository.GetByID(strings.TrimSpace(pairingID))
 	if err != nil {
 		if errors.Is(err, repository.ErrAgencyPairingNotFound) {
@@ -271,8 +271,10 @@ func (s *PairingService) UpdatePairingDefaults(pairingID, userID, country, curre
 
 	c := strings.TrimSpace(country)
 	curr := strings.TrimSpace(currency)
+	sal := strings.TrimSpace(salary)
 	pairing.DefaultCountry = &c
 	pairing.DefaultCurrency = &curr
+	pairing.DefaultSalary = &sal
 
 	if err := s.pairingRepository.Update(pairing); err != nil {
 		return nil, err

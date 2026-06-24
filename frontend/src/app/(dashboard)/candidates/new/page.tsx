@@ -9,9 +9,10 @@ import Link from "next/link"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { isPublishPairingSelectionError, publishCandidateById, publishCandidateWithPairingById, uploadCandidateDocumentFile, useCreateCandidate } from "@/hooks/use-candidates"
 import { usePairingContext } from "@/hooks/use-pairings"
-import { CandidateForm, CandidateFormValues } from "@/components/candidates/candidate-form"
+import { CandidateForm, CandidateFormValues, PartnerOverrideEntry } from "@/components/candidates/candidate-form"
 import { SubmissionProgressOverlay } from "@/components/candidates/submission-progress-overlay"
 import { CandidateInput } from "@/lib/validations"
+import api from "@/lib/api"
 import { PageHeader } from "@/components/layout/page-header"
 import { Button } from "@/components/ui/button"
 import {
@@ -73,6 +74,15 @@ export default function NewCandidatePage() {
     photo: 0,
     video: 0,
   })
+  const draftTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  const handleDraftChange = React.useCallback((draft: CandidateFormValues) => {
+    if (draftTimerRef.current) clearTimeout(draftTimerRef.current)
+    draftTimerRef.current = setTimeout(() => {
+      setDraftInitialData(draft)
+      saveCandidateDraftFormValues(draft)
+    }, 500)
+  }, [])
 
   // Guard protecting Foreign Agents from accessing this component
   React.useEffect(() => {
@@ -206,7 +216,7 @@ export default function NewCandidatePage() {
 
   const handleSubmit = async (
     data: CandidateInput,
-    { submitter = "default" }: { submitter?: SubmissionIntent } = {}
+    { submitter = "default", partnerOverrides }: { submitter?: SubmissionIntent; partnerOverrides?: PartnerOverrideEntry[] } = {}
   ) => {
     const candidateData = {
       ...data,
@@ -221,26 +231,44 @@ export default function NewCandidatePage() {
       const response = await createCandidate(candidateData)
       const candidateID = response.candidate.id
 
+      // Save per-partner overrides
+      if (partnerOverrides?.length) {
+        for (const ov of partnerOverrides) {
+          try {
+            await api.put(`/candidates/${candidateID}/pair-override`, {
+              pairing_id: ov.pairing_id,
+              country_applied: ov.country_applied,
+              salary_offered: ov.salary_offered,
+            })
+          } catch {
+            toast.error(`Failed to save override for ${ov.pairing_id}`)
+          }
+        }
+      }
+
       if (queuedDocuments.length > 0) {
         setSubmissionStage("uploading")
 
-        for (const [documentType, file] of queuedDocuments) {
+        await Promise.allSettled(queuedDocuments.map(async ([documentType, file]) => {
           setActiveUpload(documentType)
-          await uploadCandidateDocumentFile(candidateID, {
-            file,
-            type: documentType,
-            onProgress: (progress) => {
-              setUploadProgress((current) => ({
-                ...current,
-                [documentType]: progress,
-              }))
-            },
-          })
-          setUploadProgress((current) => ({
-            ...current,
-            [documentType]: 100,
-          }))
-        }
+          try {
+            await uploadCandidateDocumentFile(candidateID, {
+              file,
+              type: documentType,
+              onProgress: (progress) => {
+                setUploadProgress((current) => ({
+                  ...current,
+                  [documentType]: progress,
+                }))
+              },
+            })
+          } finally {
+            setUploadProgress((current) => ({
+              ...current,
+              [documentType]: 100,
+            }))
+          }
+        }))
 
         setActiveUpload(null)
         toast.success("Candidate and documents saved successfully")
@@ -389,10 +417,7 @@ export default function NewCandidatePage() {
           onSubmit={handleSubmit} 
           isLoading={isPending || submissionStage !== "idle"} 
           onDocumentChange={handleDocumentChange}
-          onDraftChange={(draft) => {
-            setDraftInitialData(draft)
-            saveCandidateDraftFormValues(draft)
-          }}
+          onDraftChange={handleDraftChange}
           onClearDraft={() => {
             setDraftInitialData(undefined)
             void clearCandidateDraft()

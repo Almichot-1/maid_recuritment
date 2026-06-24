@@ -30,6 +30,8 @@ type StatusStepResponse struct {
 	CompletedAt        *string           `json:"completed_at,omitempty"`
 	Notes              string            `json:"notes,omitempty"`
 	MedicalDocumentURL *string           `json:"medical_document_url,omitempty"`
+	CoCStatus          *string           `json:"coc_status,omitempty"`
+	ArrivalCity        *string           `json:"arrival_city,omitempty"`
 	UpdatedBy          UpdatedByResponse `json:"updated_by"`
 	UpdatedAt          string            `json:"updated_at"`
 }
@@ -43,8 +45,19 @@ type ProgressResponse struct {
 }
 
 type UpdateStatusStepRequest struct {
-	Status string `json:"status"`
-	Notes  string `json:"notes"`
+	Status      string  `json:"status"`
+	Notes       string  `json:"notes"`
+	CoCStatus   *string `json:"coc_status,omitempty"`
+	ArrivalCity *string `json:"arrival_city,omitempty"`
+}
+
+type BatchUpdateStatusRequest struct {
+	CandidateIDs []string `json:"candidate_ids"`
+	StepName     string   `json:"step_name"`
+	Status       string   `json:"status"`
+	Notes        string   `json:"notes,omitempty"`
+	CoCStatus    *string  `json:"coc_status,omitempty"`
+	ArrivalCity  *string  `json:"arrival_city,omitempty"`
 }
 
 type StatusHandler struct {
@@ -146,7 +159,10 @@ func (h *StatusHandler) UpdateStatusStep(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.statusStepService.UpdateStep(candidateID, stepName, userID, status, req.Notes); err != nil {
+	if err := h.statusStepService.UpdateStepWithExtras(candidateID, stepName, userID, status, req.Notes, service.StepExtras{
+		CoCStatus:   req.CoCStatus,
+		ArrivalCity: req.ArrivalCity,
+	}); err != nil {
 		h.writeStatusError(w, err)
 		return
 	}
@@ -158,6 +174,62 @@ func (h *StatusHandler) UpdateStatusStep(w http.ResponseWriter, r *http.Request)
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, response)
+}
+
+func (h *StatusHandler) BatchUpdateStatusSteps(w http.ResponseWriter, r *http.Request) {
+	userID, role, ok := authContext(r)
+	if !ok {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	if role != string(domain.EthiopianAgent) {
+		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	var req BatchUpdateStatusRequest
+	if err := decodeJSONBody(w, r, &req, 32<<10); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+
+	stepName, err := canonicalStepName(strings.TrimSpace(req.StepName))
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid step name"})
+		return
+	}
+
+	status := domain.StepStatus(strings.TrimSpace(req.Status))
+	if status != domain.Pending && status != domain.InProgress && status != domain.Completed && status != domain.Failed {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status must be pending, in_progress, completed, or failed"})
+		return
+	}
+
+	results := h.statusStepService.BatchUpdateSteps(req.CandidateIDs, stepName, status, req.Notes, req.CoCStatus, req.ArrivalCity, userID)
+
+	updated := 0
+	failed := make([]map[string]string, 0)
+	for _, result := range results {
+		if result.Error != nil {
+			failed = append(failed, map[string]string{
+				"candidate_id": result.CandidateID,
+				"error":        result.Error.Error(),
+			})
+		} else {
+			updated++
+		}
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"updated": updated,
+		"total":   len(req.CandidateIDs),
+		"failed":  failed,
+	})
 }
 
 func (h *StatusHandler) buildProgressResponse(candidate *domain.Candidate) (*ProgressResponse, error) {
@@ -214,6 +286,8 @@ func (h *StatusHandler) buildProgressResponse(candidate *domain.Candidate) (*Pro
 			CompletedAt:        completedAt,
 			Notes:              step.Notes,
 			MedicalDocumentURL: stepMedicalDocumentURL,
+			CoCStatus:          step.CoCStatus,
+			ArrivalCity:        step.ArrivalCity,
 			UpdatedBy: UpdatedByResponse{
 				ID:   step.UpdatedBy,
 				Name: userName,
@@ -313,14 +387,20 @@ func canonicalStepName(stepName string) (string, error) {
 	normalized := normalizeStepName(stepName)
 	mapping := map[string]string{
 		normalizeStepName(domain.Medical):         domain.Medical,
-		normalizeStepName(domain.CoCPending):      domain.CoCPending,
-		normalizeStepName(domain.CoCOnline):       domain.CoCOnline,
-		normalizeStepName(domain.LMISPending):     domain.LMISPending,
-		normalizeStepName(domain.LMISIssued):      domain.LMISIssued,
-		normalizeStepName(domain.TicketPending):   domain.TicketPending,
-		normalizeStepName(domain.TicketBooked):    domain.TicketBooked,
-		normalizeStepName(domain.TicketConfirmed): domain.TicketConfirmed,
-		normalizeStepName(domain.Arrived):         domain.Arrived,
+		normalizeStepName(domain.CoC):             domain.CoC,
+		normalizeStepName(domain.Visa):            domain.Visa,
+		normalizeStepName(domain.Ticket):          domain.Ticket,
+		normalizeStepName(domain.ArrivalCity):     domain.ArrivalCity,
+
+		// Legacy mappings
+		normalizeStepName(domain.CoCPending):      domain.CoC,
+		normalizeStepName(domain.CoCOnline):       domain.CoC,
+		normalizeStepName(domain.LMISPending):     domain.Visa,
+		normalizeStepName(domain.LMISIssued):      domain.Visa,
+		normalizeStepName(domain.TicketPending):   domain.Ticket,
+		normalizeStepName(domain.TicketBooked):    domain.Ticket,
+		normalizeStepName(domain.TicketConfirmed): domain.Ticket,
+		normalizeStepName(domain.Arrived):         domain.ArrivalCity,
 	}
 	value, ok := mapping[normalized]
 	if !ok {

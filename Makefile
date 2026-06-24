@@ -1,4 +1,4 @@
-.PHONY: run run-api run-expiry-worker build-api build-expiry-worker migrate-up migrate-down test
+.PHONY: run run-api run-expiry-worker build-api build-expiry-worker migrate-up migrate-down test lint coverage bench
 
 run:
 	go run ./cmd/api
@@ -23,3 +23,13 @@ migrate-down:
 
 test:
 	go test ./...
+
+lint:
+	golangci-lint run
+
+coverage:
+	go test -count=1 -coverprofile=coverage.out ./...
+	go tool cover -html=coverage.out -o coverage.html
+
+bench:
+	go test -bench=. -benchmem ./...

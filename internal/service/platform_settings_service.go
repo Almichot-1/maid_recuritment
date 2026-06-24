@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"maid-recruitment-tracking/internal/domain"
 	"maid-recruitment-tracking/internal/repository"
@@ -14,6 +15,12 @@ var ErrInvalidPlatformSettings = errors.New("invalid platform settings")
 
 type PlatformSettingsReader interface {
 	Get() (*domain.PlatformSettings, error)
+}
+
+type settingsReaderFunc func() (*domain.PlatformSettings, error)
+
+func (f settingsReaderFunc) Get() (*domain.PlatformSettings, error) {
+	return f()
 }
 
 type UpdatePlatformSettingsInput struct {
@@ -33,6 +40,7 @@ type UpdatePlatformSettingsInput struct {
 type PlatformSettingsService struct {
 	settingsRepository domain.PlatformSettingsRepository
 	auditRepository    domain.AuditLogRepository
+	cache              *SettingsCacheService
 }
 
 func NewPlatformSettingsService(settingsRepository domain.PlatformSettingsRepository, auditRepository domain.AuditLogRepository) (*PlatformSettingsService, error) {
@@ -42,13 +50,19 @@ func NewPlatformSettingsService(settingsRepository domain.PlatformSettingsReposi
 	if auditRepository == nil {
 		return nil, fmt.Errorf("audit repository is nil")
 	}
-	return &PlatformSettingsService{
+	svc := &PlatformSettingsService{
 		settingsRepository: settingsRepository,
 		auditRepository:    auditRepository,
-	}, nil
+	}
+	svc.cache = NewSettingsCacheService(settingsReaderFunc(svc.getFromDB), 5*time.Minute)
+	return svc, nil
 }
 
 func (s *PlatformSettingsService) Get() (*domain.PlatformSettings, error) {
+	return s.cache.Get()
+}
+
+func (s *PlatformSettingsService) getFromDB() (*domain.PlatformSettings, error) {
 	settings, err := s.settingsRepository.Get()
 	if err != nil {
 		if errors.Is(err, repository.ErrPlatformSettingsNotFound) {
@@ -115,6 +129,7 @@ func (s *PlatformSettingsService) Update(adminID string, input UpdatePlatformSet
 		}
 	}
 
+	s.cache.InvalidateCache()
 	return settings, nil
 }
 

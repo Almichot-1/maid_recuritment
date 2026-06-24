@@ -42,8 +42,10 @@ export default function AdminDashboardPage() {
   const { data: stats, isLoading: statsLoading } = useAdminDashboard()
   const { data: pendingAgencies = [] } = usePendingAgencies("all")
   const { data: agencies = [] } = useAgencies({ status: "all", role: "all", search: "" })
-  const { data: candidates = [] } = useAdminCandidates()
-  const { data: selections = [] } = useAdminSelections()
+  const { data: candidatesData } = useAdminCandidates()
+  const { data: selectionsData } = useAdminSelections()
+  const candidates = candidatesData?.candidates ?? []
+  const selections = selectionsData?.selections ?? []
 
   const registrationTrend = React.useMemo(
     () => buildDailySeries(agencies.map((agency) => agency.registration_date), 7),

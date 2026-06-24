@@ -7,6 +7,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"time"
 )
 
 type User struct {
@@ -17,6 +18,14 @@ type User struct {
 	Role         string `gorm:"type:user_role;not null"`
 	CompanyName  string
 	IsActive     bool `gorm:"default:true"`
+}
+
+type AgencyPairing struct {
+	ID              string    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
+	EthiopianUserID string    `gorm:"type:uuid;not null"`
+	ForeignUserID   string    `gorm:"type:uuid;not null"`
+	Status          string    `gorm:"type:agency_pairing_status;not null;default:'active'"`
+	ApprovedAt      time.Time `gorm:"type:timestamptz"`
 }
 
 func main() {
@@ -55,6 +64,17 @@ func main() {
 		IsActive:     true,
 	}
 
+	// Jordan Agent
+	jordan := User{
+		ID:           "33333333-3333-3333-3333-333333333333",
+		Email:        "jordan@test.com",
+		PasswordHash: string(hash),
+		FullName:     "Jordan Test Agent",
+		Role:         "foreign_agent",
+		CompanyName:  "Jordan Agency",
+		IsActive:     true,
+	}
+
 	// Insert users
 	if err := db.Table("users").Create(&ethiopian).Error; err != nil {
 		log.Printf("Ethiopian agent may already exist: %v", err)
@@ -68,6 +88,38 @@ func main() {
 		fmt.Println("✓ Created Foreign Agent")
 	}
 
+	if err := db.Table("users").Create(&jordan).Error; err != nil {
+		log.Printf("Jordan agent may already exist: %v", err)
+	} else {
+		fmt.Println("✓ Created Jordan Agent")
+	}
+
+	// Create pairings
+	foreignPairing := AgencyPairing{
+		EthiopianUserID: ethiopian.ID,
+		ForeignUserID:   foreign.ID,
+		Status:          "active",
+		ApprovedAt:      time.Now(),
+	}
+	jordanPairing := AgencyPairing{
+		EthiopianUserID: ethiopian.ID,
+		ForeignUserID:   jordan.ID,
+		Status:          "active",
+		ApprovedAt:      time.Now(),
+	}
+
+	if err := db.Table("agency_pairings").Create(&foreignPairing).Error; err != nil {
+		log.Printf("Foreign pairing may already exist: %v", err)
+	} else {
+		fmt.Println("✓ Created pairing with Foreign Agent")
+	}
+
+	if err := db.Table("agency_pairings").Create(&jordanPairing).Error; err != nil {
+		log.Printf("Jordan pairing may already exist: %v", err)
+	} else {
+		fmt.Println("✓ Created pairing with Jordan Agent")
+	}
+
 	fmt.Println("\n=== Test Credentials ===")
 	fmt.Println("\nEthiopian Agent (Creates Candidates):")
 	fmt.Println("  Email: ethiopian@test.com")
@@ -77,5 +129,9 @@ func main() {
 	fmt.Println("  Email: foreign@test.com")
 	fmt.Println("  Password: password123")
 	fmt.Println("  Company: International Recruitment Co")
+	fmt.Println("\nJordan Agent (Selects Candidates):")
+	fmt.Println("  Email: jordan@test.com")
+	fmt.Println("  Password: password123")
+	fmt.Println("  Company: Jordan Agency")
 	fmt.Println("\n========================")
 }

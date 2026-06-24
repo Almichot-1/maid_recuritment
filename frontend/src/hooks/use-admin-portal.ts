@@ -137,38 +137,59 @@ export function useUpdateAgencyStatus() {
   })
 }
 
-export function useAdminCandidates(status?: string) {
+export function useAdminCandidates(
+  status?: string,
+  page: number = 1,
+  pageSize: number = 20
+) {
   return useQuery({
-    queryKey: ["admin-candidates", status ?? "all"],
+    queryKey: ["admin-candidates", status ?? "all", page, pageSize],
     queryFn: async () => {
-      const response = await adminApi.get<{ candidates: AdminCandidateOverview[] }>("/admin/candidates", {
-        params: status ? { status } : undefined,
+      const response = await adminApi.get<{
+        candidates: AdminCandidateOverview[]
+        meta: { page: number; page_size: number; count: number }
+      }>("/admin/candidates", {
+        params: { ...(status ? { status } : {}), page, page_size: pageSize },
       })
-      return response.data.candidates
+      return response.data
     },
   })
 }
 
-export function useAdminSelections(status?: string) {
+export function useAdminSelections(
+  status?: string,
+  page: number = 1,
+  pageSize: number = 20
+) {
   return useQuery({
-    queryKey: ["admin-selections", status ?? "all"],
+    queryKey: ["admin-selections", status ?? "all", page, pageSize],
     queryFn: async () => {
-      const response = await adminApi.get<{ selections: AdminSelectionOverview[] }>("/admin/selections", {
-        params: status ? { status } : undefined,
+      const response = await adminApi.get<{
+        selections: AdminSelectionOverview[]
+        meta: { page: number; page_size: number; count: number }
+      }>("/admin/selections", {
+        params: { ...(status ? { status } : {}), page, page_size: pageSize },
       })
-      return response.data.selections
+      return response.data
     },
   })
 }
 
-export function useAdminAuditLogs(filters?: { admin_id?: string; action?: string; target_type?: string }) {
+export function useAdminAuditLogs(
+  filters?: { admin_id?: string; action?: string; target_type?: string },
+  page: number = 1,
+  pageSize: number = 20
+) {
   return useQuery({
-    queryKey: ["admin-audit-logs", filters ?? {}],
+    queryKey: ["admin-audit-logs", filters ?? {}, page, pageSize],
     queryFn: async () => {
-      const response = await adminApi.get<{ logs: AdminAuditLogOverview[] }>("/admin/audit-logs", {
-        params: filters,
+      const response = await adminApi.get<{
+        logs: AdminAuditLogOverview[]
+        meta: { page: number; page_size: number; count: number }
+      }>("/admin/audit-logs", {
+        params: { ...filters, page, page_size: pageSize },
       })
-      return response.data.logs
+      return response.data
     },
   })
 }

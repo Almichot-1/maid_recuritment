@@ -4,7 +4,7 @@ import * as React from "react"
 import dynamic from "next/dynamic"
 import { useRouter } from "next/navigation"
 import Link from "next/link"
-import { Loader2, Lock, PencilLine, Rocket, User, X } from "lucide-react"
+import { Loader2, Lock, PencilLine, Rocket, User, X, CheckCircle, Circle } from "lucide-react"
 
 import Image from "next/image"
 import { Candidate, CandidateStatus } from "@/types"
@@ -25,9 +25,12 @@ const SelectCandidateDialog = dynamic(
 
 interface CandidateCardProps {
   candidate: Candidate
+  selectable?: boolean
+  selected?: boolean
+  onSelectionChange?: (candidateId: string, selected: boolean) => void
 }
 
-export function CandidateCard({ candidate }: CandidateCardProps) {
+export function CandidateCard({ candidate, selectable = false, selected = false, onSelectionChange }: CandidateCardProps) {
   const router = useRouter()
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const [selectDialogOpen, setSelectDialogOpen] = React.useState(false)
@@ -37,7 +40,11 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
   const { mutate: publishCandidate, isPending: isPublishing } = usePublishCandidate(candidate.id)
 
   const handleCardClick = () => {
-    router.push(`/candidates/${candidate.id}`)
+    if (selectable && onSelectionChange) {
+      onSelectionChange(candidate.id, !selected)
+    } else {
+      router.push(`/candidates/${candidate.id}`)
+    }
   }
 
   const handleSelectClick = (e: React.MouseEvent) => {
@@ -100,8 +107,29 @@ export function CandidateCard({ candidate }: CandidateCardProps) {
               <StatusBadge status={candidate.status} />
             </div>
 
+            {/* Selection Checkbox */}
+            {selectable && (
+              <div
+                className="absolute top-3 left-3 z-10"
+                onClick={(e) => {
+                  e.stopPropagation()
+                  if (onSelectionChange) {
+                    onSelectionChange(candidate.id, !selected)
+                  }
+                }}
+              >
+                <div className="bg-white dark:bg-background rounded-full p-1 shadow-md cursor-pointer hover:scale-110 transition-transform">
+                  {selected ? (
+                    <CheckCircle className="h-6 w-6 text-emerald-600 fill-emerald-100" />
+                  ) : (
+                    <Circle className="h-6 w-6 text-gray-400" />
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Lock Indicator */}
-            {(candidate.status === CandidateStatus.LOCKED || candidate.status === CandidateStatus.IN_PROGRESS) && (
+            {!selectable && (candidate.status === CandidateStatus.LOCKED || candidate.status === CandidateStatus.IN_PROGRESS) && (
               <div className="absolute top-3 left-3">
                 <div className="flex items-center gap-1.5 bg-purple-500/90 text-white px-2 py-1 rounded-md text-xs font-semibold shadow-md">
                   <Lock className="h-3 w-3" />

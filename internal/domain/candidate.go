@@ -34,8 +34,8 @@ type Candidate struct {
 	EducationLevel       string
 	ExperienceYears      *int
 	CountryOfExperience  string
-	CountryApplied       string `gorm:"column:country_applied"`
-	SalaryOffered        string `gorm:"column:salary_offered"`
+	CountryApplied       string `gorm:"-"`
+	SalaryOffered        string `gorm:"-"`
 	Languages            json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
 	Skills               json.RawMessage `gorm:"type:jsonb;not null;default:'[]'::jsonb"`
 	Status               CandidateStatus `gorm:"type:candidate_status;not null;default:draft"`
@@ -68,23 +68,32 @@ func (CandidateDocument) TableName() string {
 }
 
 type CandidateFilters struct {
-	Statuses      []CandidateStatus
-	MinAge        *int
-	MaxAge        *int
-	MinExperience *int
-	MaxExperience *int
-	Languages     []string
-	Search        string
-	CreatedBy     string
-	PairingID     string
-	SharedOnly    bool
-	Page          int
-	PageSize      int
+	Statuses        []CandidateStatus
+	MinAge          *int
+	MaxAge          *int
+	MinExperience   *int
+	MaxExperience   *int
+	Languages       []string
+	Search          string
+	Religion        string
+	MaritalStatus   string
+	Nationality     string
+	CountryApplied  string
+	SalaryOffered   string
+	Skills          []string
+	CreatedBy       string
+	PairingID       string
+	SharedOnly      bool
+	SortBy          string
+	SortOrder       string
+	Page            int
+	PageSize        int
 }
 
 type CandidateRepository interface {
 	Create(candidate *Candidate) error
 	GetByID(id string) (*Candidate, error)
+	GetByIDs(ids []string) ([]*Candidate, error)
 	// GetByIDLean fetches only the columns needed for ownership and status
 	// checks (id, created_by, status, locked_by, lock_expires_at). It does NOT
 	// preload Documents, so it is significantly cheaper than GetByID.

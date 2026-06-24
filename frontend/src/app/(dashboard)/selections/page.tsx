@@ -33,13 +33,12 @@ export default function SelectionsPage() {
   const { activeWorkspace } = usePairingContext()
   const [sortBy, setSortBy] = React.useState<"newest" | "expiring">("newest")
   const [page, setPage] = React.useState(1)
-  const limit = 25
-  const offset = (page - 1) * limit
-  const { data: selectionsData, isLoading, refetch } = useMySelections(sortBy, limit, offset)
+  const pageSize = 25
+  const { data: selectionsData, isLoading, refetch } = useMySelections(sortBy, page, pageSize)
   const selections = React.useMemo(() => selectionsData?.selections || [], [selectionsData?.selections])
   const pagination = selectionsData?.pagination
   
-  useSelectionUpdates(activeWorkspace?.id)
+  const { isConnected: isWebSocketConnected } = useSelectionUpdates(activeWorkspace?.id)
 
   const activeSelections = React.useMemo(
     () => selections?.filter((selection) => selection.status === SelectionStatus.PENDING) || [],
@@ -73,13 +72,13 @@ export default function SelectionsPage() {
 
   React.useEffect(() => {
     const interval = setInterval(() => {
-      if (activeSelections.length > 0) {
+      if (activeSelections.length > 0 && !isWebSocketConnected) {
         refetch()
       }
-    }, 30000)
+    }, 300000)
 
     return () => clearInterval(interval)
-  }, [activeSelections.length, refetch])
+  }, [activeSelections.length, refetch, isWebSocketConnected])
 
   React.useEffect(() => {
     const nextTab = pickInitialTab(counts)
@@ -183,13 +182,15 @@ export default function SelectionsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as SelectionTab)} className="space-y-6">
-        <TabsList className="grid h-auto w-full grid-cols-2 gap-2 p-1 md:grid-cols-5">
-          <SelectionTabTrigger value="active" label="Active" count={counts.active} tone="bg-amber-500" />
-          <SelectionTabTrigger value="approved" label="Approved" count={counts.approved} tone="bg-emerald-500" />
-          <SelectionTabTrigger value="rejected" label="Rejected" count={counts.rejected} tone="bg-rose-500" />
-          <SelectionTabTrigger value="expired" label="Expired" count={counts.expired} tone="bg-slate-500" />
-          <SelectionTabTrigger value="all" label="All" count={counts.all} />
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="inline-flex h-auto min-w-max gap-2 p-1 w-full sm:grid sm:grid-cols-5">
+            <SelectionTabTrigger value="active" label="Active" count={counts.active} tone="bg-amber-500" />
+            <SelectionTabTrigger value="approved" label="Approved" count={counts.approved} tone="bg-emerald-500" />
+            <SelectionTabTrigger value="rejected" label="Rejected" count={counts.rejected} tone="bg-rose-500" />
+            <SelectionTabTrigger value="expired" label="Expired" count={counts.expired} tone="bg-slate-500" />
+            <SelectionTabTrigger value="all" label="All" count={counts.all} />
+          </TabsList>
+        </div>
 
         <TabsContent value="active">
           {counts.active > 0 ? <SelectionList selections={activeSelections} isLoading={isLoading} sortBy={sortBy} onSortByChange={setSortBy} /> : emptyState}
@@ -234,7 +235,7 @@ export default function SelectionsPage() {
             Previous
           </Button>
           <span className="text-sm text-muted-foreground">
-            Page {page} of {Math.ceil(pagination.total / limit) || 1}
+            Page {page} of {Math.ceil(pagination.total / pagination.page_size) || 1}
           </span>
           <Button
             variant="outline"

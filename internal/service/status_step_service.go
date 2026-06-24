@@ -97,7 +97,20 @@ func (s *StatusStepService) initializeStepsWithTx(tx *gorm.DB, candidateID, owne
 	return rebuildStepsForCurrentWorkflowWithTx(tx, candidateID, ownerID, existingSteps)
 }
 
+type StepExtras struct {
+	CoCStatus   *string
+	ArrivalCity *string
+}
+
 func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, status domain.StepStatus, notes string) error {
+	return s.updateStepWithExtras(candidateID, stepName, updatedBy, status, notes, StepExtras{})
+}
+
+func (s *StatusStepService) UpdateStepWithExtras(candidateID, stepName, updatedBy string, status domain.StepStatus, notes string, extras StepExtras) error {
+	return s.updateStepWithExtras(candidateID, stepName, updatedBy, status, notes, extras)
+}
+
+func (s *StatusStepService) updateStepWithExtras(candidateID, stepName, updatedBy string, status domain.StepStatus, notes string, extras StepExtras) error {
 	if strings.TrimSpace(candidateID) == "" {
 		return fmt.Errorf("candidate id is required")
 	}
@@ -168,6 +181,8 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 	target.StepStatus = status
 	target.UpdatedBy = strings.TrimSpace(updatedBy)
 	target.Notes = strings.TrimSpace(notes)
+	target.CoCStatus = extras.CoCStatus
+	target.ArrivalCity = extras.ArrivalCity
 	if status == domain.Completed {
 		now := time.Now().UTC()
 		target.CompletedAt = &now
@@ -256,8 +271,9 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 		}
 
 		if previousStatus != domain.Completed && status == domain.Completed {
-			switch strings.TrimSpace(target.StepName) {
-			case domain.TicketBooked:
+			stepNameTrimmed := strings.TrimSpace(target.StepName)
+			switch stepNameTrimmed {
+			case domain.Ticket, domain.TicketBooked:
 				_ = s.notificationService.Send(
 					candidate.CreatedBy,
 					"Flight booked",
@@ -274,7 +290,7 @@ func (s *StatusStepService) UpdateStep(candidateID, stepName, updatedBy string, 
 					"candidate",
 					candidateID,
 				)
-			case domain.Arrived:
+			case domain.ArrivalCity, domain.Arrived:
 				_ = s.notificationService.Send(
 					candidate.CreatedBy,
 					"Candidate arrived",
@@ -338,6 +354,24 @@ func (s *StatusStepService) ensureMedicalDocument(candidateID string) error {
 	return ErrMedicalDocumentRequired
 }
 
+type BatchUpdateResult struct {
+	CandidateID string
+	Error       error
+}
+
+func (s *StatusStepService) BatchUpdateSteps(candidateIDs []string, stepName string, status domain.StepStatus, notes string, cocStatus *string, arrivalCity *string, updatedBy string) []BatchUpdateResult {
+	results := make([]BatchUpdateResult, 0, len(candidateIDs))
+	for _, candidateID := range candidateIDs {
+		extras := StepExtras{
+			CoCStatus:   cocStatus,
+			ArrivalCity: arrivalCity,
+		}
+		err := s.updateStepWithExtras(strings.TrimSpace(candidateID), stepName, updatedBy, status, notes, extras)
+		results = append(results, BatchUpdateResult{CandidateID: candidateID, Error: err})
+	}
+	return results
+}
+
 func (s *StatusStepService) GetCandidateProgress(candidateID string) ([]*domain.StatusStep, error) {
 	if strings.TrimSpace(candidateID) == "" {
 		return nil, fmt.Errorf("candidate id is required")
@@ -370,14 +404,10 @@ func (s *StatusStepService) GetCandidateProgress(candidateID string) ([]*domain.
 func predefinedStepNames() []string {
 	return []string{
 		domain.Medical,
-		domain.CoCPending,
-		domain.CoCOnline,
-		domain.LMISPending,
-		domain.LMISIssued,
-		domain.TicketPending,
-		domain.TicketBooked,
-		domain.TicketConfirmed,
-		domain.Arrived,
+		domain.CoC,
+		domain.Visa,
+		domain.Ticket,
+		domain.ArrivalCity,
 	}
 }
 

@@ -32,77 +32,79 @@ export function CandidateTable({ candidates }: CandidateTableProps) {
   return (
     <>
       <Card className="overflow-hidden rounded-2xl border bg-card shadow-sm">
-        <Table>
-          <TableHeader>
-            <TableRow>
-              <TableHead>Candidate</TableHead>
-              <TableHead>Age</TableHead>
-              <TableHead>Experience</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Languages</TableHead>
-              <TableHead className="text-right">Actions</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {candidates.map((candidate) => {
-              const isOwner = isEthiopianAgent && candidate.created_by === user?.id
-              const canEdit = isOwner && (candidate.status === CandidateStatus.DRAFT || candidate.status === CandidateStatus.AVAILABLE)
-              const canSelect = isForeignAgent && candidate.status === CandidateStatus.AVAILABLE
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Candidate</TableHead>
+                <TableHead className="hidden sm:table-cell">Age</TableHead>
+                <TableHead className="hidden sm:table-cell">Experience</TableHead>
+                <TableHead>Status</TableHead>
+                <TableHead className="hidden md:table-cell">Languages</TableHead>
+                <TableHead className="text-right">Actions</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {candidates.map((candidate) => {
+                const isOwner = isEthiopianAgent && candidate.created_by === user?.id
+                const canEdit = isOwner && (candidate.status === CandidateStatus.DRAFT || candidate.status === CandidateStatus.AVAILABLE)
+                const canSelect = isForeignAgent && candidate.status === CandidateStatus.AVAILABLE
 
-              return (
-                <TableRow key={candidate.id}>
-                  <TableCell>
-                    <div className="space-y-1">
-                      <p className="font-medium">{candidate.full_name}</p>
-                      <p className="text-xs text-muted-foreground">
-                        {candidate.skills.slice(0, 2).join(", ") || "Profile ready for review"}
-                      </p>
-                    </div>
-                  </TableCell>
-                  <TableCell>{candidate.age ?? "N/A"}</TableCell>
-                  <TableCell>{candidate.experience_years ?? 0} yrs</TableCell>
-                  <TableCell>
-                    <StatusBadge status={candidate.status} />
-                  </TableCell>
-                  <TableCell>{candidate.languages.slice(0, 2).join(", ") || "None"}</TableCell>
-                  <TableCell className="text-right">
-                    <div className="flex justify-end gap-2">
-                      {canSelect ? (
-                        <Button size="sm" onClick={() => setCandidateToSelect(candidate)} className="bg-green-600 hover:bg-green-700">
-                          <Sparkles className="mr-2 h-4 w-4" />
-                          Select
-                        </Button>
-                      ) : null}
+                return (
+                  <TableRow key={candidate.id}>
+                    <TableCell>
+                      <div className="space-y-1">
+                        <p className="font-medium">{candidate.full_name}</p>
+                        <p className="text-xs text-muted-foreground">
+                          {candidate.skills.slice(0, 2).join(", ") || "Profile ready for review"}
+                        </p>
+                      </div>
+                    </TableCell>
+                    <TableCell className="hidden sm:table-cell">{candidate.age ?? "N/A"}</TableCell>
+                    <TableCell className="hidden sm:table-cell">{candidate.experience_years ?? 0} yrs</TableCell>
+                    <TableCell>
+                      <StatusBadge status={candidate.status} />
+                    </TableCell>
+                    <TableCell className="hidden md:table-cell">{candidate.languages.slice(0, 2).join(", ") || "None"}</TableCell>
+                    <TableCell className="text-right">
+                      <div className="flex justify-end gap-1 sm:gap-2 flex-wrap">
+                        {canSelect ? (
+                          <Button size="sm" onClick={() => setCandidateToSelect(candidate)} className="bg-green-600 hover:bg-green-700">
+                            <Sparkles className="sm:mr-2 h-4 w-4" />
+                            <span className="hidden sm:inline">Select</span>
+                          </Button>
+                        ) : null}
 
-                      {canEdit ? (
-                        <Button size="sm" variant="outline" asChild>
-                          <Link href={`/candidates/${candidate.id}/edit`}>
-                            <PencilLine className="mr-2 h-4 w-4" />
-                            Edit
+                        {canEdit ? (
+                          <Button size="sm" variant="outline" asChild>
+                            <Link href={`/candidates/${candidate.id}/edit`}>
+                              <PencilLine className="sm:mr-2 h-4 w-4" />
+                              <span className="hidden sm:inline">Edit</span>
+                            </Link>
+                          </Button>
+                        ) : null}
+
+                        {isOwner ? (
+                          <Button size="sm" variant="secondary" onClick={() => setCandidateToShare(candidate)}>
+                            <Share2 className="sm:mr-2 h-4 w-4" />
+                            <span className="hidden sm:inline">Share</span>
+                          </Button>
+                        ) : null}
+
+                        <Button variant="outline" size="sm" asChild>
+                          <Link href={`/candidates/${candidate.id}`}>
+                            <Eye className="sm:mr-2 h-4 w-4" />
+                            <span className="hidden sm:inline">{isOwner ? "Open" : "View"}</span>
                           </Link>
                         </Button>
-                      ) : null}
-
-                      {isOwner ? (
-                        <Button size="sm" variant="secondary" onClick={() => setCandidateToShare(candidate)}>
-                          <Share2 className="mr-2 h-4 w-4" />
-                          Share
-                        </Button>
-                      ) : null}
-
-                      <Button variant="outline" size="sm" asChild>
-                        <Link href={`/candidates/${candidate.id}`}>
-                          <Eye className="mr-2 h-4 w-4" />
-                          {isOwner ? "Open" : "View"}
-                        </Link>
-                      </Button>
-                    </div>
-                  </TableCell>
-                </TableRow>
-              )
-            })}
-          </TableBody>
-        </Table>
+                      </div>
+                    </TableCell>
+                  </TableRow>
+                )
+              })}
+            </TableBody>
+          </Table>
+        </div>
       </Card>
 
       {candidateToSelect ? (

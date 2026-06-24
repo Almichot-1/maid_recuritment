@@ -5,6 +5,8 @@ import { Card, CardContent } from "@/components/ui/card"
 import { Logo } from "@/components/shared/logo"
 import { APP_NAME, COMPANY_INFO } from "@/constants/branding"
 
+export const dynamic = 'force-dynamic'
+
 export default function LandingPage() {
   return (
     <div className="flex min-h-screen flex-col">
@@ -24,7 +26,7 @@ export default function LandingPage() {
       </header>
 
       {/* Hero Section */}
-      <section className="container flex flex-col items-center justify-center gap-8 py-16 md:py-24 lg:py-32">
+      <section className="container flex flex-col items-center justify-center gap-8 px-4 py-16 md:py-24 lg:py-32">
         <div className="flex max-w-[980px] flex-col items-center gap-4 text-center">
           <h1 className="text-4xl font-bold leading-tight tracking-tighter md:text-6xl lg:text-7xl">
             {COMPANY_INFO.tagline}
@@ -57,7 +59,7 @@ export default function LandingPage() {
       </section>
 
       {/* Features Section */}
-      <section className="container py-16 md:py-24">
+      <section className="container px-4 py-16 md:py-24">
         <div className="mx-auto flex max-w-[980px] flex-col items-center gap-4 text-center mb-12">
           <h2 className="text-3xl font-bold leading-tight tracking-tighter md:text-5xl">
             Everything You Need
@@ -127,7 +129,7 @@ export default function LandingPage() {
       </section>
 
       {/* How It Works Section */}
-      <section className="container py-16 md:py-24 bg-muted/50">
+      <section className="container px-4 py-16 md:py-24 bg-muted/50">
         <div className="mx-auto flex max-w-[980px] flex-col items-center gap-4 text-center mb-12">
           <h2 className="text-3xl font-bold leading-tight tracking-tighter md:text-5xl">
             How It Works
@@ -181,7 +183,7 @@ export default function LandingPage() {
       </section>
 
       {/* CTA Section */}
-      <section className="container py-16 md:py-24">
+      <section className="container px-4 py-16 md:py-24">
         <div className="mx-auto flex max-w-[980px] flex-col items-center gap-4 text-center">
           <h2 className="text-3xl font-bold leading-tight tracking-tighter md:text-5xl">
             Ready to Get Started?
@@ -200,7 +202,7 @@ export default function LandingPage() {
 
       {/* Footer */}
       <footer className="border-t py-8 md:py-12">
-        <div className="container flex flex-col gap-8">
+        <div className="container px-4 flex flex-col gap-8">
           <div className="flex flex-col items-center justify-between gap-4 md:flex-row">
             <Logo size="sm" />
             <nav className="flex gap-6">

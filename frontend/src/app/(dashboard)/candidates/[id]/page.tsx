@@ -12,7 +12,6 @@ import {
   FileText, 
   Loader2, 
   PencilLine,
-  Rocket,
   Trash2, 
   Upload,
   UserCheck,
@@ -26,14 +25,16 @@ import {
 import Link from "next/link"
 import Image from "next/image"
 
-import { downloadCandidateCVFile, isPublishPairingSelectionError, useCandidate, useDeleteCandidate, useDeleteCandidateDocument, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
+import { downloadCandidateCVFile, useBulkPublish, useCandidate, useDeleteCandidate, useDeleteCandidateDocument, useGenerateCV, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidateShares, usePairingContext, useUnshareCandidateFromWorkspace } from "@/hooks/use-pairings"
 import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
+import { CandidatePartnerOverrides } from "@/components/candidates/candidate-partner-overrides"
 import { CandidateShareDialog } from "@/components/candidates/candidate-share-dialog"
 import { CandidateDetailSkeleton } from "@/components/candidates/candidate-detail-skeleton"
 import { DocumentUpload } from "@/components/candidates/document-upload"
 import { StatusTimeline } from "@/components/candidates/status-timeline"
+import { PublishButton } from "@/components/candidates/publish-button"
 import { SelectCandidateDialog } from "@/components/selections/select-candidate-dialog"
 import { LockCountdown } from "@/components/selections/lock-countdown"
 import { Badge, BadgeProps } from "@/components/ui/badge"
@@ -59,7 +60,7 @@ export default function CandidateDetailPage() {
   
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const { context, activePairingId, activeWorkspace } = usePairingContext()
-  const { data: candidate, isLoading, error } = useCandidate(candidateId)
+  const { data: candidate, isLoading, error, refetch } = useCandidate(candidateId)
   const showProgress = candidate?.status === CandidateStatus.IN_PROGRESS || candidate?.status === CandidateStatus.COMPLETED
   const isOwner = isEthiopianAgent && candidate?.created_by === user?.id
   const { data: candidateShares = [] } = useCandidateShares(candidateId, Boolean(isOwner))
@@ -71,10 +72,13 @@ export default function CandidateDetailPage() {
   const { mutateAsync: removeDocument, isPending: isRemovingDocument } = useDeleteCandidateDocument(candidateId)
   const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId)
   const { mutate: unshareFromWorkspace, isPending: isRemovingFromWorkspace } = useUnshareCandidateFromWorkspace()
+  const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
+  const { mutateAsync: bulkPublish, isPending: isBulkPublishing } = useBulkPublish()
+
 
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [selectDialogOpen, setSelectDialogOpen] = React.useState(false)
-  const [publishDialogOpen, setPublishDialogOpen] = React.useState(false)
+
   const [publishPartnerDialogOpen, setPublishPartnerDialogOpen] = React.useState(false)
   const [publishPairingId, setPublishPairingId] = React.useState("")
   const [imagePreview, setImagePreview] = React.useState<string | null>(null)
@@ -189,21 +193,6 @@ export default function CandidateDetailPage() {
     unshareFromWorkspace({ pairingId: activePairingId, candidateId })
   }
 
-  const handlePublish = () => {
-    void (async () => {
-      try {
-        await publishCandidate({})
-        setPublishDialogOpen(false)
-      } catch (error) {
-        if (isPublishPairingSelectionError(error)) {
-          setPublishDialogOpen(false)
-          setPublishPairingId(activePairingId || activeShares[0]?.pairing_id || "")
-          setPublishPartnerDialogOpen(true)
-        }
-      }
-    })()
-  }
-
   const handlePublishToSelectedPartner = () => {
     if (!publishPairingId) {
       toast.error("Choose a foreign partner before publishing.")
@@ -220,13 +209,10 @@ export default function CandidateDetailPage() {
   }
 
   const handleDownloadCV = async () => {
-    if (!candidate.cv_pdf_url) {
-      return
-    }
-
+    if (!candidate.cv_pdf_url) return
     try {
       setIsDownloadingCV(true)
-      await downloadCandidateCVFile(candidate.id, candidate.full_name)
+      await downloadCandidateCVFile(candidate.id, candidate.full_name, activePairingId || undefined)
     } catch {
       toast.error("Failed to download CV")
     } finally {
@@ -234,8 +220,12 @@ export default function CandidateDetailPage() {
     }
   }
 
-  const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
-    updateStep({ step_name: stepName, status, notes })
+  const handleRegenerate = () => {
+    generateCV(undefined)
+  }
+
+  const handleUpdateStep = (stepName: string, status: string, notes?: string, cocStatus?: string, arrivalCity?: string) => {
+    updateStep({ step_name: stepName, status, notes, coc_status: cocStatus, arrival_city: arrivalCity })
   }
 
   const handleRemoveMedicalDocument = async () => {
@@ -385,7 +375,7 @@ export default function CandidateDetailPage() {
                 {isOwner && candidate.created_by ? (
                   <div className="space-y-1">
                     <p className="text-sm font-medium text-muted-foreground">Created By</p>
-                    <p className="text-base font-semibold break-all">{candidate.created_by}</p>
+                    <p className="text-base font-semibold break-all">{user?.company_name || user?.full_name || candidate.created_by}</p>
                   </div>
                 ) : null}
                 {isOwner ? (
@@ -439,6 +429,21 @@ export default function CandidateDetailPage() {
               )}
             </CardContent>
           </Card>
+
+          {/* Per-Partner Job Details */}
+          {isOwner && context?.workspaces && context.workspaces.length > 0 && (
+            <Card>
+              <CardHeader>
+                <CardTitle>Partner Job Details</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <p className="text-sm text-muted-foreground mb-4">
+                  Set a unique country and salary for each partner&apos;s CV.
+                </p>
+                <CandidatePartnerOverrides candidate={candidate} />
+              </CardContent>
+            </Card>
+          )}
 
           {/* Documents */}
           <Card>
@@ -569,7 +574,7 @@ export default function CandidateDetailPage() {
                   <p className="text-sm text-muted-foreground">
                     Download the final PDF directly, or open the preview page only when you want to inspect the layout.
                   </p>
-                    <div className="grid gap-3 sm:grid-cols-2">
+                  <div className="grid gap-3 sm:grid-cols-3">
                       <Button
                         variant="outline"
                         className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
@@ -585,7 +590,47 @@ export default function CandidateDetailPage() {
                           Preview CV
                       </Link>
                     </Button>
+                      {isEthiopianAgent && (
+                        <Button
+                          variant="secondary"
+                          className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                          onClick={handleRegenerate}
+                        >
+                          Regenerate CV
+                        </Button>
+                      )}
                   </div>
+                  {isEthiopianAgent && candidateShares.length > 0 && (
+                    <div className="mt-4 space-y-2">
+                      <p className="text-sm font-medium text-muted-foreground">Per-Partner CVs</p>
+                      {candidateShares.filter(s => s.is_active).map((share) => {
+                        const workspace = context?.workspaces?.find((w) => w.id === share.pairing_id)
+                        const partnerName = workspace?.partner_agency?.company_name || workspace?.partner_agency?.full_name || "Partner"
+                        return (
+                          <Button
+                            key={share.id}
+                            variant="outline"
+                            size="sm"
+                            className="w-full justify-start"
+                            onClick={async () => {
+                              try {
+                                setIsDownloadingCV(true)
+                                await downloadCandidateCVFile(candidate.id, `${candidate.full_name} - ${partnerName}`, share.pairing_id)
+                              } catch {
+                                toast.error("Failed to download CV")
+                              } finally {
+                                setIsDownloadingCV(false)
+                              }
+                            }}
+                            disabled={isDownloadingCV}
+                          >
+                            <Download className="h-4 w-4 mr-2" />
+                            CV for {partnerName}
+                          </Button>
+                        )
+                      })}
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div className="space-y-3">
@@ -595,14 +640,35 @@ export default function CandidateDetailPage() {
                       Upload {missingRequiredDocuments.join(" and ")} before the CV can be downloaded.
                     </p>
                   )}
-                  {isEthiopianAgent && canGenerateCV ? (
-                    <Button asChild>
-                      <Link href={cvPageHref}>
-                        <Download className="h-4 w-4 mr-2" />
-                        Prepare CV
-                      </Link>
-                    </Button>
-                  ) : null}
+                  {isEthiopianAgent && (
+                    <div className="flex flex-wrap gap-2">
+                      {canGenerateCV ? (
+                        <Button asChild>
+                          <Link href={cvPageHref}>
+                            <Download className="h-4 w-4 mr-2" />
+                            Prepare CV
+                          </Link>
+                        </Button>
+                      ) : null}
+                      <Button
+                        variant="outline"
+                        onClick={() => generateCV({})}
+                        disabled={isGeneratingCV}
+                      >
+                        {isGeneratingCV ? (
+                          <>
+                            <Loader2 className="h-4 w-4 mr-2 animate-spin" />
+                            Generating...
+                          </>
+                        ) : (
+                          <>
+                            <FileText className="h-4 w-4 mr-2" />
+                            Retry CV Generation
+                          </>
+                        )}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
@@ -682,34 +748,43 @@ export default function CandidateDetailPage() {
                   )}
 
                   {isOwner && candidate.status === CandidateStatus.DRAFT && (
-                    <Button 
-                      className="w-full bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-white shadow-md" 
-                      onClick={() => setPublishDialogOpen(true)}
-                      disabled={isPublishing}
-                    >
-                      {isPublishing ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <Rocket className="h-4 w-4 mr-2" />
-                      )}
-                      {isPublishing ? "Publishing..." : "Publish Candidate"}
-                    </Button>
+                    <PublishButton
+                      workspaces={context?.workspaces || []}
+                      isPublishing={isPublishing || isBulkPublishing}
+                      onPublish={async (pairingId) => {
+                        try {
+                          if (pairingId) {
+                            await publishCandidate({ pairingId })
+                          } else {
+                            const readyIds = (context?.workspaces || [])
+                              .filter((ws) => ws.default_country && ws.default_currency)
+                              .map((ws) => ws.id)
+                            if (readyIds.length > 0) {
+                              await bulkPublish({ candidate_ids: [candidateId], pairing_ids: readyIds })
+                            }
+                          }
+                          refetch()
+                        } catch {
+                          // handled by hook
+                        }
+                      }}
+                    />
                   )}
 
                     {(candidate.cv_pdf_url || canGenerateCV) && (
-                      <div className={candidate.cv_pdf_url ? "grid gap-3 sm:grid-cols-2" : "grid gap-3"}>
+                      <>
                         <Button
-                          className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold"
+                          className="w-full"
                           variant="outline"
                           onClick={candidate.cv_pdf_url ? handleDownloadCV : undefined}
                           disabled={isDownloadingCV}
                           asChild={!candidate.cv_pdf_url}
                         >
                           {candidate.cv_pdf_url ? (
-                            <span>
+                            <>
                               <Download className="h-4 w-4 mr-2" />
                               {isDownloadingCV ? "Downloading..." : "Download CV"}
-                            </span>
+                            </>
                           ) : (
                             <Link href={cvPageHref}>
                               <Download className="h-4 w-4 mr-2" />
@@ -719,14 +794,14 @@ export default function CandidateDetailPage() {
                         </Button>
 
                         {candidate.cv_pdf_url ? (
-                          <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" variant="secondary" asChild>
+                          <Button className="w-full" variant="secondary" asChild>
                             <Link href={cvPageHref}>
                               <Eye className="h-4 w-4 mr-2" />
                               Preview CV
                             </Link>
                           </Button>
                         ) : null}
-                      </div>
+                      </>
                     )}
 
                   {showProgress && (
@@ -909,27 +984,6 @@ export default function CandidateDetailPage() {
         open={selectDialogOpen}
         onOpenChange={setSelectDialogOpen}
       />
-
-      {/* Publish Confirmation Dialog */}
-      <Dialog open={publishDialogOpen} onOpenChange={setPublishDialogOpen}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Publish Candidate</DialogTitle>
-            <DialogDescription>
-              Publishing will add {candidate.full_name} to your candidate library so you can share the profile with one or more partner agencies.
-            </DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setPublishDialogOpen(false)}>
-              Cancel
-            </Button>
-            <Button onClick={handlePublish} disabled={isPublishing}>
-              {isPublishing && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-              Publish
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
 
       {/* Image Preview Dialog */}
       <Dialog open={!!imagePreview} onOpenChange={() => setImagePreview(null)}>

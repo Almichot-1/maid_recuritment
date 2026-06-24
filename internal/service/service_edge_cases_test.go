@@ -80,7 +80,7 @@ func TestCandidateService_UpdateAndGenerateCV_ErrorBranches(t *testing.T) {
 	repo := &candidateRepoBehaviorMock{}
 	docRepo := &candidateDocRepoBehaviorMock{}
 	storage := &candidateStorageBehaviorMock{}
-	svc, err := NewCandidateService(repo, docRepo, storage, NewPDFService())
+	svc, err := NewCandidateService(repo, docRepo, storage, NewPDFService(), &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	err = svc.UpdateCandidate("", "owner", CandidateInput{FullName: "A"})
@@ -114,7 +114,7 @@ func TestCandidateService_UpdateAndGenerateCV_ErrorBranches(t *testing.T) {
 	docRepo.getByCandidateFn = func(candidateID string) ([]*domain.Document, error) {
 		return nil, errors.New("docs fail")
 	}
-	err = svc.GenerateCV("id", "owner-1", CandidateCVBranding{})
+	err = svc.GenerateCV("id", "owner-1", "", CandidateCVBranding{})
 	require.Error(t, err)
 
 	server := newValidImageServer(t)
@@ -131,7 +131,7 @@ func TestCandidateService_UpdateAndGenerateCV_ErrorBranches(t *testing.T) {
 	storage.uploadFn = func(fileName, contentType string) (string, error) {
 		return "", errors.New("upload fail")
 	}
-	err = svc.GenerateCV("id", "owner-1", CandidateCVBranding{})
+	err = svc.GenerateCV("id", "owner-1", "", CandidateCVBranding{})
 	require.Error(t, err)
 
 	deleted := false
@@ -143,7 +143,7 @@ func TestCandidateService_UpdateAndGenerateCV_ErrorBranches(t *testing.T) {
 		return nil
 	}
 	repo.updateFn = func(candidate *domain.Candidate) error { return errors.New("update fail") }
-	err = svc.GenerateCV("id", "owner-1", CandidateCVBranding{})
+	err = svc.GenerateCV("id", "owner-1", "", CandidateCVBranding{})
 	require.Error(t, err)
 	assert.True(t, deleted)
 }

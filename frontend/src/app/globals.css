@@ -65,6 +65,44 @@
     background-attachment: fixed;
     font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
     min-height: 100vh;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+  }
+
+  img {
+    max-width: 100%;
+    height: auto;
+  }
+
+  input[type="search"]::-webkit-search-decoration,
+  input[type="search"]::-webkit-search-cancel-button,
+  input[type="search"]::-webkit-search-results-button,
+  input[type="search"]::-webkit-search-results-decoration {
+    -webkit-appearance: none;
+  }
+
+  @media (max-width: 640px) {
+    html {
+      font-size: 15px;
+    }
+  }
+
+  @media (max-width: 400px) {
+    html {
+      font-size: 14px;
+    }
+  }
+
+  /* Prevent horizontal overflow on all screen sizes */
+  .overflow-x-auto {
+    -webkit-overflow-scrolling: touch;
+  }
+
+  /* Safe area padding for modern mobile devices */
+  @supports (padding-bottom: env(safe-area-inset-bottom)) {
+    .pb-safe {
+      padding-bottom: env(safe-area-inset-bottom);
+    }
   }
 
   ::selection {

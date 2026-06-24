@@ -11,6 +11,7 @@ DROP TABLE IF EXISTS agency_approval_requests;
 DROP TABLE IF EXISTS audit_logs;
 DROP TABLE IF EXISTS admins;
 
+
 ALTER TABLE users
 DROP COLUMN IF EXISTS account_status;
 

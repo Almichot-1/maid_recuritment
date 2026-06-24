@@ -60,6 +60,12 @@ func (m *selectionQueryRepoMock) UpdateStatus(id string, status domain.Selection
 func (m *selectionQueryRepoMock) GetExpiredSelections() ([]*domain.Selection, error) {
 	return m.expired, m.expiredErr
 }
+func (m *selectionQueryRepoMock) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	return nil, nil
+}
+func (m *selectionQueryRepoMock) Count(filters domain.SelectionFilters) (int64, error) {
+	return 0, nil
+}
 
 func TestSelectionService_QueryMethodsAndHelpers(t *testing.T) {
 	selection := &domain.Selection{ID: "sel-1", CandidateID: "cand-1", SelectedBy: "foreign-1"}
@@ -130,7 +136,7 @@ func TestCandidateService_RemainingBranches(t *testing.T) {
 	repo := &candidateRepoBehaviorMock{}
 	docRepo := &documentRepositoryMock{}
 	storage := &storageServiceMock{}
-	svc, err := NewCandidateService(repo, docRepo, storage, &PDFService{})
+	svc, err := NewCandidateService(repo, docRepo, storage, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, _, err = svc.GetCandidate("x")
@@ -149,7 +155,7 @@ func TestCandidateService_RemainingBranches(t *testing.T) {
 	_, err = svc.UploadCandidateDocument("id", "owner", UploadCandidateDocumentInput{DocumentType: "bad", File: bytes.NewBufferString("x"), FileName: "bad.bin", FileSize: 1})
 	require.Error(t, err)
 
-	err = svc.GenerateCV("id", "owner", CandidateCVBranding{})
+	err = svc.GenerateCV("id", "owner", "", CandidateCVBranding{})
 	require.Error(t, err)
 
 	_, err = parseCandidateDocumentType("photo")

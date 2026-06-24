@@ -106,6 +106,47 @@ func (m *sqliteStatusStepRepo) GetByCandidateID(candidateID string) ([]*domain.S
 	return steps, nil
 }
 
+func (m *sqliteStatusStepRepo) GetByCandidateIDs(candidateIDs []string) ([]*domain.StatusStep, error) {
+	records := make([]statusStepTestStep, 0)
+	if err := m.db.Where("candidate_id IN ?", candidateIDs).Order("candidate_id ASC, created_at ASC").Find(&records).Error; err != nil {
+		return nil, err
+	}
+	steps := make([]*domain.StatusStep, 0, len(records))
+	for _, record := range records {
+		record := record
+		steps = append(steps, &domain.StatusStep{
+			ID:          record.ID,
+			CandidateID: record.CandidateID,
+			StepName:    record.StepName,
+			StepStatus:  domain.StepStatus(record.StepStatus),
+			CompletedAt: record.CompletedAt,
+			Notes:       record.Notes,
+			UpdatedBy:   record.UpdatedBy,
+			CreatedAt:   record.CreatedAt,
+			UpdatedAt:   record.UpdatedAt,
+		})
+	}
+	return steps, nil
+}
+
+func (m *sqliteStatusStepRepo) GetByCandidateIDAndStepName(candidateID, stepName string) (*domain.StatusStep, error) {
+	var record statusStepTestStep
+	if err := m.db.Where("candidate_id = ? AND step_name = ?", candidateID, stepName).First(&record).Error; err != nil {
+		return nil, err
+	}
+	return &domain.StatusStep{
+		ID:          record.ID,
+		CandidateID: record.CandidateID,
+		StepName:    record.StepName,
+		StepStatus:  domain.StepStatus(record.StepStatus),
+		CompletedAt: record.CompletedAt,
+		Notes:       record.Notes,
+		UpdatedBy:   record.UpdatedBy,
+		CreatedAt:   record.CreatedAt,
+		UpdatedAt:   record.UpdatedAt,
+	}, nil
+}
+
 func (m *sqliteStatusStepRepo) Update(step *domain.StatusStep) error {
 	return m.db.Model(&statusStepTestStep{}).Where("id = ?", step.ID).Updates(map[string]any{
 		"step_status":  string(step.StepStatus),
@@ -148,6 +189,12 @@ func (m *sqliteStatusStepCandidateRepo) Lock(candidateID, lockedBy string, expir
 	return nil
 }
 func (m *sqliteStatusStepCandidateRepo) Unlock(candidateID string) error { return nil }
+func (m *sqliteStatusStepCandidateRepo) GetByIDs(ids []string) ([]*domain.Candidate, error) {
+	return nil, nil
+}
+func (m *sqliteStatusStepCandidateRepo) GetByIDLean(id string) (*domain.Candidate, error) {
+	return m.GetByID(id)
+}
 
 type sqliteStatusStepSelectionRepo struct {
 	db *gorm.DB
@@ -196,6 +243,12 @@ func (m *sqliteStatusStepSelectionRepo) UpdateStatus(id string, status domain.Se
 func (m *sqliteStatusStepSelectionRepo) GetExpiredSelections() ([]*domain.Selection, error) {
 	return nil, nil
 }
+func (m *sqliteStatusStepSelectionRepo) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	return nil, nil
+}
+func (m *sqliteStatusStepSelectionRepo) Count(filters domain.SelectionFilters) (int64, error) {
+	return 0, nil
+}
 
 func setupStatusStepServiceWithSQLite(t *testing.T) (*StatusStepService, *gorm.DB) {
 	t.Helper()
@@ -238,6 +291,12 @@ func (m *statusStepCandidateRepoMock) Lock(candidateID, lockedBy string, expires
 	return nil
 }
 func (m *statusStepCandidateRepoMock) Unlock(candidateID string) error { return nil }
+func (m *statusStepCandidateRepoMock) GetByIDs(ids []string) ([]*domain.Candidate, error) {
+	return nil, nil
+}
+func (m *statusStepCandidateRepoMock) GetByIDLean(id string) (*domain.Candidate, error) {
+	return m.GetByID(id)
+}
 
 type statusStepRepoBehaviorMock struct {
 	getByCandidateIDFn func(candidateID string) ([]*domain.StatusStep, error)
@@ -249,6 +308,12 @@ func (m *statusStepRepoBehaviorMock) GetByCandidateID(candidateID string) ([]*do
 	if m.getByCandidateIDFn != nil {
 		return m.getByCandidateIDFn(candidateID)
 	}
+	return nil, nil
+}
+func (m *statusStepRepoBehaviorMock) GetByCandidateIDs(candidateIDs []string) ([]*domain.StatusStep, error) {
+	return nil, nil
+}
+func (m *statusStepRepoBehaviorMock) GetByCandidateIDAndStepName(candidateID, stepName string) (*domain.StatusStep, error) {
 	return nil, nil
 }
 func (m *statusStepRepoBehaviorMock) Update(step *domain.StatusStep) error {
@@ -295,6 +360,12 @@ func (m *statusStepSelectionRepoMock) UpdateStatus(id string, status domain.Sele
 }
 func (m *statusStepSelectionRepoMock) GetExpiredSelections() ([]*domain.Selection, error) {
 	return nil, nil
+}
+func (m *statusStepSelectionRepoMock) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	return nil, nil
+}
+func (m *statusStepSelectionRepoMock) Count(filters domain.SelectionFilters) (int64, error) {
+	return 0, nil
 }
 
 type statusStepDocumentRepoMock struct {

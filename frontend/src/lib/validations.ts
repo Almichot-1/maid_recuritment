@@ -69,8 +69,6 @@ export const candidateSchema = z.object({
   education_level: optionalTrimmedString,
   experience_years: z.coerce.number().min(0).max(30),
   country_of_experience: optionalTrimmedString.optional(),
-  country_applied: optionalTrimmedString.optional(),
-  salary_offered: optionalTrimmedString.optional(),
   skills: z.array(z.string()).optional().default([]),
   languages: z.array(z.object({
     language: z.string(),

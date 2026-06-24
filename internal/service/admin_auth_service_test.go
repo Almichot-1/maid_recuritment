@@ -63,6 +63,10 @@ func (m *auditRepoMock) List(filters domain.AuditLogFilters) ([]*domain.AuditLog
 	return nil, nil
 }
 
+func (m *auditRepoMock) Count(filters domain.AuditLogFilters) (int64, error) {
+	return 0, nil
+}
+
 func cloneAdmin(admin *domain.Admin) *domain.Admin {
 	if admin == nil {
 		return nil

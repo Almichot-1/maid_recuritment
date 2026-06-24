@@ -214,7 +214,7 @@ export function EthiopianDashboard() {
             ) : null}
           </div>
         </CardHeader>
-        <CardContent className="grid gap-4 xl:grid-cols-4">
+        <CardContent className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <SmartAlertColumn
             title="Passport Expiry"
             icon={<ShieldAlert className="h-4 w-4 text-amber-600" />}

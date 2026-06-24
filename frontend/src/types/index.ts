@@ -59,6 +59,13 @@ export enum CandidateStatus {
   REJECTED = 'rejected'
 }
 
+/** Per-pairing country/salary override returned only to the candidate owner. */
+export interface CandidatePairOverride {
+  pairing_id: string;
+  country_applied: string;
+  salary_offered: string;
+}
+
 export interface Candidate {
   id: string;
   full_name: string;
@@ -72,8 +79,6 @@ export interface Candidate {
   education_level?: string;
   experience_years?: number;
   country_of_experience?: string;
-  country_applied?: string;
-  salary_offered?: string;
   languages: string[];
   skills: string[];
   status: CandidateStatus;
@@ -83,6 +88,8 @@ export interface Candidate {
   locked_at?: string;
   lock_expires_at?: string;
   documents: Document[];
+  /** Only populated for the candidate owner. Lists per-partner overrides. */
+  pair_overrides?: CandidatePairOverride[];
   created_at: string;
   updated_at: string;
 }
@@ -154,6 +161,8 @@ export interface StatusStep {
   completed_at?: string;
   notes?: string;
   medical_document_url?: string;
+  coc_status?: string;
+  arrival_city?: string;
   updated_at: string;
   updated_by: {
     id: string;
@@ -355,6 +364,7 @@ export interface PairingAgencySummary {
   company_name: string;
   email: string;
   role: UserRole;
+  operating_country?: string;
 }
 
 export interface WorkspaceSummary {
@@ -363,8 +373,12 @@ export interface WorkspaceSummary {
   ethiopian_agency: PairingAgencySummary;
   foreign_agency: PairingAgencySummary;
   partner_agency: PairingAgencySummary;
-  approved_at?: string;
-  notes?: string;
+	approved_at?: string;
+	notes?: string;
+	default_country?: string;
+	default_currency?: string;
+	default_salary?: string;
+	partner_logo_url?: string;
 }
 
 export interface PairingContext {
@@ -381,6 +395,7 @@ export interface CandidatePairShare {
   is_active: boolean;
   partner_agency: PairingAgencySummary;
   workspace: WorkspaceSummary;
+  cv_pdf_url?: string;
 }
 
 export interface AdminPairing {
@@ -500,18 +515,18 @@ export interface ChatReadEvent {
 
 export type ChatSocketEvent =
   | {
-      type: "connected";
-      pairing_id?: string;
-    }
+    type: "connected";
+    pairing_id?: string;
+  }
   | ChatMessageEvent
   | ChatReadEvent
   | {
-      type: "thread.summary_updated";
-      pairing_id?: string;
-      thread?: ChatThreadSummary;
-      summary?: ChatSummary;
-    }
+    type: "thread.summary_updated";
+    pairing_id?: string;
+    thread?: ChatThreadSummary;
+    summary?: ChatSummary;
+  }
   | {
-      type: "unknown";
-      raw: unknown;
-    };
+    type: "unknown";
+    raw: unknown;
+  };

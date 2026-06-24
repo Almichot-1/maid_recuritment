@@ -47,6 +47,26 @@ func (r *GormAuditLogRepository) Create(log *domain.AuditLog) error {
 	return nil
 }
 
+func (r *GormAuditLogRepository) Count(filters domain.AuditLogFilters) (int64, error) {
+	query := r.db.Model(&domain.AuditLog{})
+
+	if strings.TrimSpace(filters.AdminID) != "" {
+		query = query.Where("admin_id = ?", strings.TrimSpace(filters.AdminID))
+	}
+	if strings.TrimSpace(filters.Action) != "" {
+		query = query.Where("action = ?", strings.TrimSpace(filters.Action))
+	}
+	if strings.TrimSpace(filters.TargetType) != "" {
+		query = query.Where("target_type = ?", strings.TrimSpace(filters.TargetType))
+	}
+
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, fmt.Errorf("count audit logs: %w", err)
+	}
+	return total, nil
+}
+
 func (r *GormAuditLogRepository) List(filters domain.AuditLogFilters) ([]*domain.AuditLog, error) {
 	query := r.db.Model(&domain.AuditLog{})
 

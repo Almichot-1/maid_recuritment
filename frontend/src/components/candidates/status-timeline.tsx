@@ -7,31 +7,39 @@ import {
   Clock3,
   FileBadge2,
   Loader2,
-  PlayCircle,
-  RotateCcw,
 } from "lucide-react";
-import { format, isValid } from "date-fns";
 
 import { StatusStep } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Checkbox } from "@/components/ui/checkbox";
+import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DocumentUpload } from "@/components/candidates/document-upload";
 import { cn } from "@/lib/utils";
 
 interface StatusTimelineProps {
   steps: StatusStep[];
   canUpdate?: boolean;
-  onUpdateStep?: (stepName: string, status: string, notes?: string) => void;
+  onUpdateStep?: (
+    stepName: string,
+    status: string,
+    notes?: string,
+    cocStatus?: string,
+    arrivalCity?: string,
+  ) => void;
   isUpdating?: boolean;
   onUploadMedicalDocument?: (file: File) => void | Promise<unknown>;
   onRemoveMedicalDocument?: () => void | Promise<unknown>;
   isUploadingMedicalDocument?: boolean;
   isRemovingMedicalDocument?: boolean;
 }
-
-type EditorMode = "note" | "failed";
 
 export function StatusTimeline({
   steps,
@@ -43,376 +51,285 @@ export function StatusTimeline({
   isUploadingMedicalDocument = false,
   isRemovingMedicalDocument = false,
 }: StatusTimelineProps) {
-  const [editorStepId, setEditorStepId] = React.useState<string | null>(null);
-  const [editorMode, setEditorMode] = React.useState<EditorMode>("note");
-  const [noteDraft, setNoteDraft] = React.useState("");
-  const [editorError, setEditorError] = React.useState("");
+  const [noteDrafts, setNoteDrafts] = React.useState<Record<string, string>>(
+    {},
+  );
+  const [cocStatuses, setCoCStatuses] = React.useState<
+    Record<string, string>
+  >({});
+  const [arrivalCities, setArrivalCities] = React.useState<
+    Record<string, string>
+  >({});
 
-  const openEditor = (step: StatusStep, mode: EditorMode) => {
-    setEditorStepId(step.id);
-    setEditorMode(mode);
-    setNoteDraft(step.notes || "");
-    setEditorError("");
+  const getNote = (step: StatusStep) =>
+    noteDrafts[step.id] ?? step.notes ?? "";
+  const getCoC = (step: StatusStep) =>
+    cocStatuses[step.id] ?? step.coc_status ?? "";
+  const getCity = (step: StatusStep) =>
+    arrivalCities[step.id] ?? step.arrival_city ?? "";
+
+  const handleStatusChange = (step: StatusStep, newStatus: string) => {
+    if (!onUpdateStep || isUpdating) return;
+    if (newStatus === step.step_status) return;
+
+    if (
+      isMedicalStep(step) &&
+      newStatus === "completed" &&
+      !step.medical_document_url
+    ) {
+      return;
+    }
+
+    onUpdateStep(
+      step.step_name,
+      newStatus,
+      getNote(step),
+      isCoCStep(step) ? getCoC(step) || undefined : undefined,
+      isArrivalCityStep(step) ? getCity(step) || undefined : undefined,
+    );
   };
 
-  const closeEditor = () => {
-    setEditorStepId(null);
-    setEditorMode("note");
-    setNoteDraft("");
-    setEditorError("");
-  };
-
-  const handleToggle = (step: StatusStep, checked: boolean) => {
-    if (!onUpdateStep) {
-      return;
-    }
-
-    if (checked) {
-      if (isMedicalStep(step) && !step.medical_document_url) {
-        setEditorError(
-          "Upload the medical document first so this step can be checked off.",
-        );
-        setEditorStepId(step.id);
-        setEditorMode("note");
-        setNoteDraft(step.notes || "");
-        return;
-      }
-      onUpdateStep(
-        step.step_name,
-        "completed",
-        noteDraftForStep(step, noteDraft),
-      );
-      closeEditor();
-      return;
-    }
-
-    onUpdateStep(step.step_name, "pending", noteDraftForStep(step, noteDraft));
-    closeEditor();
-  };
-
-  const handleSaveFailed = (step: StatusStep) => {
-    if (!onUpdateStep) {
-      return;
-    }
-
-    const trimmed = noteDraft.trim();
-    if (!trimmed) {
-      setEditorError(
-        "Add a short reason so both agencies understand what blocked this step.",
-      );
-      return;
-    }
-    onUpdateStep(step.step_name, "failed", trimmed);
-    closeEditor();
-  };
-
-  const handleSaveNote = (step: StatusStep) => {
-    if (!onUpdateStep) {
-      return;
-    }
-
+  const handleSaveExtras = (step: StatusStep) => {
+    if (!onUpdateStep || isUpdating) return;
     onUpdateStep(
       step.step_name,
       step.step_status,
-      noteDraftForStep(step, noteDraft),
+      getNote(step),
+      isCoCStep(step) ? getCoC(step) || undefined : undefined,
+      isArrivalCityStep(step) ? getCity(step) || undefined : undefined,
     );
-    closeEditor();
-  };
-
-  const handleMarkInProgress = (step: StatusStep) => {
-    if (!onUpdateStep) {
-      return;
-    }
-
-    onUpdateStep(
-      step.step_name,
-      "in_progress",
-      noteDraftForStep(step, noteDraft),
-    );
-    closeEditor();
   };
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-2">
       {steps.map((step, index) => {
         const isMedical = isMedicalStep(step);
+        const isCoC = isCoCStep(step);
+        const isArrival = isArrivalCityStep(step);
         const checked = step.step_status === "completed";
         const isFailed = step.step_status === "failed";
-        const isInProgress = step.step_status === "in_progress";
-        const isEditing = editorStepId === step.id;
+        const cocVal = getCoC(step);
+        const cityVal = getCity(step);
 
         return (
           <div
             key={step.id}
             className={cn(
-              "rounded-2xl border px-4 py-4 transition-colors duration-200",
+              "rounded-xl border px-4 py-3 transition-colors",
               checked
                 ? "border-emerald-200/80 bg-emerald-50/60 dark:border-emerald-900/40 dark:bg-emerald-950/20"
                 : isFailed
                   ? "border-rose-300/70 bg-rose-50/70 dark:border-rose-900/40 dark:bg-rose-950/20"
-                  : isInProgress
-                    ? "border-sky-200/80 bg-sky-50/60 dark:border-sky-900/40 dark:bg-sky-950/20"
-                    : "border-border/70 bg-card/95 hover:border-primary/20",
+                  : "border-border/70 bg-card/95",
             )}
           >
-            <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
-              <div className="flex min-w-0 gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-border/70 bg-background/80">
-                  <Checkbox
-                    checked={checked}
-                    disabled={
-                      isUpdating ||
-                      (isMedical && !checked && !step.medical_document_url)
-                    }
-                    onCheckedChange={(value) =>
-                      handleToggle(step, Boolean(value))
-                    }
-                    aria-label={`Toggle ${step.step_name}`}
-                  />
-                </div>
-                <div className="min-w-0 space-y-1.5">
-                  <div className="flex flex-wrap items-center gap-2">
-                    <p className="text-xs font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                      Step {index + 1}
-                    </p>
-                    <StatusBadge status={step.step_status} />
-                  </div>
-                  <div>
-                    <h4 className="text-base font-semibold text-foreground">
-                      {step.step_name}
-                    </h4>
-                    <p className="mt-0.5 text-sm text-muted-foreground">
-                      {checked
-                        ? "Completed."
-                        : isFailed
-                          ? "Blocked until the issue is resolved."
-                          : isInProgress
-                            ? "Currently active."
-                            : isMedical
-                              ? "Upload the medical file, then complete the step."
-                              : "Mark it in progress, complete it, or add a short failure note."}
-                    </p>
-                  </div>
+            <div className="flex items-center gap-3">
+              {/* Step indicator */}
+              <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full border border-border/70 bg-background/80 text-xs font-bold text-muted-foreground">
+                {index + 1}
+              </div>
+
+              {/* Step name + status */}
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-semibold">
+                    {step.step_name}
+                  </span>
+                  <StatusBadge status={step.step_status} />
+                  {isCoC && cocVal ? (
+                    <Badge
+                      variant="outline"
+                      className={cn(
+                        "text-[10px] px-1.5 py-0 h-5",
+                        cocVal === "online"
+                          ? "border-sky-300 text-sky-700 bg-sky-50 dark:border-sky-800 dark:text-sky-300 dark:bg-sky-950/30"
+                          : "border-amber-300 text-amber-700 bg-amber-50 dark:border-amber-800 dark:text-amber-300 dark:bg-amber-950/30",
+                      )}
+                    >
+                      {cocVal === "online" ? "Online" : "Not Online"}
+                    </Badge>
+                  ) : null}
+                  {isArrival && cityVal ? (
+                    <Badge
+                      variant="outline"
+                      className="text-[10px] px-1.5 py-0 h-5"
+                    >
+                      {cityVal}
+                    </Badge>
+                  ) : null}
                 </div>
               </div>
 
-              <div className="flex flex-wrap gap-2">
-                {canUpdate && !checked ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isUpdating}
-                    onClick={() => openEditor(step, "failed")}
-                    className="h-8 rounded-lg border-rose-300 px-3 text-rose-700 hover:bg-rose-50 dark:border-rose-900/60 dark:text-rose-200 dark:hover:bg-rose-950/30"
-                  >
-                    <AlertTriangle className="mr-2 h-4 w-4" />
-                    {isFailed ? "Failure note" : "Failed"}
-                  </Button>
-                ) : null}
-                {canUpdate && !checked && step.step_status !== "in_progress" ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isUpdating}
-                    onClick={() => handleMarkInProgress(step)}
-                    className="h-8 rounded-lg border-sky-300 px-3 text-sky-700 hover:bg-sky-50 dark:border-sky-900/60 dark:text-sky-200 dark:hover:bg-sky-950/30"
-                  >
-                    <PlayCircle className="mr-2 h-4 w-4" />
-                    In progress
-                  </Button>
-                ) : null}
-                {canUpdate && (step.notes || !checked) ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isUpdating}
-                    onClick={() => openEditor(step, "note")}
-                    className="h-8 rounded-lg px-3"
-                  >
-                    {checked || step.step_status === "in_progress" ? (
-                      <RotateCcw className="mr-2 h-4 w-4" />
-                    ) : (
-                      <FileBadge2 className="mr-2 h-4 w-4" />
-                    )}
-                    {checked
-                      ? "Reopen note"
-                      : step.step_status === "in_progress"
-                        ? "Progress note"
-                        : "Add note"}
-                  </Button>
-                ) : null}
-              </div>
-            </div>
+              {/* Status dropdown */}
+              {canUpdate && !isMedical ? (
+                <Select
+                  value={step.step_status}
+                  onValueChange={(v) => handleStatusChange(step, v)}
+                  disabled={isUpdating}
+                >
+                  <SelectTrigger className="h-8 w-[130px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem value="completed">Completed</SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : canUpdate && isMedical ? (
+                <Select
+                  value={step.step_status}
+                  onValueChange={(v) => handleStatusChange(step, v)}
+                  disabled={isUpdating}
+                >
+                  <SelectTrigger className="h-8 w-[130px]">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="pending">Pending</SelectItem>
+                    <SelectItem value="in_progress">In Progress</SelectItem>
+                    <SelectItem
+                      value="completed"
+                      disabled={!step.medical_document_url}
+                    >
+                      Completed
+                    </SelectItem>
+                    <SelectItem value="failed">Failed</SelectItem>
+                  </SelectContent>
+                </Select>
+              ) : null}
 
-            <div className="mt-3 flex flex-wrap gap-x-4 gap-y-1 text-xs text-muted-foreground">
-              <span>
-                <span className="font-semibold text-foreground">Updated:</span>{" "}
-                {formatStepDate(step.updated_at, "Awaiting update")}
-              </span>
-              <span>
-                <span className="font-semibold text-foreground">By:</span>{" "}
+              {/* Updated at */}
+              <span className="hidden sm:block text-[11px] text-muted-foreground shrink-0">
                 {step.updated_by?.name || "System"}
               </span>
-              <span>
-                <span className="font-semibold text-foreground">
-                  Completed:
-                </span>{" "}
-                {step.completed_at
-                  ? formatStepDate(step.completed_at, "Not completed")
-                  : "Not completed"}
-              </span>
             </div>
 
-            {isMedical ? (
-              <div className="mt-3 rounded-xl border border-border/70 bg-background/70 p-3.5">
-                <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
-                  <div className="space-y-1">
-                    <p className="text-sm font-semibold text-foreground">
-                      Medical document
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Upload a PDF, JPG, or PNG medical report to unlock this step.
-                    </p>
-                  </div>
-                  <div className="flex flex-wrap gap-2">
-                    {step.medical_document_url ? (
-                      <Button variant="outline" size="sm" asChild>
-                        <a
-                          href={step.medical_document_url}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          <FileBadge2 className="mr-2 h-4 w-4" />
-                          View medical file
-                        </a>
-                      </Button>
-                    ) : null}
-                    {step.medical_document_url && canUpdate && onRemoveMedicalDocument ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        disabled={isRemovingMedicalDocument}
-                        onClick={() => {
-                          void onRemoveMedicalDocument()
-                        }}
-                      >
-                        {isRemovingMedicalDocument ? (
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                        ) : (
-                          <RotateCcw className="mr-2 h-4 w-4" />
-                        )}
-                        Remove medical file
-                      </Button>
-                    ) : null}
-                  </div>
-                </div>
-
-                {!step.medical_document_url && canUpdate ? (
-                  <div className="mt-4">
-                    <DocumentUpload
-                      documentType="medical"
-                      title="Upload medical document"
-                      description="Drag a medical PDF, JPG, or PNG here to unlock the Medical checklist item."
-                      accept={{
-                        "application/pdf": [".pdf"],
-                        "image/jpeg": [".jpg", ".jpeg"],
-                        "image/png": [".png"],
-                      }}
-                      maxSize={10485760}
-                      mode="instant"
-                      disabled={isUploadingMedicalDocument || isUpdating}
-                      onUpload={(file) => onUploadMedicalDocument?.(file)}
-                    />
-                  </div>
+            {/* CoC sub-status */}
+            {isCoC && canUpdate ? (
+              <div className="mt-2 flex items-center gap-2 pl-11">
+                <span className="text-xs text-muted-foreground shrink-0">
+                  CoC status:
+                </span>
+                <Select
+                  value={cocVal}
+                  onValueChange={(v) => {
+                    setCoCStatuses((prev) => ({ ...prev, [step.id]: v }));
+                  }}
+                >
+                  <SelectTrigger className="h-7 w-[130px] text-xs">
+                    <SelectValue placeholder="Select..." />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="not_online">Not Online</SelectItem>
+                    <SelectItem value="online">Online</SelectItem>
+                  </SelectContent>
+                </Select>
+                {cocVal !== (step.coc_status ?? "") ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => handleSaveExtras(step)}
+                    disabled={isUpdating}
+                  >
+                    Save
+                  </Button>
                 ) : null}
               </div>
             ) : null}
 
-            {step.notes ? (
-              <div
-                className={cn(
-                  "mt-3 rounded-xl border px-3.5 py-3 text-sm",
-                  isFailed
-                    ? "border-rose-300/50 bg-rose-50/80 text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/25 dark:text-rose-100"
-                    : "border-border/70 bg-background/80 text-muted-foreground",
-                )}
-              >
-                <p className="mb-1 text-[11px] font-semibold uppercase tracking-[0.22em] text-muted-foreground">
-                  {isFailed ? "Failure reason" : "Notes"}
-                </p>
-                {step.notes}
-              </div>
-            ) : null}
-
-            {isEditing ? (
-              <div className="mt-3 rounded-xl border border-primary/15 bg-background/90 p-3.5">
-                <p className="text-sm font-semibold text-foreground">
-                  {editorMode === "failed"
-                    ? `Explain why ${step.step_name} failed`
-                    : `Add a shared note for ${step.step_name}`}
-                </p>
-                <Textarea
-                  className="mt-3 min-h-[88px] resize-none"
-                  value={noteDraft}
-                  onChange={(event) => {
-                    setEditorError("");
-                    setNoteDraft(event.target.value);
-                  }}
-                  placeholder={
-                    editorMode === "failed"
-                      ? "Explain the blocker clearly so the employer sees why this milestone stopped."
-                      : "Add any note you want both agencies to see for this milestone."
+            {/* Arrival City */}
+            {isArrival && canUpdate ? (
+              <div className="mt-2 flex items-center gap-2 pl-11">
+                <span className="text-xs text-muted-foreground shrink-0">
+                  City:
+                </span>
+                <Input
+                  className="h-7 w-[180px] text-xs"
+                  placeholder="e.g. Dubai"
+                  value={cityVal}
+                  onChange={(e) =>
+                    setArrivalCities((prev) => ({
+                      ...prev,
+                      [step.id]: e.target.value,
+                    }))
                   }
                 />
-                {editorError ? (
-                  <p className="mt-3 text-sm font-medium text-rose-600 dark:text-rose-300">
-                    {editorError}
-                  </p>
+                {cityVal !== (step.arrival_city ?? "") ? (
+                  <Button
+                    size="sm"
+                    variant="ghost"
+                    className="h-7 text-xs"
+                    onClick={() => handleSaveExtras(step)}
+                    disabled={isUpdating}
+                  >
+                    Save
+                  </Button>
                 ) : null}
-                <div className="mt-3 flex flex-wrap gap-2">
-                  {editorMode === "failed" ? (
+              </div>
+            ) : null}
+
+            {/* Notes */}
+            {canUpdate ? (
+              <div className="mt-2 pl-11">
+                <Textarea
+                  className="min-h-[32px] text-xs resize-none"
+                  placeholder="Add a note..."
+                  value={getNote(step)}
+                  onChange={(e) =>
+                    setNoteDrafts((prev) => ({
+                      ...prev,
+                      [step.id]: e.target.value,
+                    }))
+                  }
+                  rows={1}
+                />
+                {getNote(step) !== (step.notes ?? "") ? (
+                  <div className="mt-1 flex justify-end">
                     <Button
-                      type="button"
                       size="sm"
+                      variant="ghost"
+                      className="h-6 text-xs"
+                      onClick={() => handleSaveExtras(step)}
                       disabled={isUpdating}
-                      onClick={() => handleSaveFailed(step)}
                     >
                       {isUpdating ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <AlertTriangle className="mr-2 h-4 w-4" />
-                      )}
-                      Save failure note
-                    </Button>
-                  ) : (
-                    <Button
-                      type="button"
-                      size="sm"
-                      disabled={isUpdating}
-                      onClick={() => handleSaveNote(step)}
-                    >
-                      {isUpdating ? (
-                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                      ) : (
-                        <FileBadge2 className="mr-2 h-4 w-4" />
-                      )}
+                        <Loader2 className="h-3 w-3 animate-spin mr-1" />
+                      ) : null}
                       Save note
                     </Button>
-                  )}
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant="outline"
-                    disabled={isUpdating}
-                    onClick={closeEditor}
-                  >
-                    Cancel
-                  </Button>
-                </div>
+                  </div>
+                ) : null}
+              </div>
+            ) : step.notes ? (
+              <div className="mt-2 pl-11">
+                <p className="rounded-lg bg-muted/50 px-3 py-2 text-xs text-muted-foreground">
+                  {step.notes}
+                </p>
+              </div>
+            ) : null}
+
+            {/* File upload per step */}
+            {canUpdate && (
+              <div className="mt-2 pl-11">
+                <FileUploadSlot
+                  isMedical={isMedical}
+                  medicalDocumentUrl={step.medical_document_url}
+                  onUploadMedicalDocument={onUploadMedicalDocument}
+                  onRemoveMedicalDocument={onRemoveMedicalDocument}
+                  isUploading={isUploadingMedicalDocument}
+                  isRemoving={isRemovingMedicalDocument}
+                />
+              </div>
+            )}
+
+            {isFailed && step.notes ? (
+              <div className="mt-2 pl-11">
+                <p className="rounded-lg border border-rose-300/50 bg-rose-50/80 px-3 py-2 text-xs text-rose-900 dark:border-rose-900/50 dark:bg-rose-950/25 dark:text-rose-100">
+                  <span className="font-semibold">Reason:</span> {step.notes}
+                </p>
               </div>
             ) : null}
           </div>
@@ -422,63 +339,113 @@ export function StatusTimeline({
   );
 }
 
+function FileUploadSlot({
+  isMedical,
+  medicalDocumentUrl,
+  onUploadMedicalDocument,
+  onRemoveMedicalDocument,
+  isUploading,
+  isRemoving,
+}: {
+  isMedical: boolean;
+  medicalDocumentUrl?: string;
+  onUploadMedicalDocument?: (file: File) => void | Promise<unknown>;
+  onRemoveMedicalDocument?: () => void | Promise<unknown>;
+  isUploading: boolean;
+  isRemoving: boolean;
+}) {
+  if (isMedical && medicalDocumentUrl) {
+    return (
+      <div className="flex items-center gap-2">
+        <Button variant="outline" size="sm" className="h-7 text-xs" asChild>
+          <a href={medicalDocumentUrl} target="_blank" rel="noreferrer">
+            <FileBadge2 className="mr-1 h-3 w-3" />
+            View file
+          </a>
+        </Button>
+        {onRemoveMedicalDocument ? (
+          <Button
+            variant="ghost"
+            size="sm"
+            className="h-7 text-xs"
+            disabled={isRemoving}
+            onClick={() => onRemoveMedicalDocument()}
+          >
+            {isRemoving ? (
+              <Loader2 className="h-3 w-3 animate-spin" />
+            ) : (
+              "Remove"
+            )}
+          </Button>
+        ) : null}
+      </div>
+    );
+  }
+
+  if (isMedical && onUploadMedicalDocument) {
+    return (
+      <DocumentUpload
+        documentType="medical"
+        title=""
+        description=""
+        accept={{
+          "application/pdf": [".pdf"],
+          "image/jpeg": [".jpg", ".jpeg"],
+          "image/png": [".png"],
+        }}
+        maxSize={10485760}
+        mode="instant"
+        disabled={isUploading}
+        onUpload={(file) => onUploadMedicalDocument(file)}
+        className="max-w-[200px]"
+      />
+    );
+  }
+
+  return null;
+}
+
 function StatusBadge({ status }: { status: StatusStep["step_status"] }) {
   switch (status) {
     case "completed":
       return (
-        <Badge className="bg-emerald-600 text-white hover:bg-emerald-600">
-          <CheckCircle2 className="mr-1 h-3.5 w-3.5" />
-          Completed
+        <Badge className="bg-emerald-600 text-white hover:bg-emerald-600 h-5 text-[10px] px-1.5">
+          <CheckCircle2 className="mr-0.5 h-3 w-3" />
+          Done
         </Badge>
       );
     case "failed":
       return (
-        <Badge className="bg-rose-600 text-white hover:bg-rose-600">
-          <AlertTriangle className="mr-1 h-3.5 w-3.5" />
+        <Badge className="bg-rose-600 text-white hover:bg-rose-600 h-5 text-[10px] px-1.5">
+          <AlertTriangle className="mr-0.5 h-3 w-3" />
           Failed
         </Badge>
       );
     case "in_progress":
       return (
-        <Badge className="bg-sky-600 text-white hover:bg-sky-600">
-          <Loader2 className="mr-1 h-3.5 w-3.5 animate-spin" />
-          In progress
+        <Badge className="bg-sky-600 text-white hover:bg-sky-600 h-5 text-[10px] px-1.5">
+          <Loader2 className="mr-0.5 h-3 w-3 animate-spin" />
+          Active
         </Badge>
       );
     default:
       return (
-        <Badge variant="outline">
-          <Clock3 className="mr-1 h-3.5 w-3.5" />
+        <Badge variant="outline" className="h-5 text-[10px] px-1.5">
+          <Clock3 className="mr-0.5 h-3 w-3" />
           Pending
         </Badge>
       );
   }
 }
 
-function formatStepDate(value: string | undefined, fallback: string) {
-  if (!value) {
-    return fallback;
-  }
-
-  const parsed = new Date(value);
-  if (!isValid(parsed)) {
-    return fallback;
-  }
-
-  return format(parsed, "MMM dd, yyyy 'at' h:mm a");
-}
-
 function isMedicalStep(step: StatusStep) {
   return step.step_name.trim().toLowerCase() === "medical";
 }
 
-function noteDraftForStep(step: StatusStep, draft: string) {
-  const trimmed = draft.trim();
-  if (trimmed) {
-    return trimmed;
-  }
-  if (step.notes?.trim()) {
-    return step.notes.trim();
-  }
-  return undefined;
+function isCoCStep(step: StatusStep) {
+  return step.step_name.trim().toLowerCase() === "coc";
+}
+
+function isArrivalCityStep(step: StatusStep) {
+  return step.step_name.trim().toLowerCase() === "arrival city";
 }

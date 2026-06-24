@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { ArrowRight, Building2, CheckSquare, Link2, Loader2, MessageSquare, Route, Share2, Users } from "lucide-react"
+import { ArrowRight, Building2, CheckSquare, Link2, Loader2, MessageSquare, Pencil, Route, Share2, Users } from "lucide-react"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidates } from "@/hooks/use-candidates"
@@ -14,6 +14,7 @@ import { PageHeader } from "@/components/layout/page-header"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
+import { PartnerDefaultsDialog } from "@/components/partners/partner-defaults-dialog"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
@@ -38,6 +39,7 @@ export default function PartnersPage() {
   const { mutate: updateSharingPreferences, isPending: isSavingSharingPreferences } = useUpdateSharingPreferences()
   const [autoShareCandidates, setAutoShareCandidates] = React.useState(Boolean(user?.auto_share_candidates))
   const [defaultForeignPairingId, setDefaultForeignPairingId] = React.useState<string>(user?.default_foreign_pairing_id || "none")
+  const [defaultsDialogOpen, setDefaultsDialogOpen] = React.useState(false)
 
   React.useEffect(() => {
     setAutoShareCandidates(Boolean(user?.auto_share_candidates))
@@ -263,6 +265,49 @@ export default function PartnersPage() {
             />
           </div>
 
+          {activeWorkspace && (
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader>
+                <CardTitle>CV Defaults</CardTitle>
+                <CardDescription>
+                  Defaults used when generating CVs for{" "}
+                  {activeWorkspace.partner_agency?.company_name ||
+                    activeWorkspace.partner_agency?.full_name ||
+                    "this partner"}
+                  .
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="mb-4 grid grid-cols-3 gap-4">
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                    <p className="mb-1 text-xs text-muted-foreground">Country</p>
+                    <p className="font-semibold">{activeWorkspace?.default_country || "Not set"}</p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                    <p className="mb-1 text-xs text-muted-foreground">Salary</p>
+                    <p className="font-semibold">
+                      {activeWorkspace?.default_salary
+                        ? `${activeWorkspace.default_salary} ${activeWorkspace.default_currency || ""}`
+                        : "Not set"}
+                    </p>
+                  </div>
+                  <div className="rounded-2xl border border-border/70 bg-muted/20 p-3">
+                    <p className="mb-1 text-xs text-muted-foreground">Logo</p>
+                    <p className="font-semibold">
+                      {activeWorkspace?.partner_logo_url ? "Uploaded" : "Not set"}
+                    </p>
+                  </div>
+                </div>
+                {isEthiopianAgent && (
+                  <Button variant="outline" onClick={() => setDefaultsDialogOpen(true)}>
+                    <Pencil className="mr-2 h-4 w-4" />
+                    Edit Defaults
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          )}
+
           <Card className="border-border/70 shadow-sm">
             <CardHeader className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
               <div>
@@ -349,6 +394,14 @@ export default function PartnersPage() {
           </Card>
         </div>
       </div>
+
+      {isEthiopianAgent && (
+        <PartnerDefaultsDialog
+          workspace={activeWorkspace}
+          open={defaultsDialogOpen}
+          onOpenChange={setDefaultsDialogOpen}
+        />
+      )}
     </div>
   )
 }

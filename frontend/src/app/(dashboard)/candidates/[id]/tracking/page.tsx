@@ -43,11 +43,11 @@ export default function CandidateTrackingPage() {
   const canUpdateProgress = isEthiopianAgent && candidate?.created_by === user?.id
   const [isOpeningChat, setIsOpeningChat] = React.useState(false)
 
-  const handleUpdateStep = (stepName: string, status: string, notes?: string) => {
+  const handleUpdateStep = (stepName: string, status: string, notes?: string, cocStatus?: string, arrivalCity?: string) => {
     if (!canUpdateProgress) {
       return
     }
-    updateStep({ step_name: stepName, status, notes })
+    updateStep({ step_name: stepName, status, notes, coc_status: cocStatus, arrival_city: arrivalCity })
   }
 
   const handleRemoveMedicalDocument = async () => {

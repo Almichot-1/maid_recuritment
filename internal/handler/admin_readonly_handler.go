@@ -100,16 +100,32 @@ func (h *AdminReadonlyHandler) GetCandidates(w http.ResponseWriter, r *http.Requ
 	statusFilter := strings.TrimSpace(r.URL.Query().Get("status"))
 	search := strings.TrimSpace(strings.ToLower(r.URL.Query().Get("search")))
 
+	page, _ := parseIntWithDefault(r.URL.Query().Get("page"), 1)
+	pageSize, _ := parseIntWithDefault(r.URL.Query().Get("page_size"), 20)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
 	query := h.candidateRepository.DB().Model(&domain.Candidate{})
+	countQuery := h.candidateRepository.DB().Model(&domain.Candidate{})
 	if statusFilter != "" {
 		query = query.Where("status = ?", statusFilter)
+		countQuery = countQuery.Where("status = ?", statusFilter)
 	}
 	if search != "" {
 		query = query.Where("LOWER(full_name) LIKE ?", "%"+search+"%")
+		countQuery = countQuery.Where("LOWER(full_name) LIKE ?", "%"+search+"%")
 	}
 
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	offset := (page - 1) * pageSize
 	candidates := make([]*domain.Candidate, 0)
-	if err := query.Order("created_at DESC").Limit(200).Find(&candidates).Error; err != nil {
+	if err := query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&candidates).Error; err != nil {
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
@@ -132,18 +148,41 @@ func (h *AdminReadonlyHandler) GetCandidates(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
-	_ = utils.WriteJSON(w, http.StatusOK, map[string][]AdminCandidateOverview{"candidates": items})
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"candidates": items,
+		"meta": map[string]interface{}{
+			"page":      page,
+			"page_size": pageSize,
+			"count":     total,
+		},
+	})
 }
 
 func (h *AdminReadonlyHandler) GetSelections(w http.ResponseWriter, r *http.Request) {
 	statusFilter := strings.TrimSpace(r.URL.Query().Get("status"))
-	query := h.selectionRepository.DB().Model(&domain.Selection{})
-	if statusFilter != "" {
-		query = query.Where("status = ?", statusFilter)
+
+	page, _ := parseIntWithDefault(r.URL.Query().Get("page"), 1)
+	pageSize, _ := parseIntWithDefault(r.URL.Query().Get("page_size"), 20)
+	if pageSize > 100 {
+		pageSize = 100
 	}
 
+	query := h.selectionRepository.DB().Model(&domain.Selection{})
+	countQuery := h.selectionRepository.DB().Model(&domain.Selection{})
+	if statusFilter != "" {
+		query = query.Where("status = ?", statusFilter)
+		countQuery = countQuery.Where("status = ?", statusFilter)
+	}
+
+	var total int64
+	if err := countQuery.Count(&total).Error; err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	offset := (page - 1) * pageSize
 	selections := make([]*domain.Selection, 0)
-	if err := query.Order("created_at DESC").Limit(200).Find(&selections).Error; err != nil {
+	if err := query.Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&selections).Error; err != nil {
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
 	}
@@ -174,15 +213,38 @@ func (h *AdminReadonlyHandler) GetSelections(w http.ResponseWriter, r *http.Requ
 		})
 	}
 
-	_ = utils.WriteJSON(w, http.StatusOK, map[string][]AdminSelectionOverview{"selections": items})
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"selections": items,
+		"meta": map[string]interface{}{
+			"page":      page,
+			"page_size": pageSize,
+			"count":     total,
+		},
+	})
 }
 
 func (h *AdminReadonlyHandler) GetAuditLogs(w http.ResponseWriter, r *http.Request) {
-	logs, err := h.auditRepository.List(domain.AuditLogFilters{
+	page, _ := parseIntWithDefault(r.URL.Query().Get("page"), 1)
+	pageSize, _ := parseIntWithDefault(r.URL.Query().Get("page_size"), 50)
+	if pageSize > 200 {
+		pageSize = 200
+	}
+
+	filters := domain.AuditLogFilters{
 		AdminID:    strings.TrimSpace(r.URL.Query().Get("admin_id")),
 		Action:     strings.TrimSpace(r.URL.Query().Get("action")),
 		TargetType: strings.TrimSpace(r.URL.Query().Get("target_type")),
-	})
+		Page:       page,
+		PageSize:   pageSize,
+	}
+
+	total, err := h.auditRepository.Count(filters)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		return
+	}
+
+	logs, err := h.auditRepository.List(filters)
 	if err != nil {
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
@@ -212,7 +274,14 @@ func (h *AdminReadonlyHandler) GetAuditLogs(w http.ResponseWriter, r *http.Reque
 		})
 	}
 
-	_ = utils.WriteJSON(w, http.StatusOK, map[string][]AdminAuditLogOverview{"logs": items})
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"logs": items,
+		"meta": map[string]interface{}{
+			"page":      page,
+			"page_size": pageSize,
+			"count":     total,
+		},
+	})
 }
 
 func (h *AdminReadonlyHandler) GetAgencyLogins(w http.ResponseWriter, r *http.Request) {

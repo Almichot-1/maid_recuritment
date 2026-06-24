@@ -113,6 +113,19 @@ func (r *GormCandidatePairShareRepository) Deactivate(pairingID, candidateID str
 	return nil
 }
 
+func (r *GormCandidatePairShareRepository) UpdateCVURL(shareID, cvURL string) error {
+	result := r.db.Model(&domain.CandidatePairShare{}).
+		Where("id = ?", shareID).
+		Update("cv_pdf_url", cvURL)
+	if result.Error != nil {
+		return fmt.Errorf("update cv url on candidate pair share: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrCandidatePairShareNotFound
+	}
+	return nil
+}
+
 func isDuplicateCandidatePairShareError(err error) bool {
 	var pgErr *pgconn.PgError
 	if errors.As(err, &pgErr) {

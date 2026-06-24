@@ -170,8 +170,8 @@ export function useUpdatePairingDefaults() {
   const queryClient = useQueryClient()
 
   return useMutation({
-    mutationFn: async ({ id, default_country, default_currency }: { id: string; default_country: string; default_currency: string }) => {
-      const response = await api.patch<{ pairing: WorkspaceSummary }>(`/pairings/${id}/defaults`, { default_country, default_currency })
+    mutationFn: async ({ id, default_country, default_currency, default_salary }: { id: string; default_country: string; default_currency: string; default_salary?: string }) => {
+      const response = await api.patch<{ pairing: WorkspaceSummary }>(`/pairings/${id}/defaults`, { default_country, default_currency, default_salary })
       return response.data.pairing
     },
     onSuccess: async () => {

@@ -1,5 +1,3 @@
-version: '3.8'
-
 services:
   postgres:
     image: postgres:17-alpine
@@ -54,6 +52,35 @@ services:
       retries: 5
     networks:
       - maid-network
+
+  api:
+    build: .
+    container_name: maid-recruitment-api
+    ports:
+      - "10000:10000"
+    environment:
+      DATABASE_URL: "postgres://postgres:postgres@postgres:5432/maid_recruitment?sslmode=disable"
+      JWT_SECRET: "local-dev-jwt-secret-change-in-production"
+      APP_BASE_URL: "http://localhost:10000"
+      CORS_ALLOWED_ORIGINS: "http://localhost:3000"
+      AWS_ACCESS_KEY: "minioadmin"
+      AWS_SECRET_KEY: "minioadmin"
+      AWS_REGION: "us-east-1"
+      S3_BUCKET: "maid-recruitment"
+      S3_PUBLIC_BASE_URL: "http://localhost:9000/maid-recruitment"
+      SMTP_HOST: "localhost"
+      SMTP_PORT: "1025"
+      SMTP_USER: ""
+      SMTP_PASS: ""
+      RUN_EXPIRY_SCHEDULER: "false"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    networks:
+      - maid-network
+    restart: unless-stopped
 
 volumes:
   postgres_data:

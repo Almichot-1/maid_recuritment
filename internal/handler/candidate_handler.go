@@ -1,6 +1,8 @@
 package handler
 
 import (
+	"archive/zip"
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -32,8 +34,6 @@ type CreateCandidateRequest struct {
 	EducationLevel      string   `json:"education_level"`
 	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
 	CountryOfExperience string   `json:"country_of_experience"`
-	CountryApplied      string   `json:"country_applied"`
-	SalaryOffered       string   `json:"salary_offered"`
 	Languages           []string `json:"languages"`
 	Skills              []string `json:"skills"`
 }
@@ -50,8 +50,6 @@ type UpdateCandidateRequest struct {
 	EducationLevel      string   `json:"education_level"`
 	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
 	CountryOfExperience string   `json:"country_of_experience"`
-	CountryApplied      string   `json:"country_applied"`
-	SalaryOffered       string   `json:"salary_offered"`
 	Languages           []string `json:"languages"`
 	Skills              []string `json:"skills"`
 }
@@ -64,7 +62,13 @@ type ListCandidatesQuery struct {
 	MinExperience *int
 	MaxExperience *int
 	Languages     []string
+	Religion      string
+	MaritalStatus string
+	Nationality   string
+	Skills        []string
 	SharedOnly    bool
+	SortBy        string
+	SortOrder     string
 	Page          int
 	PageSize      int
 }
@@ -104,8 +108,6 @@ type CandidateResponse struct {
 	EducationLevel      string                      `json:"education_level,omitempty"`
 	ExperienceYears     *int                        `json:"experience_years,omitempty"`
 	CountryOfExperience string                      `json:"country_of_experience,omitempty"`
-	CountryApplied      string                      `json:"country_applied,omitempty"`
-	SalaryOffered       string                      `json:"salary_offered,omitempty"`
 	Languages           []string                    `json:"languages"`
 	Skills          []string                    `json:"skills"`
 	Status          string                      `json:"status"`
@@ -134,6 +136,12 @@ type CandidateListMeta struct {
 
 type GenerateCVResponse struct {
 	CVPDFURL string `json:"cv_pdf_url"`
+}
+
+type BulkCVZipRequest struct {
+	CandidateIDs    []string `json:"candidate_ids"`
+	PairingID       string   `json:"pairing_id"`
+	FilenamePattern string   `json:"filename_pattern"`
 }
 
 type PassportDataResponse struct {
@@ -193,17 +201,19 @@ type CandidateHandler struct {
 	candidateRepository *repository.GormCandidateRepository
 	selectionRepository domain.SelectionRepository
 	pairingService      *service.PairingService
+	shareRepository     domain.CandidatePairShareRepository
 	documentStorage     secureDocumentStorage
 	inputValidator      *validator.Validate
 }
 
-func NewCandidateHandler(candidateService *service.CandidateService, passportOCRService *service.PassportOCRService, candidateRepository *repository.GormCandidateRepository, selectionRepository domain.SelectionRepository, pairingService *service.PairingService) *CandidateHandler {
+func NewCandidateHandler(candidateService *service.CandidateService, passportOCRService *service.PassportOCRService, candidateRepository *repository.GormCandidateRepository, selectionRepository domain.SelectionRepository, pairingService *service.PairingService, shareRepository domain.CandidatePairShareRepository) *CandidateHandler {
 	return &CandidateHandler{
 		candidateService:    candidateService,
 		passportOCRService:  passportOCRService,
 		candidateRepository: candidateRepository,
 		selectionRepository: selectionRepository,
 		pairingService:      pairingService,
+		shareRepository:     shareRepository,
 		inputValidator:      validator.New(),
 	}
 }
@@ -246,8 +256,6 @@ func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Reques
 		EducationLevel:      req.EducationLevel,
 		ExperienceYears:     req.ExperienceYears,
 		CountryOfExperience: req.CountryOfExperience,
-		CountryApplied:      req.CountryApplied,
-		SalaryOffered:       req.SalaryOffered,
 		Languages:           req.Languages,
 		Skills:              req.Skills,
 	})
@@ -301,8 +309,6 @@ func (h *CandidateHandler) UpdateCandidate(w http.ResponseWriter, r *http.Reques
 		EducationLevel:      req.EducationLevel,
 		ExperienceYears:     req.ExperienceYears,
 		CountryOfExperience: req.CountryOfExperience,
-		CountryApplied:      req.CountryApplied,
-		SalaryOffered:       req.SalaryOffered,
 		Languages:           req.Languages,
 		Skills:              req.Skills,
 	})
@@ -364,8 +370,20 @@ func (h *CandidateHandler) GetCandidate(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// For foreign agents, resolve per-pairing CV and override for the response.
+	resolvedCVPDFURL := candidate.CVPDFURL
+	if pairingID != "" && h.shareRepository != nil {
+		share, err := h.shareRepository.GetActiveByPairingAndCandidate(pairingID, id)
+		if err == nil && share != nil && strings.TrimSpace(share.CVPDFURL) != "" {
+			resolvedCVPDFURL = share.CVPDFURL
+		}
+	}
+
+	resp := h.mapCandidateResponse(candidate, documents)
+	resp.CVPDFURL = resolvedCVPDFURL
+
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]CandidateResponse{
-		"candidate": h.mapCandidateResponse(candidate, documents),
+		"candidate": resp,
 	})
 }
 
@@ -396,16 +414,22 @@ func (h *CandidateHandler) ListCandidates(w http.ResponseWriter, r *http.Request
 	}
 
 	filters := domain.CandidateFilters{
-		Statuses:      statusFilters,
-		Search:        query.Search,
-		MinAge:        query.MinAge,
-		MaxAge:        query.MaxAge,
-		MinExperience: query.MinExperience,
-		MaxExperience: query.MaxExperience,
-		Languages:     query.Languages,
-		SharedOnly:    query.SharedOnly,
-		Page:          query.Page,
-		PageSize:      query.PageSize,
+		Statuses:        statusFilters,
+		Search:          query.Search,
+		MinAge:          query.MinAge,
+		MaxAge:          query.MaxAge,
+		MinExperience:   query.MinExperience,
+		MaxExperience:   query.MaxExperience,
+		Languages:       query.Languages,
+		Religion:        query.Religion,
+		MaritalStatus:   query.MaritalStatus,
+		Nationality:     query.Nationality,
+		Skills:          query.Skills,
+		SharedOnly:      query.SharedOnly,
+		SortBy:          query.SortBy,
+		SortOrder:       query.SortOrder,
+		Page:            query.Page,
+		PageSize:        query.PageSize,
 	}
 	scopedFilters, err := applyRoleScopedCandidateFilters(role, userID, filters)
 	if err != nil {
@@ -668,6 +692,7 @@ func (h *CandidateHandler) DownloadCV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	pairingID, _ := middleware.PairingIDFromContext(r.Context())
+	pairingIDParam := strings.TrimSpace(r.URL.Query().Get("pairing_id"))
 
 	candidate, _, err := h.candidateService.GetCandidate(id)
 	if err != nil {
@@ -683,16 +708,34 @@ func (h *CandidateHandler) DownloadCV(w http.ResponseWriter, r *http.Request) {
 		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "candidate not found"})
 		return
 	}
-	if strings.TrimSpace(candidate.CVPDFURL) == "" {
+
+	// Use query param pairing_id first, then fall back to header pairing ID (X-Pairing-ID)
+	lookupPairingID := pairingIDParam
+	if lookupPairingID == "" && pairingID != "" {
+		lookupPairingID = pairingID
+	}
+
+	cvURL := candidate.CVPDFURL
+	if lookupPairingID != "" {
+		share, err := h.shareRepository.GetActiveByPairingAndCandidate(lookupPairingID, id)
+		if err == nil && share != nil && strings.TrimSpace(share.CVPDFURL) != "" {
+			cvURL = share.CVPDFURL
+		}
+	}
+
+	if strings.TrimSpace(cvURL) == "" && strings.TrimSpace(candidate.CVPDFURL) == "" {
 		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "cv not found"})
 		return
+	}
+	if strings.TrimSpace(cvURL) == "" {
+		cvURL = candidate.CVPDFURL
 	}
 
 	fileName := buildCandidateCVFileName(candidate.FullName)
 	contentType := "application/pdf"
 
 	if h.documentStorage != nil {
-		reader, detectedContentType, err := h.documentStorage.Open(candidate.CVPDFURL)
+		reader, detectedContentType, err := h.documentStorage.Open(cvURL)
 		if err != nil {
 			_ = utils.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": "cv download failed"})
 			return
@@ -711,7 +754,7 @@ func (h *CandidateHandler) DownloadCV(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, candidate.CVPDFURL, nil)
+	request, err := http.NewRequestWithContext(r.Context(), http.MethodGet, cvURL, nil)
 	if err != nil {
 		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
 		return
@@ -1016,6 +1059,16 @@ func parseListCandidatesQuery(r *http.Request) (ListCandidatesQuery, error) {
 	if err != nil {
 		return ListCandidatesQuery{}, err
 	}
+	if minAge != nil && *minAge < 18 {
+		return ListCandidatesQuery{}, errors.New("min_age must be at least 18")
+	}
+	if maxAge != nil && *maxAge > 100 {
+		return ListCandidatesQuery{}, errors.New("max_age must not exceed 100")
+	}
+	if minAge != nil && maxAge != nil && *minAge > *maxAge {
+		return ListCandidatesQuery{}, errors.New("min_age must not exceed max_age")
+	}
+
 	minExperience, err := parseOptionalInt(query.Get("min_experience"))
 	if err != nil {
 		return ListCandidatesQuery{}, err
@@ -1024,6 +1077,16 @@ func parseListCandidatesQuery(r *http.Request) (ListCandidatesQuery, error) {
 	if err != nil {
 		return ListCandidatesQuery{}, err
 	}
+	if minExperience != nil && *minExperience < 0 {
+		return ListCandidatesQuery{}, errors.New("min_experience must not be negative")
+	}
+	if maxExperience != nil && *maxExperience > 50 {
+		return ListCandidatesQuery{}, errors.New("max_experience must not exceed 50")
+	}
+	if minExperience != nil && maxExperience != nil && *minExperience > *maxExperience {
+		return ListCandidatesQuery{}, errors.New("min_experience must not exceed max_experience")
+	}
+
 	page, err := parseIntWithDefault(query.Get("page"), 1)
 	if err != nil {
 		return ListCandidatesQuery{}, err
@@ -1038,17 +1101,42 @@ func parseListCandidatesQuery(r *http.Request) (ListCandidatesQuery, error) {
 		languages = splitCSVQueryValues(query["language"])
 	}
 
+	skills := splitCSVQueryValues(query["skills"])
+
+	sortBy := strings.TrimSpace(query.Get("sort_by"))
+	sortOrder := strings.TrimSpace(query.Get("sort_order"))
+	allowedSortBy := map[string]bool{
+		"created_at": true, "full_name": true, "age": true,
+		"experience_years": true, "status": true, "nationality": true,
+		"religion": true,
+	}
+	if sortBy != "" && !allowedSortBy[sortBy] {
+		return ListCandidatesQuery{}, errors.New("invalid sort_by field")
+	}
+	if sortOrder == "" {
+		sortOrder = "desc"
+	}
+	if sortOrder != "asc" && sortOrder != "desc" {
+		return ListCandidatesQuery{}, errors.New("sort_order must be asc or desc")
+	}
+
 	return ListCandidatesQuery{
-		Status:        splitCSVQueryValues(query["status"]),
-		Search:        strings.TrimSpace(query.Get("search")),
-		MinAge:        minAge,
-		MaxAge:        maxAge,
-		MinExperience: minExperience,
-		MaxExperience: maxExperience,
-		Languages:     languages,
-		SharedOnly:    strings.EqualFold(strings.TrimSpace(query.Get("shared_only")), "true"),
-		Page:          page,
-		PageSize:      pageSize,
+		Status:         splitCSVQueryValues(query["status"]),
+		Search:         strings.TrimSpace(query.Get("search")),
+		MinAge:         minAge,
+		MaxAge:         maxAge,
+		MinExperience:  minExperience,
+		MaxExperience:  maxExperience,
+		Languages:      languages,
+		Religion:       strings.TrimSpace(query.Get("religion")),
+		MaritalStatus:  strings.TrimSpace(query.Get("marital_status")),
+		Nationality:    strings.TrimSpace(query.Get("nationality")),
+		Skills:         skills,
+		SharedOnly:     strings.EqualFold(strings.TrimSpace(query.Get("shared_only")), "true"),
+		SortBy:         sortBy,
+		SortOrder:      sortOrder,
+		Page:           page,
+		PageSize:       pageSize,
 	}, nil
 }
 
@@ -1160,8 +1248,6 @@ func (h *CandidateHandler) mapCandidateResponse(candidate *domain.Candidate, doc
 		EducationLevel:      candidate.EducationLevel,
 		ExperienceYears:     candidate.ExperienceYears,
 		CountryOfExperience: candidate.CountryOfExperience,
-		CountryApplied:      candidate.CountryApplied,
-		SalaryOffered:       candidate.SalaryOffered,
 		Languages:           decodeStringSlice(candidate.Languages),
 		Skills:              decodeStringSlice(candidate.Skills),
 		Status:              string(candidate.Status),
@@ -1345,4 +1431,266 @@ func mapPassportDataResponse(passportData *domain.PassportData) PassportDataResp
 		Confidence:       passportData.Confidence,
 		ExtractedAt:      passportData.ExtractedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	}
+}
+
+func (h *CandidateHandler) BatchRegenerateCV(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req service.BatchRegenerateCVsInput
+	if err := decodeJSONBody(w, r, &req, 1<<20); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+	if len(req.CandidateIDs) > service.MaxBatchSize {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("too many candidates (max %d)", service.MaxBatchSize),
+		})
+		return
+	}
+
+	result := h.candidateService.BatchRegenerateCVs(userID, req)
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"result": result})
+}
+
+func (h *CandidateHandler) BulkDownloadCVZip(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	role, _ := middleware.RoleFromContext(r.Context())
+	isEthiopianAgent := strings.TrimSpace(role) == string(domain.EthiopianAgent)
+
+	var req BulkCVZipRequest
+	if err := decodeJSONBody(w, r, &req, 1<<20); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+	if len(req.CandidateIDs) > service.MaxBatchSize {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("too many candidates (max %d)", service.MaxBatchSize),
+		})
+		return
+	}
+
+	pattern := strings.TrimSpace(req.FilenamePattern)
+	if pattern == "" {
+		pattern = "{name}"
+	}
+
+	pairingID := strings.TrimSpace(req.PairingID)
+	if pairingID == "" && !isEthiopianAgent {
+		if h.pairingService != nil {
+			pairing, err := h.pairingService.ResolveActivePairing(userID, role, "")
+			if err == nil && pairing != nil {
+				pairingID = pairing.ID
+			}
+		}
+	}
+
+	var buf bytes.Buffer
+	zipWriter := zip.NewWriter(&buf)
+	generated := 0
+	var lastErr error
+
+	for _, cid := range req.CandidateIDs {
+		cid = strings.TrimSpace(cid)
+		if cid == "" {
+			continue
+		}
+
+		// 1. Regenerate the CV (Ethiopian agent only)
+		if isEthiopianAgent {
+			if err := h.candidateService.GenerateCV(cid, userID, pairingID, service.CandidateCVBranding{}); err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		// 2. Get candidate details
+		candidate, _, err := h.candidateService.GetCandidate(cid)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+
+		// 3. Resolve CV URL (per-pairing share or global)
+		cvURL := candidate.CVPDFURL
+		if pairingID != "" {
+			if share, err := h.shareRepository.GetActiveByPairingAndCandidate(pairingID, cid); err == nil && share != nil && strings.TrimSpace(share.CVPDFURL) != "" {
+				cvURL = share.CVPDFURL
+			}
+		}
+
+		if strings.TrimSpace(cvURL) == "" {
+			continue
+		}
+
+		// 4. Read PDF bytes
+		var pdfBytes []byte
+		if h.documentStorage != nil {
+			reader, _, err := h.documentStorage.Open(cvURL)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			pdfBytes, err = io.ReadAll(reader)
+			reader.Close()
+			if err != nil {
+				lastErr = err
+				continue
+			}
+		} else {
+			resp, err := http.Get(cvURL)
+			if err != nil {
+				lastErr = err
+				continue
+			}
+			pdfBytes, err = io.ReadAll(resp.Body)
+			resp.Body.Close()
+			if err != nil {
+				lastErr = err
+				continue
+			}
+		}
+
+		// 5. Build filename
+		name := sanitizeFilename(resolveCVFilename(candidate, pattern))
+		header := &zip.FileHeader{
+			Name:   name,
+			Method: zip.Deflate,
+		}
+		writer, err := zipWriter.CreateHeader(header)
+		if err != nil {
+			lastErr = err
+			continue
+		}
+		if _, err := writer.Write(pdfBytes); err != nil {
+			lastErr = err
+			continue
+		}
+		generated++
+	}
+
+	zipWriter.Close()
+
+	if generated == 0 {
+		errMsg := "failed to generate any CVs"
+		if lastErr != nil {
+			errMsg = lastErr.Error()
+		}
+		_ = utils.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": errMsg})
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/zip")
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="cvs-%d.zip"`, time.Now().Unix()))
+	w.Header().Set("Cache-Control", "private, max-age=300")
+	w.WriteHeader(http.StatusOK)
+	_, _ = w.Write(buf.Bytes())
+}
+
+func sanitizeFilename(name string) string {
+	name = strings.TrimSpace(name)
+	name = strings.ReplaceAll(name, "/", "_")
+	name = strings.ReplaceAll(name, "\\", "_")
+	name = strings.ReplaceAll(name, ":", "_")
+	name = strings.ReplaceAll(name, "\"", "_")
+	name = strings.ReplaceAll(name, "<", "_")
+	name = strings.ReplaceAll(name, ">", "_")
+	name = strings.ReplaceAll(name, "|", "_")
+	name = strings.ReplaceAll(name, "?", "_")
+	name = strings.ReplaceAll(name, "*", "_")
+	if name == "" {
+		return "candidate.pdf"
+	}
+	if !strings.HasSuffix(strings.ToLower(name), ".pdf") {
+		name += ".pdf"
+	}
+	return name
+}
+
+func resolveCVFilename(candidate *domain.Candidate, pattern string) string {
+	age := ""
+	if candidate.Age != nil {
+		age = fmt.Sprintf("%d", *candidate.Age)
+	}
+	r := strings.NewReplacer(
+		"{name}", candidate.FullName,
+		"{partner}", "",
+		"{status}", string(candidate.Status),
+		"{age}", age,
+		"{nationality}", candidate.Nationality,
+	)
+	return r.Replace(pattern)
+}
+
+func (h *CandidateHandler) BatchSetPairOverride(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req service.BatchSetPairOverrideInput
+	if err := decodeJSONBody(w, r, &req, 1<<20); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+	if strings.TrimSpace(req.PairingID) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "pairing_id is required"})
+		return
+	}
+	if len(req.CandidateIDs) > service.MaxBatchSize {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("too many candidates (max %d)", service.MaxBatchSize),
+		})
+		return
+	}
+
+	result := h.candidateService.BatchSetPairOverrides(userID, req)
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"result": result})
+}
+
+func (h *CandidateHandler) BatchPublish(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req service.BulkPublishInput
+	if err := decodeJSONBody(w, r, &req, 1<<20); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+	if len(req.CandidateIDs) > service.MaxBatchSize {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{
+			"error": fmt.Sprintf("too many candidates (max %d)", service.MaxBatchSize),
+		})
+		return
+	}
+
+	result := h.candidateService.BulkPublish(userID, req)
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"result": result})
 }

@@ -69,7 +69,7 @@ export default function NotificationsPage() {
     <div className="space-y-6 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-10">
       {breadcrumbs}
 
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
         <PageHeader
           heading="Notifications"
           text="Stay updated on selections, approvals, and recruitment progress."
@@ -79,63 +79,67 @@ export default function NotificationsPage() {
             onClick={() => markAllAsRead()}
             disabled={isMarkingAll}
             variant="outline"
+            className="shrink-0"
           >
             {isMarkingAll ? (
               <Loader2 className="mr-2 h-4 w-4 animate-spin" />
             ) : (
-              <CheckCheck className="mr-2 h-4 w-4" />
+              <CheckCheck className="sm:mr-2 h-4 w-4" />
             )}
-            Mark All as Read
+            <span className="hidden sm:inline">Mark All as Read</span>
           </Button>
         )}
       </div>
 
       <Tabs defaultValue="all" className="space-y-6">
-        <TabsList className="grid w-full grid-cols-5 h-auto p-1">
-          <TabsTrigger value="all" className="relative">
-            All
-            {allNotifications.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {allNotifications.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="unread" className="relative">
-            Unread
-            {unreadNotifications.length > 0 && (
-              <Badge
-                variant="secondary"
-                className="ml-2 bg-blue-500 text-white hover:bg-blue-600"
-              >
-                {unreadNotifications.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="selection" className="relative">
-            Selection
-            {selectionNotifications.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {selectionNotifications.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="approval" className="relative">
-            Approval
-            {approvalNotifications.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {approvalNotifications.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-          <TabsTrigger value="status" className="relative">
-            Status Updates
-            {statusNotifications.length > 0 && (
-              <Badge variant="secondary" className="ml-2">
-                {statusNotifications.length}
-              </Badge>
-            )}
-          </TabsTrigger>
-        </TabsList>
+        <div className="overflow-x-auto pb-1">
+          <TabsList className="inline-flex h-auto min-w-max gap-1 p-1 w-full sm:grid sm:grid-cols-5">
+            <TabsTrigger value="all" className="relative py-2">
+              All
+              {allNotifications.length > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {allNotifications.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="unread" className="relative py-2">
+              Unread
+              {unreadNotifications.length > 0 && (
+                <Badge
+                  variant="secondary"
+                  className="ml-2 bg-blue-500 text-white hover:bg-blue-600"
+                >
+                  {unreadNotifications.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="selection" className="relative py-2">
+              Selection
+              {selectionNotifications.length > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {selectionNotifications.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="approval" className="relative py-2">
+              Approval
+              {approvalNotifications.length > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {approvalNotifications.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+            <TabsTrigger value="status" className="relative py-2">
+              <span className="hidden sm:inline">Status Updates</span>
+              <span className="sm:hidden">Status</span>
+              {statusNotifications.length > 0 && (
+                <Badge variant="secondary" className="ml-2">
+                  {statusNotifications.length}
+                </Badge>
+              )}
+            </TabsTrigger>
+          </TabsList>
+        </div>
 
         {isLoading ? (
           <div className="flex items-center justify-center py-12">

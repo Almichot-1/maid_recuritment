@@ -20,6 +20,7 @@ import { toast } from "sonner"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useAgencyBranding } from "@/hooks/use-agency-branding"
 import { downloadCandidateCVFile, useCandidate, useGenerateCV } from "@/hooks/use-candidates"
+import { usePairingContext } from "@/hooks/use-pairings"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
@@ -30,6 +31,7 @@ export default function CandidateCVPage() {
   const { isEthiopianAgent } = useCurrentUser()
   const { isLoaded: isBrandingLoaded, logoDataURL } = useAgencyBranding()
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
+  const { activePairingId } = usePairingContext()
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const [hasStartedPreparation, setHasStartedPreparation] = React.useState(false)
   const [isDownloading, setIsDownloading] = React.useState(false)
@@ -47,12 +49,15 @@ export default function CandidateCVPage() {
   
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
-    const brandingData: { branding_logo_data_url?: string } = {}
+    const brandingData: { branding_logo_data_url?: string; pairing_id?: string } = {}
     if (logoDataURL) {
       brandingData.branding_logo_data_url = logoDataURL
     }
+    if (activePairingId) {
+      brandingData.pairing_id = activePairingId
+    }
     generateCV(brandingData)
-  }, [generateCV, logoDataURL])
+  }, [generateCV, logoDataURL, activePairingId])
 
   const handleDownload = React.useCallback(async () => {
     if (!candidate?.cv_pdf_url) {

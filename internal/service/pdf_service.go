@@ -12,6 +12,7 @@ import (
 	"io"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/jung-kurt/gofpdf"
@@ -24,7 +25,7 @@ var (
 	ErrPDFGenerationFailed      = errors.New("pdf generation failed")
 )
 
-const maxRemoteAssetBytes int64 = 55 << 20
+const maxRemoteAssetBytes int64 = 5 << 20
 
 var remoteAssetHTTPClient = &http.Client{Timeout: 15 * time.Second}
 
@@ -32,6 +33,38 @@ type PDFService struct{}
 
 func NewPDFService() *PDFService {
 	return &PDFService{}
+}
+
+type assetCacheEntry struct {
+	data      []byte
+	contentType string
+	expiresAt time.Time
+}
+
+var (
+	assetCacheMu sync.RWMutex
+	assetCache   = make(map[string]*assetCacheEntry)
+	assetCacheTTL = 5 * time.Minute
+)
+
+func getCachedAsset(url string) ([]byte, string, bool) {
+	assetCacheMu.RLock()
+	entry, ok := assetCache[url]
+	assetCacheMu.RUnlock()
+	if !ok || time.Now().After(entry.expiresAt) {
+		return nil, "", false
+	}
+	return entry.data, entry.contentType, true
+}
+
+func setCachedAsset(url string, data []byte, contentType string) {
+	assetCacheMu.Lock()
+	assetCache[url] = &assetCacheEntry{
+		data:        data,
+		contentType: contentType,
+		expiresAt:   time.Now().Add(assetCacheTTL),
+	}
+	assetCacheMu.Unlock()
 }
 
 func (s *PDFService) GenerateCandidateCV(candidate *domain.Candidate, documents []*domain.Document, branding CandidateCVBranding, passportData *domain.PassportData) ([]byte, error) {
@@ -1042,6 +1075,10 @@ func decodeLogoDataURL(dataURL string) ([]byte, string, error) {
 }
 
 func fetchRemoteAsset(fileURL string) ([]byte, string, error) {
+	if data, ct, ok := getCachedAsset(fileURL); ok {
+		return data, ct, nil
+	}
+
 	response, err := remoteAssetHTTPClient.Get(fileURL)
 	if err != nil {
 		return nil, "", fmt.Errorf("download image: %w", err)
@@ -1064,6 +1101,7 @@ func fetchRemoteAsset(fileURL string) ([]byte, string, error) {
 	if contentType == "" {
 		contentType = inferContentTypeFromURL(fileURL)
 	}
+	setCachedAsset(fileURL, body, contentType)
 	return body, contentType, nil
 }
 

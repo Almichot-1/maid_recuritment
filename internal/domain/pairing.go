@@ -22,6 +22,7 @@ type AgencyPairing struct {
 	// CV Defaults — set once by the Ethiopian agent per partner
 	DefaultCountry  *string `gorm:"type:text"`
 	DefaultCurrency *string `gorm:"type:text"`
+	DefaultSalary   *string `gorm:"type:text"`
 	PartnerLogoURL  *string `gorm:"type:text"`
 	CreatedAt       time.Time `gorm:"not null;default:now()"`
 	UpdatedAt       time.Time `gorm:"not null;default:now()"`
@@ -46,6 +47,7 @@ type CandidatePairShare struct {
 	IsActive       bool   `gorm:"not null;default:true"`
 	SharedAt       time.Time
 	UnsharedAt     *time.Time
+	CVPDFURL       string `gorm:"column:cv_pdf_url"`
 	CreatedAt      time.Time `gorm:"not null;default:now()"`
 	UpdatedAt      time.Time `gorm:"not null;default:now()"`
 }
@@ -68,6 +70,8 @@ type CandidatePairShareRepository interface {
 	ListByCandidateID(candidateID string, activeOnly bool) ([]*CandidatePairShare, error)
 	ListByPairingID(pairingID string, activeOnly bool) ([]*CandidatePairShare, error)
 	Deactivate(pairingID, candidateID string, unsharedAt time.Time) error
+	// UpdateCVURL stores the CV PDF URL for a share record.
+	UpdateCVURL(shareID, cvURL string) error
 }
 
 // CandidatePairOverride stores per-pairing overrides for country_applied and
@@ -95,4 +99,6 @@ type CandidatePairOverrideRepository interface {
 	GetByPairingAndCandidate(pairingID, candidateID string) (*CandidatePairOverride, error)
 	// ListByCandidateID returns all overrides for a candidate across all pairings.
 	ListByCandidateID(candidateID string) ([]*CandidatePairOverride, error)
+	// BulkUpsert inserts or updates overrides for multiple candidates in one batch.
+	BulkUpsert(overrides []*CandidatePairOverride) error
 }

@@ -185,24 +185,25 @@ func main() {
 		log.Fatalf("failed to initialize chat service: %v", err)
 	}
 
-	candidateService, err := service.NewCandidateService(candidateRepository, documentRepository, storageService, pdfService)
-	if err != nil {
-		log.Fatalf("failed to initialize candidate service: %v", err)
-	}
-	candidateService.SetUserRepository(userRepository)
-	candidateService.SetPassportRepository(passportRepository)
-	candidateService.SetMedicalDataRepository(medicalRepository)
-
 	passportOCRService, err := service.NewPassportOCRService(cfg, candidateRepository, passportRepository)
 	if err != nil {
 		log.Fatalf("failed to initialize passport OCR service: %v", err)
 	}
-	candidateService.SetPassportOCRService(passportOCRService)
 	medicalDocumentService, err := service.NewMedicalDocumentService(cfg, medicalRepository)
 	if err != nil {
 		log.Fatalf("failed to initialize medical document service: %v", err)
 	}
-	candidateService.SetMedicalDocumentService(medicalDocumentService)
+	statusStepService, err := service.NewStatusStepService(statusStepRepository, candidateRepository, selectionRepository, notificationService)
+	if err != nil {
+		log.Fatalf("failed to initialize status step service: %v", err)
+	}
+	statusStepService.SetDocumentRepository(documentRepository)
+
+	candidateService, err := service.NewCandidateService(candidateRepository, documentRepository, storageService, pdfService, userRepository, candidatePairShareRepository, pairOverrideRepository, pairingService, passportRepository, medicalRepository, medicalDocumentService, passportOCRService, statusStepService)
+	if err != nil {
+		log.Fatalf("failed to initialize candidate service: %v", err)
+	}
+
 	expiryWarningJob, err := jobs.NewExpiryWarningJob(selectionRepository, candidateRepository, passportRepository, medicalRepository, notificationService)
 	if err != nil {
 		log.Fatalf("failed to initialize expiry warning job: %v", err)
@@ -214,15 +215,6 @@ func main() {
 	}
 	selectionService.SetStorageService(storageService)
 	selectionService.SetPairingService(pairingService)
-	candidateService.SetPairingService(pairingService)
-
-	statusStepService, err := service.NewStatusStepService(statusStepRepository, candidateRepository, selectionRepository, notificationService)
-	if err != nil {
-		log.Fatalf("failed to initialize status step service: %v", err)
-	}
-	statusStepService.SetDocumentRepository(documentRepository)
-	candidateService.SetStatusStepService(statusStepService)
-	candidateService.SetPairOverrideRepository(pairOverrideRepository)
 
 	approvalService, err := service.NewApprovalService(approvalRepository, selectionRepository, candidateRepository, statusStepService, notificationService)
 	if err != nil {
@@ -236,7 +228,7 @@ func main() {
 	authHandler := handler.NewAuthHandler(authService, userRepository, agencyApprovalService)
 	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService, pairingService)
 	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService, passportRepository, medicalRepository, statusStepRepository)
-	candidateHandler := handler.NewCandidateHandler(candidateService, passportOCRService, candidateRepository, selectionRepository, pairingService)
+	candidateHandler := handler.NewCandidateHandler(candidateService, passportOCRService, candidateRepository, selectionRepository, pairingService, candidatePairShareRepository)
 	candidateHandler.SetDocumentStorage(storageService)
 	selectionUpdatesHandler := handler.NewSelectionUpdatesHandler(cfg.CORSAllowedOrigins)
 	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService)
@@ -364,6 +356,9 @@ func main() {
 			cr.Get("/", candidateHandler.ListCandidates)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Get("/{id}/shares", pairingHandler.GetCandidateShares)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/batch-publish", candidateHandler.BatchPublishCandidates)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/bulk-publish", candidateHandler.BatchPublish)
+			cr.Post("/bulk-cv-zip", candidateHandler.BulkDownloadCVZip)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/batch-regenerate-cv", candidateHandler.BatchRegenerateCV)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/publish", candidateHandler.PublishCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/documents", candidateHandler.UploadCandidateDocument)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/passport/parse", candidateHandler.ParsePassport)
@@ -371,9 +366,11 @@ func main() {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent)), appmiddleware.NewIPRateLimitMiddleware("candidate-generate-cv", 8, time.Minute)).Post("/{id}/generate-cv", candidateHandler.GenerateCV)
 			cr.Get("/{id}/download-cv", candidateHandler.DownloadCV)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}/pair-override", candidateHandler.SetPairOverride)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/batch-set-pair-override", candidateHandler.BatchSetPairOverride)
 			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/select", selectionHandler.SelectCandidate)
 			cr.Get("/{id}/status-steps", statusHandler.GetCandidateStatusSteps)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Patch("/{id}/status-steps/{step_name}", statusHandler.UpdateStatusStep)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/batch-status-update", statusHandler.BatchUpdateStatusSteps)
 		})
 
 		protected.Route("/selections", func(sr chi.Router) {

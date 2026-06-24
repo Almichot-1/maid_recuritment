@@ -128,14 +128,31 @@ func (j *ExpiryWarningJob) processPassportWarnings() error {
 		return err
 	}
 
+	candidateIDs := make([]string, 0, len(passports))
+	for _, passport := range passports {
+		if passport != nil {
+			candidateIDs = append(candidateIDs, passport.CandidateID)
+		}
+	}
+
+	candidates, err := j.candidateRepository.GetByIDs(candidateIDs)
+	if err != nil {
+		return err
+	}
+
+	candidateMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		candidateMap[c.ID] = c
+	}
+
 	for _, passport := range passports {
 		if passport == nil {
 			continue
 		}
 
-		candidate, err := j.candidateRepository.GetByID(passport.CandidateID)
-		if err != nil {
-			return err
+		candidate, ok := candidateMap[passport.CandidateID]
+		if !ok {
+			continue
 		}
 
 		remaining := time.Until(passport.ExpiryDate.UTC())
@@ -180,14 +197,31 @@ func (j *ExpiryWarningJob) processMedicalWarnings() error {
 		return err
 	}
 
+	candidateIDs := make([]string, 0, len(records))
+	for _, record := range records {
+		if record != nil {
+			candidateIDs = append(candidateIDs, record.CandidateID)
+		}
+	}
+
+	candidates, err := j.candidateRepository.GetByIDs(candidateIDs)
+	if err != nil {
+		return err
+	}
+
+	candidateMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		candidateMap[c.ID] = c
+	}
+
 	for _, record := range records {
 		if record == nil {
 			continue
 		}
 
-		candidate, err := j.candidateRepository.GetByID(record.CandidateID)
-		if err != nil {
-			return err
+		candidate, ok := candidateMap[record.CandidateID]
+		if !ok {
+			continue
 		}
 
 		remaining := time.Until(record.ExpiryDate.UTC())

@@ -85,6 +85,12 @@ func (m *selectionRepositoryMock) UpdateStatus(id string, status domain.Selectio
 func (m *selectionRepositoryMock) GetExpiredSelections() ([]*domain.Selection, error) {
 	return nil, nil
 }
+func (m *selectionRepositoryMock) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	return nil, nil
+}
+func (m *selectionRepositoryMock) Count(filters domain.SelectionFilters) (int64, error) {
+	return 0, nil
+}
 
 type candidateRepositoryMock struct{}
 
@@ -99,6 +105,12 @@ func (m *candidateRepositoryMock) Lock(candidateID, lockedBy string, expiresAt t
 	return nil
 }
 func (m *candidateRepositoryMock) Unlock(candidateID string) error { return nil }
+func (m *candidateRepositoryMock) GetByIDs(ids []string) ([]*domain.Candidate, error) {
+	return nil, nil
+}
+func (m *candidateRepositoryMock) GetByIDLean(id string) (*domain.Candidate, error) {
+	return m.GetByID(id)
+}
 
 type notificationSenderMock struct {
 	mu           sync.Mutex

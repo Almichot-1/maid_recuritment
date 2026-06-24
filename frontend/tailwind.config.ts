@@ -52,6 +52,20 @@ const config: Config = {
         glow: "0 18px 50px -22px rgba(10, 116, 117, 0.45)",
         soft: "0 18px 60px -30px rgba(15, 23, 42, 0.22)",
       },
+      keyframes: {
+        "accordion-down": {
+          from: { height: "0" },
+          to: { height: "var(--radix-accordion-content-height)" },
+        },
+        "accordion-up": {
+          from: { height: "var(--radix-accordion-content-height)" },
+          to: { height: "0" },
+        },
+      },
+      animation: {
+        "accordion-down": "accordion-down 0.2s ease-out",
+        "accordion-up": "accordion-up 0.2s ease-out",
+      },
     },
   },
   plugins: [],

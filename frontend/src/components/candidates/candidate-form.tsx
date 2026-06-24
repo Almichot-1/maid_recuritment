@@ -17,8 +17,9 @@ import { toast } from "sonner";
 import { useParsePassport } from "@/hooks/use-passport-ocr";
 import { CandidateInput, candidateSchema } from "@/lib/validations";
 import { useAgencyBranding } from "@/hooks/use-agency-branding";
-import { useCandidateDefaults } from "@/hooks/use-candidate-defaults";
+
 import { useCurrentUser } from "@/hooks/use-auth";
+import { usePairingContext } from "@/hooks/use-pairings";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
@@ -83,7 +84,7 @@ interface CandidateFormProps {
   initialDocuments?: Partial<Record<"passport" | "photo" | "video", File | null>>;
   onSubmit: (
     data: CandidateInput,
-    context?: { submitter: "default" | "create_another" },
+    context?: { submitter: "default" | "create_another"; partnerOverrides?: PartnerOverrideEntry[] },
   ) => Promise<{ resetForm?: boolean } | void> | { resetForm?: boolean } | void;
   isLoading?: boolean;
   onDocumentChange?: (
@@ -108,10 +109,14 @@ export type CandidateFormValues = {
   education_level?: string;
   experience_years?: number | string;
   country_of_experience?: string;
-  country_applied?: string;
-  salary_offered?: string;
   skills: string[];
   languages: Array<{ language: string; proficiency: string }>;
+};
+
+export type PartnerOverrideEntry = {
+  pairing_id: string;
+  country_applied: string;
+  salary_offered: string;
 };
 
 function SectionTitle({
@@ -153,11 +158,14 @@ export function CandidateForm({
 }: CandidateFormProps) {
   const { user } = useCurrentUser();
   const { hasLogo } = useAgencyBranding();
-  const { defaults, saveDefaults, isLoaded: defaultsLoaded } = useCandidateDefaults();
+
+  const { context: pairingContext } = usePairingContext();
+  const [partnerOverrides, setPartnerOverrides] = React.useState<Record<string, { country: string; salary: string }>>({});
   const { mutateAsync: parsePassport, isPending: isParsingPassport } =
     useParsePassport(candidateId);
   const [documentResetKey, setDocumentResetKey] = React.useState(0);
   const [ageAutoSyncEnabled, setAgeAutoSyncEnabled] = React.useState(true);
+  const [isPassportProcessing, setIsPassportProcessing] = React.useState(false);
   const passportPreviewCacheRef = React.useRef(
     new Map<string, PassportData>(),
   );
@@ -184,8 +192,6 @@ export function CandidateForm({
       education_level: "",
       experience_years: undefined,
       country_of_experience: undefined,
-      country_applied: undefined,
-      salary_offered: undefined,
       skills: [],
       languages: [
         { language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] },
@@ -213,20 +219,25 @@ export function CandidateForm({
       proficiency: PROFICIENCY_OPTIONS[0],
     });
 
-  // Load defaults for new candidates
+  // Initialize per-partner overrides from workspace defaults (create mode)
   React.useEffect(() => {
-    if (mode !== "create" || !defaultsLoaded || initialData) {
-      return;
-    }
+    if (mode !== "create") return
+    if (!pairingContext?.workspaces?.length) return
 
-    if (defaults.country_applied && !form.getValues("country_applied")) {
-      form.setValue("country_applied", defaults.country_applied);
+    const initial: Record<string, { country: string; salary: string }> = {}
+    for (const ws of pairingContext.workspaces) {
+      if (ws.status === "active" || ws.status === "approved") {
+        const sal = ws.default_salary
+        const curr = ws.default_currency
+        const salaryVal = sal && curr ? `${sal} ${curr}` : (sal || curr || "")
+        initial[ws.id] = {
+          country: ws.default_country || "",
+          salary: salaryVal,
+        }
+      }
     }
-
-    if (defaults.salary_offered && !form.getValues("salary_offered")) {
-      form.setValue("salary_offered", defaults.salary_offered);
-    }
-  }, [mode, defaultsLoaded, defaults, form, initialData]);
+    setPartnerOverrides(initial)
+  }, [mode, pairingContext?.workspaces])
 
   React.useEffect(() => {
     if (!onDraftChange) {
@@ -297,15 +308,15 @@ export function CandidateForm({
         ? "create_another"
         : "default";
     
-    // Save country_applied and salary_offered as defaults for next candidate
-    if (mode === "create" && (data.country_applied || data.salary_offered)) {
-      saveDefaults({
-        country_applied: data.country_applied,
-        salary_offered: data.salary_offered,
-      });
-    }
+    const overridesArr = Object.entries(partnerOverrides)
+      .filter(([, val]) => val.country || val.salary)
+      .map(([pairing_id, val]) => ({
+        pairing_id,
+        country_applied: val.country,
+        salary_offered: val.salary,
+      }))
     
-    const result = await onSubmit(data, { submitter: submitMode });
+    const result = await onSubmit(data, { submitter: submitMode, partnerOverrides: overridesArr.length > 0 ? overridesArr : undefined });
 
     if (!isEditing && submitMode === "create_another" && result?.resetForm) {
       resetForNextCandidate();
@@ -382,6 +393,7 @@ export function CandidateForm({
     }
 
     if (!file || !file.type.startsWith("image/")) {
+      setIsPassportProcessing(false);
       passportRequestSequenceRef.current += 1;
       activePassportAbortRef.current?.abort();
       activePassportAbortRef.current = null;
@@ -390,6 +402,7 @@ export function CandidateForm({
     }
 
     const runExtraction = async () => {
+      setIsPassportProcessing(true);
       const requestKey = buildPassportPreviewRequestKey(file);
       const requestSequence = passportRequestSequenceRef.current + 1;
       passportRequestSequenceRef.current = requestSequence;
@@ -457,6 +470,7 @@ export function CandidateForm({
       } catch {
         // The mutation already surfaces the error to the user.
       } finally {
+        setIsPassportProcessing(false);
         const inflightRequest = passportPreviewInflightRef.current.get(requestKey);
         if (inflightRequest === parseRequest) {
           passportPreviewInflightRef.current.delete(requestKey);
@@ -551,7 +565,7 @@ export function CandidateForm({
                 </CardHeader>
                 <CardContent className="space-y-6">
                   <div className="grid gap-5 md:grid-cols-2">
-                    <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
+                    <div className="flex flex-col rounded-2xl border border-border/70 bg-muted/20 p-4">
                       <DocumentUpload
                         key={`passport-${documentResetKey}`}
                         initialFile={initialDocuments?.passport || null}
@@ -572,6 +586,12 @@ export function CandidateForm({
                           onDocumentChange?.("passport", null);
                         }}
                       />
+                      {isPassportProcessing && (
+                        <div className="mt-4 flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 p-3 text-sm font-medium text-blue-700 dark:border-blue-900/50 dark:bg-blue-900/20 dark:text-blue-300">
+                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span>Processing passport OCR...</span>
+                        </div>
+                      )}
                     </div>
 
                     <div className="rounded-2xl border border-border/70 bg-muted/20 p-4">
@@ -947,66 +967,58 @@ export function CandidateForm({
                 />
               </CardHeader>
               <CardContent className="space-y-5">
-                <div className="grid gap-5 sm:grid-cols-2">
-                  <FormField
-                    control={form.control}
-                    name="country_applied"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Country applied</FormLabel>
-                        <FormControl>
-                          <select
-                            className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                            {...field}
-                            value={field.value || ""}
-                          >
-                            <option value="">Select a country...</option>
-                            <option value="Saudi Arabia">Saudi Arabia</option>
-                            <option value="United Arab Emirates">United Arab Emirates</option>
-                            <option value="Kuwait">Kuwait</option>
-                            <option value="Qatar">Qatar</option>
-                            <option value="Bahrain">Bahrain</option>
-                            <option value="Oman">Oman</option>
-                            <option value="Lebanon">Lebanon</option>
-                            <option value="Jordan">Jordan</option>
-                          </select>
-                        </FormControl>
-                        <FormDescription>
-                          Where is this candidate being recruited to work?
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  <FormField
-                    control={form.control}
-                    name="salary_offered"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Salary offered</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="e.g., 1000 SR, 400 USD, 150 KWD"
-                            {...field}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          Monthly salary with currency (e.g., 1000 SR)
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-                </div>
-
-                {mode === "create" && (defaults.country_applied || defaults.salary_offered) && (
-                  <div className="rounded-lg border border-blue-200 bg-blue-50 p-3 text-sm text-blue-900">
-                    <p className="font-medium">💡 Smart defaults active</p>
-                    <p className="mt-1 text-blue-700">
-                      These values are remembered from your last candidate and auto-filled to save time. 
-                      You can change them anytime.
-                    </p>
+                {mode === "create" && pairingContext?.workspaces && pairingContext.workspaces.length > 0 && (
+                  <div className="space-y-4">
+                    <div>
+                      <h4 className="text-sm font-semibold text-foreground">Job details per partner</h4>
+                      <p className="text-xs text-muted-foreground mt-1">
+                        Set a unique country and salary for each foreign partner.
+                      </p>
+                    </div>
+                    <div className="space-y-3">
+                      {pairingContext.workspaces
+                        .filter((ws) => ws.status === "active" || ws.status === "approved")
+                        .map((ws) => {
+                          const val = partnerOverrides[ws.id] || { country: "", salary: "" }
+                          return (
+                            <div key={ws.id} className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-4 sm:grid-cols-[1fr_1.5fr_1.5fr]">
+                              <div className="flex items-center text-sm font-medium text-foreground">
+                                {ws.partner_agency?.company_name || ws.partner_agency?.full_name || ws.partner_agency?.email || "Partner"}
+                              </div>
+                              <select
+                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                value={val.country}
+                                onChange={(e) =>
+                                  setPartnerOverrides((prev) => ({
+                                    ...prev,
+                                    [ws.id]: { ...prev[ws.id], country: e.target.value },
+                                  }))
+                                }
+                              >
+                                <option value="">Default country</option>
+                                <option value="Saudi Arabia">Saudi Arabia</option>
+                                <option value="United Arab Emirates">United Arab Emirates</option>
+                                <option value="Kuwait">Kuwait</option>
+                                <option value="Qatar">Qatar</option>
+                                <option value="Bahrain">Bahrain</option>
+                                <option value="Oman">Oman</option>
+                                <option value="Lebanon">Lebanon</option>
+                                <option value="Jordan">Jordan</option>
+                              </select>
+                              <Input
+                                placeholder="e.g., 1000 SR, 400 USD"
+                                value={val.salary}
+                                onChange={(e) =>
+                                  setPartnerOverrides((prev) => ({
+                                    ...prev,
+                                    [ws.id]: { ...prev[ws.id], salary: e.target.value },
+                                  }))
+                                }
+                              />
+                            </div>
+                          )
+                        })}
+                    </div>
                   </div>
                 )}
               </CardContent>

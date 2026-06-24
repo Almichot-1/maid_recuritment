@@ -117,6 +117,7 @@ func (r *GormAgencyPairingRepository) Update(pairing *domain.AgencyPairing) erro
 			"notes":                pairing.Notes,
 			"default_country":      pairing.DefaultCountry,
 			"default_currency":     pairing.DefaultCurrency,
+			"default_salary":      pairing.DefaultSalary,
 			"partner_logo_url":     pairing.PartnerLogoURL,
 		})
 	if result.Error != nil {

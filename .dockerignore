@@ -1,0 +1,10 @@
+.git/
+.gitignore
+*.exe
+bin/
+tmp/
+reports/
+docs/
+frontend/
+*.md
+.DS_Store

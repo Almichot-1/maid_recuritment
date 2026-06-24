@@ -66,6 +66,12 @@ func (m *notificationCandidateRepoMock) Lock(candidateID, lockedBy string, expir
 	return nil
 }
 func (m *notificationCandidateRepoMock) Unlock(candidateID string) error { return nil }
+func (m *notificationCandidateRepoMock) GetByIDs(ids []string) ([]*domain.Candidate, error) {
+	return nil, nil
+}
+func (m *notificationCandidateRepoMock) GetByIDLean(id string) (*domain.Candidate, error) {
+	return m.GetByID(id)
+}
 
 type notificationSelectionRepoMock struct {
 	byID          map[string]*domain.Selection
@@ -103,6 +109,12 @@ func (m *notificationSelectionRepoMock) GetByCandidateOwnerAndPairing(userID, pa
 func (m *notificationSelectionRepoMock) UpdateStatus(id string, status domain.SelectionStatus) error { return nil }
 func (m *notificationSelectionRepoMock) GetExpiredSelections() ([]*domain.Selection, error) {
 	return nil, nil
+}
+func (m *notificationSelectionRepoMock) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	return nil, nil
+}
+func (m *notificationSelectionRepoMock) Count(filters domain.SelectionFilters) (int64, error) {
+	return 0, nil
 }
 
 type realtimeNotifierMock struct {

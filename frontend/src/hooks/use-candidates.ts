@@ -15,7 +15,13 @@ export interface CandidateFilters {
   min_experience?: number;
   max_experience?: number;
   languages?: string;
+  religion?: string;
+  marital_status?: string;
+  nationality?: string;
+  skills?: string;
   shared_only?: boolean;
+  sort_by?: string;
+  sort_order?: string;
   page?: number;
   page_size?: number;
 }
@@ -70,8 +76,6 @@ export interface CandidateApiResponse {
   education_level?: string;
   experience_years?: number;
   country_of_experience?: string;
-  country_applied?: string;
-  salary_offered?: string;
   languages?: string[];
   skills?: string[];
   status: Candidate["status"];
@@ -114,8 +118,6 @@ export function normalizeCandidate(candidate: CandidateApiResponse): Candidate {
     education_level: candidate.education_level,
     experience_years: candidate.experience_years,
     country_of_experience: candidate.country_of_experience,
-    country_applied: candidate.country_applied,
-    salary_offered: candidate.salary_offered,
     languages: candidate.languages || [],
     skills: candidate.skills || [],
     status: candidate.status,
@@ -182,7 +184,7 @@ export function useCandidate(id?: string) {
   const requiresWorkspace = user?.role === UserRole.FOREIGN_AGENT;
 
   return useQuery({
-    queryKey: ["candidate", id, activePairingId],
+    queryKey: ["candidate", id, activePairingId || "default"],
     queryFn: async () => {
       const response = await api.get<{ candidate: CandidateApiResponse }>(
         `/candidates/${id}`,
@@ -194,6 +196,7 @@ export function useCandidate(id?: string) {
       !!user &&
       (!requiresWorkspace || (isPairingReady && !!activePairingId)),
     staleTime: 30_000,
+    refetchOnMount: true,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
       const status = (error as AxiosError)?.response?.status;
@@ -393,8 +396,14 @@ export function isPublishPairingSelectionError(error: unknown) {
 export async function downloadCandidateCVFile(
   id: string,
   candidateName?: string,
+  pairingId?: string,
 ) {
+  const params: Record<string, string> = {}
+  if (pairingId) {
+    params.pairing_id = pairingId
+  }
   const response = await api.get(`/candidates/${id}/download-cv`, {
+    params,
     responseType: "blob",
   });
 
@@ -510,6 +519,30 @@ export function useDeleteCandidate(id: string) {
   });
 }
 
+export function useBatchDeleteCandidates() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (ids: string[]) => {
+      const results = await Promise.allSettled(
+        ids.map((id) => api.delete(`/candidates/${id}`))
+      );
+      const errors = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+      if (errors.length > 0) {
+        throw new Error(`${errors.length} of ${ids.length} candidates failed to delete`);
+      }
+      return { deleted: ids.length };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      toast.success(`${result.deleted} candidate(s) deleted successfully`);
+    },
+    onError: (error) => {
+      toast.error((error as Error).message || "Failed to delete some candidates");
+    },
+  });
+}
+
 export function useDeleteCandidateDocument(candidateId: string) {
   const queryClient = useQueryClient();
   const activePairingId = usePairingStore((state) => state.activePairingId);
@@ -529,5 +562,86 @@ export function useDeleteCandidateDocument(candidateId: string) {
       const responseError = error as AxiosError<{ error?: string }>;
       toast.error(responseError.response?.data?.error || "Failed to remove document");
     },
+  });
+}
+
+export function useBulkDownloadCVZip() {
+  return useMutation({
+    mutationFn: async ({
+      candidateIds,
+      pairingId,
+      filenamePattern,
+    }: {
+      candidateIds: string[];
+      pairingId?: string;
+      filenamePattern?: string;
+    }) => {
+      const response = await api.post("/candidates/bulk-cv-zip", {
+        candidate_ids: candidateIds,
+        pairing_id: pairingId || "",
+        filename_pattern: filenamePattern || "{name}",
+      }, { responseType: "blob" });
+      return response.data as Blob;
+    },
+  });
+}
+
+export function useBatchRegenerateCV() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ candidateIds, pairingId }: { candidateIds: string[]; pairingId?: string }) => {
+      const response = await api.post('/candidates/batch-regenerate-cv', {
+        candidate_ids: candidateIds,
+        pairing_id: pairingId,
+      });
+      return response.data.result;
+    },
+    onSuccess: (result: { success_count: number; error_count: number; errors: string[] }) => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      if (result.error_count > 0) {
+        toast.warning(`Regenerated ${result.success_count} CVs, ${result.error_count} failed`);
+      } else if (result.success_count > 0) {
+        toast.success(`Regenerated ${result.success_count} CVs`);
+      }
+    },
+    onError: () => { toast.error('Failed to regenerate CVs'); },
+  });
+}
+
+export function useBatchSetPairOverride() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (req: { candidate_ids: string[]; pairing_id: string; country_applied?: string; salary_offered?: string }) => {
+      const response = await api.post('/candidates/batch-set-pair-override', req);
+      return response.data.result;
+    },
+    onSuccess: (result: { success_count: number; error_count: number; errors: string[] }) => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      if (result.error_count > 0) {
+        toast.warning(`Updated ${result.success_count} candidates, ${result.error_count} failed`);
+      } else if (result.success_count > 0) {
+        toast.success(`Updated ${result.success_count} candidates`);
+      }
+    },
+    onError: () => { toast.error('Failed to set pair overrides'); },
+  });
+}
+
+export function useBulkPublish() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (req: { candidate_ids: string[]; pairing_ids?: string[] }) => {
+      const response = await api.post('/candidates/bulk-publish', req);
+      return response.data.result;
+    },
+    onSuccess: (result: { success_count: number; error_count: number; errors: string[] }) => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      if (result.error_count > 0) {
+        toast.warning(`Published to ${result.success_count} pairings, ${result.error_count} failed`);
+      } else if (result.success_count > 0) {
+        toast.success(`Published to ${result.success_count} pairings`);
+      }
+    },
+    onError: () => { toast.error('Failed to publish candidates'); },
   });
 }

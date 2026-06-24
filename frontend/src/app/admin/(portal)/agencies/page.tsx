@@ -85,7 +85,7 @@ export default function AgenciesManagementPage() {
       </Card>
 
       <Card className="border-slate-200 bg-white/90">
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
@@ -94,7 +94,7 @@ export default function AgenciesManagementPage() {
                 <TableHead>Role</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Registered</TableHead>
-                <TableHead>Activity</TableHead>
+                <TableHead className="hidden md:table-cell">Activity</TableHead>
                 <TableHead className="text-right">Actions</TableHead>
               </TableRow>
             </TableHeader>

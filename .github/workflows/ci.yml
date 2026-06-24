@@ -1,0 +1,38 @@
+name: Backend CI
+
+on:
+  push:
+    branches: [main, perf-improvements]
+    paths-ignore:
+      - 'frontend/**'
+      - 'docs/**'
+      - '*.md'
+  pull_request:
+    branches: [main]
+    paths-ignore:
+      - 'frontend/**'
+      - 'docs/**'
+      - '*.md'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '1.25'
+          cache: true
+      
+      - name: Install dependencies
+        run: go mod download
+      
+      - name: Vet
+        run: go vet ./...
+      
+      - name: Build
+        run: go build ./...
+      
+      - name: Test
+        run: go test -count=1 -timeout 120s ./internal/service/...

@@ -112,8 +112,6 @@ export default function EditCandidatePage() {
     education_level: candidate.education_level || "",
     experience_years: candidate.experience_years,
     country_of_experience: candidate.country_of_experience,
-    country_applied: candidate.country_applied || "",
-    salary_offered: candidate.salary_offered || "",
     skills: candidate.skills,
     languages: candidate.languages.length
       ? candidate.languages.map((language) => ({ language, proficiency: "Intermediate" }))
@@ -134,8 +132,6 @@ export default function EditCandidatePage() {
         education_level: data.education_level,
         experience_years: data.experience_years,
         country_of_experience: data.country_of_experience,
-        country_applied: data.country_applied,
-        salary_offered: data.salary_offered,
         skills: data.skills,
         languages: data.languages.map((item) => item.language),
       })

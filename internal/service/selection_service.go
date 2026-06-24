@@ -33,8 +33,16 @@ type dbProvider interface {
 	DB() *gorm.DB
 }
 
+type batchSelectionRepository interface {
+	GetBySelectedByBatch(userID string) ([]*domain.Selection, error)
+	GetBySelectedByAndPairingBatch(userID, pairingID string) ([]*domain.Selection, error)
+	GetByCandidateOwnerBatch(userID string) ([]*domain.Selection, error)
+	GetByCandidateOwnerAndPairingBatch(userID, pairingID string) ([]*domain.Selection, error)
+}
+
 type SelectionService struct {
 	selectionRepository domain.SelectionRepository
+	batchRepo           batchSelectionRepository
 	candidateRepository domain.CandidateRepository
 	notificationService NotificationSender
 	platformSettings    PlatformSettingsReader
@@ -63,8 +71,11 @@ func NewSelectionService(
 		return nil, fmt.Errorf("selection repository does not expose transaction db")
 	}
 
+	batchRepo, _ := selectionRepository.(batchSelectionRepository)
+
 	return &SelectionService{
 		selectionRepository: selectionRepository,
+		batchRepo:           batchRepo,
 		candidateRepository: candidateRepository,
 		notificationService: notificationService,
 		db:                  dbSource.DB(),
@@ -252,6 +263,9 @@ func (s *SelectionService) GetMySelections(userID string) ([]*domain.Selection, 
 	if strings.TrimSpace(userID) == "" {
 		return nil, fmt.Errorf("user id is required")
 	}
+	if s.batchRepo != nil {
+		return s.batchRepo.GetBySelectedByBatch(userID)
+	}
 	return s.selectionRepository.GetBySelectedBy(userID)
 }
 
@@ -262,12 +276,30 @@ func (s *SelectionService) GetSelectionsForUser(userID, role string) ([]*domain.
 
 	switch strings.TrimSpace(role) {
 	case string(domain.ForeignAgent):
+		if s.batchRepo != nil {
+			return s.batchRepo.GetBySelectedByBatch(userID)
+		}
 		return s.selectionRepository.GetBySelectedBy(userID)
 	case string(domain.EthiopianAgent):
+		if s.batchRepo != nil {
+			return s.batchRepo.GetByCandidateOwnerBatch(userID)
+		}
 		return s.selectionRepository.GetByCandidateOwner(userID)
 	default:
 		return nil, ErrForbidden
 	}
+}
+
+func (s *SelectionService) ListSelections(filters domain.SelectionFilters) ([]*domain.Selection, int64, error) {
+	total, err := s.selectionRepository.Count(filters)
+	if err != nil {
+		return nil, 0, err
+	}
+	selections, err := s.selectionRepository.List(filters)
+	if err != nil {
+		return nil, 0, err
+	}
+	return selections, total, nil
 }
 
 func (s *SelectionService) GetSelectionsForWorkspace(userID, role, pairingID string) ([]*domain.Selection, error) {
@@ -285,8 +317,14 @@ func (s *SelectionService) GetSelectionsForWorkspace(userID, role, pairingID str
 
 	switch strings.TrimSpace(role) {
 	case string(domain.ForeignAgent):
+		if s.batchRepo != nil {
+			return s.batchRepo.GetBySelectedByAndPairingBatch(userID, pairing.ID)
+		}
 		return s.selectionRepository.GetBySelectedByAndPairing(userID, pairing.ID)
 	case string(domain.EthiopianAgent):
+		if s.batchRepo != nil {
+			return s.batchRepo.GetByCandidateOwnerAndPairingBatch(userID, pairing.ID)
+		}
 		return s.selectionRepository.GetByCandidateOwnerAndPairing(userID, pairing.ID)
 	default:
 		return nil, ErrForbidden

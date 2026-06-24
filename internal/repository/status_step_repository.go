@@ -72,6 +72,28 @@ func (r *GormStatusStepRepository) GetByCandidateID(candidateID string) ([]*doma
 	return steps, nil
 }
 
+func (r *GormStatusStepRepository) GetByCandidateIDs(candidateIDs []string) ([]*domain.StatusStep, error) {
+	if len(candidateIDs) == 0 {
+		return []*domain.StatusStep{}, nil
+	}
+	steps := make([]*domain.StatusStep, 0)
+	if err := r.db.Where("candidate_id IN ?", candidateIDs).Order("candidate_id ASC, created_at ASC").Find(&steps).Error; err != nil {
+		return nil, fmt.Errorf("get status steps by candidate ids: %w", err)
+	}
+	return steps, nil
+}
+
+func (r *GormStatusStepRepository) GetByCandidateIDAndStepName(candidateID, stepName string) (*domain.StatusStep, error) {
+	var step domain.StatusStep
+	if err := r.db.Where("candidate_id = ? AND step_name = ?", candidateID, stepName).First(&step).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, ErrStatusStepNotFound
+		}
+		return nil, fmt.Errorf("get status step by candidate id and step name: %w", err)
+	}
+	return &step, nil
+}
+
 func (r *GormStatusStepRepository) Update(step *domain.StatusStep) error {
 	if step == nil {
 		return fmt.Errorf("update status step: step is nil")
@@ -86,6 +108,12 @@ func (r *GormStatusStepRepository) Update(step *domain.StatusStep) error {
 		"notes":        step.Notes,
 		"updated_by":   step.UpdatedBy,
 		"updated_at":   time.Now().UTC(),
+	}
+	if step.CoCStatus != nil {
+		updates["coc_status"] = *step.CoCStatus
+	}
+	if step.ArrivalCity != nil {
+		updates["arrival_city"] = *step.ArrivalCity
 	}
 
 	result := r.db.Model(&domain.StatusStep{}).Where("id = ?", step.ID).Updates(updates)

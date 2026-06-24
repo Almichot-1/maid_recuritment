@@ -69,7 +69,7 @@ func TestCandidateService_MoreBranches(t *testing.T) {
 		return &domain.Candidate{ID: id, CreatedBy: "owner-1", FullName: "Name", Status: domain.CandidateStatusDraft, Languages: []byte(`["en"]`), Skills: []byte(`["s1"]`)}, nil
 	}
 
-	service, err := NewCandidateService(repo, docRepo, storage, NewPDFService())
+	service, err := NewCandidateService(repo, docRepo, storage, NewPDFService(), &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, docs, err := service.GetCandidate("cand-1")
@@ -103,7 +103,7 @@ func TestCandidateService_MoreBranches(t *testing.T) {
 		return "https://files/cv.pdf", nil
 	}
 
-	err = service.GenerateCV("cand-1", "owner-1", CandidateCVBranding{})
+	err = service.GenerateCV("cand-1", "owner-1", "", CandidateCVBranding{})
 	require.Error(t, err)
 }
 

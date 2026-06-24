@@ -68,6 +68,17 @@ func (r *GormCandidateRepository) GetByID(id string) (*domain.Candidate, error) 
 	return &candidate, nil
 }
 
+func (r *GormCandidateRepository) GetByIDs(ids []string) ([]*domain.Candidate, error) {
+	if len(ids) == 0 {
+		return nil, nil
+	}
+	var candidates []*domain.Candidate
+	if err := r.db.Where("id IN ?", ids).Find(&candidates).Error; err != nil {
+		return nil, fmt.Errorf("get candidates by ids: %w", err)
+	}
+	return candidates, nil
+}
+
 // GetByIDLean fetches only the columns needed for ownership and status checks.
 // It does NOT load Documents, making it much cheaper than GetByID for
 // operations that only need to verify the caller owns the record.
@@ -106,8 +117,10 @@ func (r *GormCandidateRepository) List(filters domain.CandidateFilters) ([]*doma
 
 	offset := (page - 1) * pageSize
 
+	orderClause := buildCandidateOrderClause(filters.SortBy, filters.SortOrder)
+
 	var candidates []*domain.Candidate
-	if err := query.Preload("Documents").Order("created_at DESC").Offset(offset).Limit(pageSize).Find(&candidates).Error; err != nil {
+	if err := query.Preload("Documents").Order(orderClause).Offset(offset).Limit(pageSize).Find(&candidates).Error; err != nil {
 		return nil, fmt.Errorf("list candidates: %w", err)
 	}
 
@@ -161,8 +174,6 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 		"education_level":       candidate.EducationLevel,
 		"experience_years":      candidate.ExperienceYears,
 		"country_of_experience": candidate.CountryOfExperience,
-		"country_applied":       candidate.CountryApplied,
-		"salary_offered":        candidate.SalaryOffered,
 		"languages":             candidate.Languages,
 		"skills":                candidate.Skills,
 		"status":                candidate.Status,
@@ -272,6 +283,24 @@ func (r *GormCandidateRepository) Unlock(candidateID string) error {
 	return ErrInvalidStatusTransition
 }
 
+func buildCandidateOrderClause(sortBy, sortOrder string) string {
+	switch sortBy {
+	case "religion":
+		if sortOrder == "asc" {
+			return `CASE WHEN religion = 'Muslim' THEN 0 ELSE 1 END, religion ASC`
+		}
+		return `CASE WHEN religion = 'Muslim' THEN 0 ELSE 1 END, religion DESC`
+	case "full_name", "age", "experience_years", "status", "nationality":
+		dir := "DESC"
+		if sortOrder == "asc" {
+			dir = "ASC"
+		}
+		return sortBy + " " + dir
+	default:
+		return "created_at DESC"
+	}
+}
+
 func isValidStatusTransition(from, to domain.CandidateStatus) bool {
 	if from == "" || to == "" {
 		return false
@@ -371,6 +400,28 @@ func applyCandidateFilters(query *gorm.DB, filters domain.CandidateFilters) (*go
 	}
 	if strings.TrimSpace(filters.CreatedBy) != "" {
 		query = query.Where("created_by = ?", strings.TrimSpace(filters.CreatedBy))
+	}
+	if strings.TrimSpace(filters.Religion) != "" {
+		query = query.Where("religion = ?", strings.TrimSpace(filters.Religion))
+	}
+	if strings.TrimSpace(filters.MaritalStatus) != "" {
+		query = query.Where("marital_status = ?", strings.TrimSpace(filters.MaritalStatus))
+	}
+	if strings.TrimSpace(filters.Nationality) != "" {
+		query = query.Where("nationality = ?", strings.TrimSpace(filters.Nationality))
+	}
+	for _, skill := range filters.Skills {
+		trimmedSkill := strings.TrimSpace(skill)
+		if trimmedSkill == "" {
+			continue
+		}
+
+		skillJSON, err := json.Marshal([]string{trimmedSkill})
+		if err != nil {
+			return nil, fmt.Errorf("list candidates: marshal skill filter: %w", err)
+		}
+
+		query = query.Where("skills @> ?::jsonb", string(skillJSON))
 	}
 
 	return query, nil

@@ -7,6 +7,7 @@ import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
 import { Card, CardContent } from "@/components/ui/card"
 import { Input } from "@/components/ui/input"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Button } from "@/components/ui/button"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { useAdminSelections } from "@/hooks/use-admin-portal"
 import { formatShortDate } from "@/lib/admin-utils"
@@ -14,8 +15,16 @@ import { formatShortDate } from "@/lib/admin-utils"
 export default function AdminSelectionsPage() {
   const [status, setStatus] = React.useState("all")
   const [search, setSearch] = React.useState("")
+  const [page, setPage] = React.useState(1)
+  const [pageSize] = React.useState(20)
 
-  const { data: selections = [], isLoading } = useAdminSelections(status === "all" ? undefined : status)
+  const { data: selectionsData, isLoading } = useAdminSelections(
+    status === "all" ? undefined : status,
+    page,
+    pageSize
+  )
+  const selections = selectionsData?.selections ?? []
+  const meta = selectionsData?.meta
 
   const filtered = React.useMemo(
     () =>
@@ -32,6 +41,12 @@ export default function AdminSelectionsPage() {
       }),
     [search, selections]
   )
+
+  React.useEffect(() => {
+    setPage(1)
+  }, [status])
+
+  const totalPages = meta ? Math.ceil(meta.count / pageSize) : 1
 
   return (
     <div className="space-y-6">
@@ -64,13 +79,13 @@ export default function AdminSelectionsPage() {
       </Card>
 
       <Card className="border-slate-200 bg-white/90">
-        <CardContent className="p-0">
+        <CardContent className="p-0 overflow-x-auto">
           <Table>
             <TableHeader>
               <TableRow>
                 <TableHead>Candidate</TableHead>
-                <TableHead>Ethiopian Agency</TableHead>
-                <TableHead>Foreign Agency</TableHead>
+                <TableHead className="hidden md:table-cell">Ethiopian Agency</TableHead>
+                <TableHead className="hidden md:table-cell">Foreign Agency</TableHead>
                 <TableHead>Status</TableHead>
                 <TableHead>Selected</TableHead>
                 <TableHead>Approval State</TableHead>
@@ -100,6 +115,27 @@ export default function AdminSelectionsPage() {
             </TableBody>
           </Table>
         </CardContent>
+        {meta && (
+          <div className="flex items-center justify-between border-t border-slate-200 px-5 py-4">
+            <Button
+              variant="outline"
+              disabled={page === 1}
+              onClick={() => setPage((p) => Math.max(1, p - 1))}
+            >
+              Previous
+            </Button>
+            <span className="text-sm text-slate-500">
+              Page {page} of {totalPages}
+            </span>
+            <Button
+              variant="outline"
+              disabled={page >= totalPages}
+              onClick={() => setPage((p) => p + 1)}
+            >
+              Next
+            </Button>
+          </div>
+        )}
       </Card>
     </div>
   )

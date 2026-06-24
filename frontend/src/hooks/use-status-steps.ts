@@ -67,15 +67,19 @@ export function useUpdateStatusStep(candidateId: string) {
       step_name,
       status,
       notes,
+      coc_status,
+      arrival_city,
     }: {
       step_name: string;
       status: string;
       notes?: string;
+      coc_status?: string;
+      arrival_city?: string;
     }) => {
       const encodedStepName = encodeURIComponent(step_name);
       const response = await api.patch<CandidateProgress>(
         `/candidates/${candidateId}/status-steps/${encodedStepName}`,
-        { status, notes },
+        { status, notes, coc_status, arrival_city },
       );
       return response.data;
     },
@@ -181,6 +185,46 @@ export function useUpdateStatusStep(candidateId: string) {
           response?.data?.message ||
           "Failed to update status step",
       );
+    },
+  });
+}
+
+export function useBatchUpdateStatusSteps() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (payload: {
+      candidate_ids: string[];
+      step_name: string;
+      status: string;
+      notes?: string;
+      coc_status?: string;
+      arrival_city?: string;
+    }) => {
+      const response = await api.post<{
+        updated: number;
+        total: number;
+        failed: { candidate_id: string; error: string }[];
+      }>("/candidates/batch-status-update", payload);
+      return response.data;
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ["candidate-progress"] });
+      queryClient.invalidateQueries({ queryKey: ["candidate"] });
+      queryClient.invalidateQueries({ queryKey: ["candidates"] });
+      if (data.failed && data.failed.length > 0) {
+        toast.success(
+          `${data.updated}/${data.total} updated. ${data.failed.length} failed.`,
+        );
+        data.failed.forEach((f) => {
+          toast.error(`${f.candidate_id.slice(0, 8)}...: ${f.error}`);
+        });
+      } else {
+        toast.success(`All ${data.updated} candidates updated successfully`);
+      }
+    },
+    onError: () => {
+      toast.error("Failed to batch update status steps");
     },
   });
 }

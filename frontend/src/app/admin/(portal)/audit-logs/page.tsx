@@ -3,6 +3,7 @@
 import * as React from "react"
 import { Activity, Building2, LogIn, ShieldCheck, Smartphone } from "lucide-react"
 
+import { Button } from "@/components/ui/button"
 import { AdminPageHeader } from "@/components/admin/admin-page-header"
 import { AdminStatusBadge } from "@/components/admin/admin-status-badge"
 import { Badge } from "@/components/ui/badge"
@@ -29,11 +30,20 @@ export default function AdminAuditLogsPage() {
   const [adminSearch, setAdminSearch] = React.useState("")
   const [agencyRole, setAgencyRole] = React.useState<"all" | UserRole>("all")
   const [agencySearch, setAgencySearch] = React.useState("")
+  const [page, setPage] = React.useState(1)
+  const [pageSize] = React.useState(20)
 
-  const { data: logs = [], isLoading: logsLoading } = useAdminAuditLogs({
-    action: action === "all" ? undefined : action,
-    target_type: targetType === "all" ? undefined : targetType,
-  })
+  const filters = React.useMemo(
+    () => ({
+      action: action === "all" ? undefined : action,
+      target_type: targetType === "all" ? undefined : targetType,
+    }),
+    [action, targetType]
+  )
+
+  const { data: logsData, isLoading: logsLoading } = useAdminAuditLogs(filters, page, pageSize)
+  const logs = logsData?.logs ?? []
+  const meta = logsData?.meta
 
   const { data: agencyLoginData, isLoading: loginsLoading } = useAdminAgencyLogins({
     role: agencyRole,
@@ -55,6 +65,12 @@ export default function AdminAuditLogsPage() {
       }),
     [adminSearch, logs]
   )
+
+  React.useEffect(() => {
+    setPage(1)
+  }, [action, targetType])
+
+  const totalPages = meta ? Math.ceil(meta.count / pageSize) : 1
 
   const agencyLogins = agencyLoginData?.logins ?? []
   const loginSummary = agencyLoginData?.summary ?? emptyLoginSummary
@@ -172,6 +188,29 @@ export default function AdminAuditLogsPage() {
                 </CardContent>
               </Card>
             ))}
+            {meta && (
+              <div className="flex items-center justify-between pt-2">
+                <Button
+                  variant="outline"
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-900 hover:text-white"
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-slate-400">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-900 hover:text-white"
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </div>
 
           <Card className="hidden border-slate-800 bg-slate-950/75 text-slate-50 shadow-2xl shadow-black/10 md:block">
@@ -218,6 +257,29 @@ export default function AdminAuditLogsPage() {
                 </TableBody>
               </Table>
             </CardContent>
+            {meta && (
+              <div className="flex items-center justify-between border-t border-slate-800 px-5 py-4">
+                <Button
+                  variant="outline"
+                  disabled={page === 1}
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-900 hover:text-white"
+                >
+                  Previous
+                </Button>
+                <span className="text-sm text-slate-400">
+                  Page {page} of {totalPages}
+                </span>
+                <Button
+                  variant="outline"
+                  disabled={page >= totalPages}
+                  onClick={() => setPage((p) => p + 1)}
+                  className="border-slate-700 text-slate-300 hover:bg-slate-900 hover:text-white"
+                >
+                  Next
+                </Button>
+              </div>
+            )}
           </Card>
         </TabsContent>
 

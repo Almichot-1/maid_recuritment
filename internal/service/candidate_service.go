@@ -8,10 +8,16 @@ import (
 	"io"
 	"log"
 	"strings"
+	"sync"
 	"time"
 
 	"maid-recruitment-tracking/internal/domain"
 	"maid-recruitment-tracking/internal/repository"
+)
+
+const (
+	MaxBatchSize       = 200
+	maxConcurrentGenCV = 5
 )
 
 var (
@@ -39,8 +45,6 @@ type CandidateInput struct {
 	EducationLevel      string
 	ExperienceYears     *int
 	CountryOfExperience string
-	CountryApplied      string
-	SalaryOffered       string
 	Languages           []string
 	Skills              []string
 }
@@ -87,6 +91,7 @@ type CandidateService struct {
 	medicalRepository      domain.MedicalDataRepository
 	userRepository         domain.UserRepository
 	pairOverrideRepository domain.CandidatePairOverrideRepository
+	shareRepository        domain.CandidatePairShareRepository
 	storageService         StorageService
 	pdfService             *PDFService
 	pairingService         *PairingService
@@ -100,6 +105,15 @@ func NewCandidateService(
 	documentRepository domain.DocumentRepository,
 	storageService StorageService,
 	pdfService *PDFService,
+	userRepository domain.UserRepository,
+	shareRepository domain.CandidatePairShareRepository,
+	pairOverrideRepository domain.CandidatePairOverrideRepository,
+	pairingService *PairingService,
+	passportRepository domain.PassportDataRepository,
+	medicalRepository domain.MedicalDataRepository,
+	medicalService *MedicalDocumentService,
+	passportOCRService *PassportOCRService,
+	statusStepService *StatusStepService,
 ) (*CandidateService, error) {
 	if candidateRepository == nil {
 		return nil, fmt.Errorf("candidate repository is nil")
@@ -115,43 +129,20 @@ func NewCandidateService(
 	}
 
 	return &CandidateService{
-		candidateRepository: candidateRepository,
-		documentRepository:  documentRepository,
-		storageService:      storageService,
-		pdfService:          pdfService,
+		candidateRepository:    candidateRepository,
+		documentRepository:     documentRepository,
+		storageService:         storageService,
+		pdfService:             pdfService,
+		userRepository:         userRepository,
+		shareRepository:        shareRepository,
+		pairOverrideRepository: pairOverrideRepository,
+		pairingService:         pairingService,
+		passportRepository:     passportRepository,
+		medicalRepository:      medicalRepository,
+		medicalService:         medicalService,
+		passportOCRService:     passportOCRService,
+		statusStepService:      statusStepService,
 	}, nil
-}
-
-func (s *CandidateService) SetPairingService(pairingService *PairingService) {
-	s.pairingService = pairingService
-}
-
-func (s *CandidateService) SetPassportRepository(passportRepository domain.PassportDataRepository) {
-	s.passportRepository = passportRepository
-}
-
-func (s *CandidateService) SetMedicalDataRepository(medicalRepository domain.MedicalDataRepository) {
-	s.medicalRepository = medicalRepository
-}
-
-func (s *CandidateService) SetMedicalDocumentService(medicalService *MedicalDocumentService) {
-	s.medicalService = medicalService
-}
-
-func (s *CandidateService) SetPassportOCRService(passportOCRService *PassportOCRService) {
-	s.passportOCRService = passportOCRService
-}
-
-func (s *CandidateService) SetUserRepository(userRepository domain.UserRepository) {
-	s.userRepository = userRepository
-}
-
-func (s *CandidateService) SetStatusStepService(statusStepService *StatusStepService) {
-	s.statusStepService = statusStepService
-}
-
-func (s *CandidateService) SetPairOverrideRepository(repo domain.CandidatePairOverrideRepository) {
-	s.pairOverrideRepository = repo
 }
 
 func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput) (*domain.Candidate, error) {
@@ -184,8 +175,6 @@ func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput
 		EducationLevel:      strings.TrimSpace(data.EducationLevel),
 		ExperienceYears:     data.ExperienceYears,
 		CountryOfExperience: strings.TrimSpace(data.CountryOfExperience),
-		CountryApplied:      strings.TrimSpace(data.CountryApplied),
-		SalaryOffered:       strings.TrimSpace(data.SalaryOffered),
 		Languages:           languages,
 		Skills:              skills,
 		Status:              domain.CandidateStatusDraft,
@@ -252,12 +241,41 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 	candidate.EducationLevel = strings.TrimSpace(data.EducationLevel)
 	candidate.ExperienceYears = data.ExperienceYears
 	candidate.CountryOfExperience = strings.TrimSpace(data.CountryOfExperience)
-	candidate.CountryApplied = strings.TrimSpace(data.CountryApplied)
-	candidate.SalaryOffered = strings.TrimSpace(data.SalaryOffered)
 	candidate.Languages = languages
 	candidate.Skills = skills
 
-	return s.candidateRepository.Update(candidate)
+	if err := s.candidateRepository.Update(candidate); err != nil {
+		return err
+	}
+
+	// Auto-regenerate CV if one already existed
+	if candidate.CVPDFURL != "" {
+		idCopy, updatedByCopy := id, updatedBy
+		go func() {
+			log.Printf("update_candidate: auto-regenerating default CV for candidate=%s", idCopy)
+			if err := s.GenerateCV(idCopy, updatedByCopy, "", CandidateCVBranding{}); err != nil {
+				log.Printf("update_candidate: auto-regenerate default CV failed: %v", err)
+			}
+		}()
+
+		// Also regenerate per-pairing CVs
+		if s.shareRepository != nil {
+			go func() {
+				shares, err := s.shareRepository.ListByCandidateID(idCopy, true)
+				if err != nil {
+					log.Printf("update_candidate: listing shares failed: %v", err)
+					return
+				}
+				for _, share := range shares {
+					if err := s.GenerateCV(idCopy, updatedByCopy, share.PairingID, CandidateCVBranding{}); err != nil {
+						log.Printf("update_candidate: auto-regenerate CV for pairing=%s failed: %v", share.PairingID, err)
+					}
+				}
+			}()
+		}
+	}
+
+	return nil
 }
 
 func (s *CandidateService) GetCandidate(id string) (*domain.Candidate, []*domain.Document, error) {
@@ -368,6 +386,48 @@ func (s *CandidateService) PublishCandidate(id, publishedBy string, input Publis
 		if autoShareTarget.DefaultCountry == nil || *autoShareTarget.DefaultCountry == "" || autoShareTarget.DefaultCurrency == nil || *autoShareTarget.DefaultCurrency == "" {
 			return nil, ErrPairingDefaultsRequired
 		}
+
+		// Check if a manual override already exists — if so, respect it
+		existingOverride, lookupErr := s.pairOverrideRepository.GetByPairingAndCandidate(
+			autoShareTarget.ID, candidate.ID,
+		)
+		if lookupErr == nil && existingOverride != nil {
+			// Manual override exists — don't overwrite with auto-filled values
+		} else {
+			// Auto-fill empty country/salary from partner defaults
+			countryVal := candidate.CountryApplied
+			salVal := candidate.SalaryOffered
+
+			if countryVal == "" {
+				if autoShareTarget.DefaultCountry != nil && *autoShareTarget.DefaultCountry != "" {
+					countryVal = *autoShareTarget.DefaultCountry
+				}
+			}
+
+			if salVal == "" {
+				if autoShareTarget.DefaultSalary != nil {
+					salVal = *autoShareTarget.DefaultSalary
+				}
+				if autoShareTarget.DefaultCurrency != nil && *autoShareTarget.DefaultCurrency != "" {
+					if salVal != "" {
+						salVal = salVal + " " + *autoShareTarget.DefaultCurrency
+					} else {
+						salVal = *autoShareTarget.DefaultCurrency
+					}
+				}
+			}
+
+			if countryVal != candidate.CountryApplied || salVal != candidate.SalaryOffered {
+				_ = s.pairOverrideRepository.BulkUpsert([]*domain.CandidatePairOverride{
+					{
+						PairingID:      autoShareTarget.ID,
+						CandidateID:    candidate.ID,
+						CountryApplied: countryVal,
+						SalaryOffered:  salVal,
+					},
+				})
+			}
+		}
 	}
 
 	candidate.Status = domain.CandidateStatusAvailable
@@ -423,32 +483,94 @@ func (s *CandidateService) BatchPublishCandidates(userID string, input BatchPubl
 
 	result := &BatchPublishResult{}
 
-	// Publish and share each candidate with each pairing
-	for _, candidateID := range input.CandidateIDs {
-		cid := strings.TrimSpace(candidateID)
+	candidates, err := s.candidateRepository.GetByIDs(input.CandidateIDs)
+	if err != nil {
+		return nil, fmt.Errorf("batch publish: fetch candidates: %w", err)
+	}
+
+	ownerMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		ownerMap[c.ID] = c
+	}
+
+	// Load target pairings
+	var targetPairings []*domain.AgencyPairing
+	for _, pid := range input.PairingIDs {
+		pid = strings.TrimSpace(pid)
+		if pid == "" {
+			continue
+		}
+		p, err := s.pairingService.GetPairingByID(pid)
+		if err != nil {
+			result.ErrorCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("pairing %s: %v", pid, err))
+			continue
+		}
+		if p.EthiopianUserID != userID {
+			result.ErrorCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("pairing %s: forbidden", pid))
+			continue
+		}
+		targetPairings = append(targetPairings, p)
+	}
+
+	for _, cid := range input.CandidateIDs {
+		cid = strings.TrimSpace(cid)
 		if cid == "" {
 			continue
 		}
 
-		for _, pairingID := range input.PairingIDs {
-			pid := strings.TrimSpace(pairingID)
-			if pid == "" {
+		candidate, ok := ownerMap[cid]
+		if !ok {
+			result.ErrorCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: not found", cid))
+			continue
+		}
+		if candidate.CreatedBy != userID {
+			result.ErrorCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: forbidden", cid))
+			continue
+		}
+
+		// Mark candidate as available on first publish
+		needsStatusUpdate := candidate.Status == domain.CandidateStatusDraft
+
+		for _, pairing := range targetPairings {
+			pid := pairing.ID
+
+			// Check if already shared
+			existingShare, err := s.shareRepository.GetActiveByPairingAndCandidate(pid, cid)
+			if err == nil && existingShare != nil {
+				result.SuccessCount++
 				continue
 			}
 
-			// We use PublishCandidate to handle state transition & sharing & auto CV generation
-			// PublishCandidate only returns ErrPairingDefaultsRequired if the target pairing lacks defaults
-			_, err := s.PublishCandidate(cid, userID, PublishCandidateInput{
-				PairingID: pid,
-			})
-
-			if err != nil && !errors.Is(err, ErrCandidateAlreadyShared) && !errors.Is(err, repository.ErrInvalidStatusTransition) {
-				// If it's already available or already shared, we count it as success or ignore.
-				result.ErrorCount++
-				result.Errors = append(result.Errors, fmt.Sprintf("candidate %s, pairing %s: %v", cid, pid, err))
-			} else {
-				result.SuccessCount++
+			// Update status once
+			if needsStatusUpdate {
+				candidate.Status = domain.CandidateStatusAvailable
+				if err := s.candidateRepository.Update(candidate); err != nil {
+					result.ErrorCount++
+					result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: status update: %v", cid, err))
+					continue
+				}
+				needsStatusUpdate = false
 			}
+
+			// Share with this pairing
+			if err := s.pairingService.ShareCandidate(cid, pid, userID); err != nil {
+				result.ErrorCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("candidate %s pairing %s: %v", cid, pid, err))
+				continue
+			}
+
+			result.SuccessCount++
+
+			// Auto-generate CV in background
+			go func(candID, pairID string) {
+				if err := s.GenerateCV(candID, userID, pairID, CandidateCVBranding{}); err != nil {
+					log.Printf("batch_publish: auto-generate CV failed for candidate=%s pairing=%s: %v", candID, pairID, err)
+				}
+			}(cid, pid)
 		}
 	}
 
@@ -541,6 +663,11 @@ func (s *CandidateService) UploadCandidateDocument(candidateID, uploadedBy strin
 		go s.processMedicalDocument(candidateID, &documentCopy, input.FileName, contentType, documentBytes)
 	}
 
+	// Trigger auto-CV when both passport and photo exist
+	if (documentType == domain.Passport || documentType == domain.Photo) && s.pdfService != nil {
+		go s.tryAutoGenerateCV(candidateID, uploadedBy)
+	}
+
 	return document, nil
 }
 
@@ -575,6 +702,10 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy, pairingID string
 		}
 	}
 
+	// Save originals before per-pairing overrides so global DB values aren't corrupted
+	origCountry := candidate.CountryApplied
+	origSalary := candidate.SalaryOffered
+
 	// Apply per-pairing overrides when a pairingID was supplied.
 	if trimmedPairing := strings.TrimSpace(pairingID); trimmedPairing != "" {
 		// 1. Resolve overrides
@@ -590,36 +721,49 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy, pairingID string
 			}
 		}
 
-		// 2. Resolve Foreign Agent Metadata (Logo, Fallbacks)
+		// 2. Load pairing data for default salary/currency resolution
+		var pairing *domain.AgencyPairing
+		if s.pairingService != nil {
+			p, err := s.pairingService.GetPairingByID(trimmedPairing)
+			if err == nil && p != nil {
+				pairing = p
+			}
+		}
+
+		// 3. Apply pairing defaults if no manual override was set
+		if pairing != nil {
+			if countryOverride == "" && pairing.DefaultCountry != nil && *pairing.DefaultCountry != "" {
+				candidate.CountryApplied = *pairing.DefaultCountry
+			}
+
+			// --- Resolve salary ---
+			if salaryOverride != "" {
+				candidate.SalaryOffered = salaryOverride
+			} else if origSalary != "" {
+				// Keep candidate's existing value (may have been pre-filled)
+			} else if pairing.DefaultSalary != nil && *pairing.DefaultSalary != "" {
+				salStr := *pairing.DefaultSalary
+				if pairing.DefaultCurrency != nil && *pairing.DefaultCurrency != "" {
+					salStr = fmt.Sprintf("%s %s", *pairing.DefaultSalary, *pairing.DefaultCurrency)
+				}
+				candidate.SalaryOffered = salStr
+			} else if pairing.DefaultCurrency != nil && *pairing.DefaultCurrency != "" {
+				candidate.SalaryOffered = fmt.Sprintf("Negotiable %s", *pairing.DefaultCurrency)
+			}
+		}
+
+		// 4. Resolve Foreign Agent Metadata (Logo, Branding)
 		if s.pairingService != nil && s.userRepository != nil {
 			if pairing, err := s.pairingService.GetPairingByID(trimmedPairing); err == nil && pairing != nil {
 				if foreignUser, err := s.userRepository.GetByID(pairing.ForeignUserID); err == nil && foreignUser != nil {
-					// Branding automation:
 					if branding.ForeignAgencyName == "" && foreignUser.CompanyName != "" {
 						branding.ForeignAgencyName = foreignUser.CompanyName
 					}
-					
-					// Logo fallback: 1. Pairing Partner Logo, 2. Foreign User Avatar
+
 					if branding.ForeignAgencyLogoDataURL == "" && pairing.PartnerLogoURL != nil && *pairing.PartnerLogoURL != "" {
 						branding.ForeignAgencyLogoDataURL = *pairing.PartnerLogoURL
 					} else if branding.ForeignAgencyLogoDataURL == "" && foreignUser.AvatarURL != "" {
 						branding.ForeignAgencyLogoDataURL = foreignUser.AvatarURL
-					}
-					
-					// Fallback automation: if no manual override was set, use pairing defaults.
-					if countryOverride == "" && pairing.DefaultCountry != nil && *pairing.DefaultCountry != "" {
-						candidate.CountryApplied = *pairing.DefaultCountry
-					}
-					if salaryOverride == "" && pairing.DefaultCurrency != nil && *pairing.DefaultCurrency != "" {
-						// e.g. append "JOD" to the candidate's base salary_offered
-						baseSalary := strings.TrimSpace(candidate.SalaryOffered)
-						if baseSalary == "" {
-							baseSalary = "Negotiable"
-						}
-						// Avoid duplicate appending
-						if !strings.HasSuffix(strings.ToUpper(baseSalary), strings.ToUpper(*pairing.DefaultCurrency)) {
-							candidate.SalaryOffered = fmt.Sprintf("%s %s", baseSalary, *pairing.DefaultCurrency)
-						}
 					}
 				}
 			}
@@ -643,16 +787,34 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy, pairingID string
 		return err
 	}
 
-	pdfFileName := fmt.Sprintf("candidate_%s_cv.pdf", candidateID)
+	var pdfFileName string
+	if pairingID != "" {
+		pdfFileName = fmt.Sprintf("candidates/%s/cv/%s.pdf", candidateID, pairingID)
+	} else {
+		pdfFileName = fmt.Sprintf("candidates/%s/cv/default.pdf", candidateID)
+	}
 	pdfURL, err := s.storageService.Upload(bytes.NewReader(pdfBytes), pdfFileName, "application/pdf")
 	if err != nil {
 		return fmt.Errorf("upload cv pdf: %w", err)
 	}
 
-	candidate.CVPDFURL = pdfURL
-	if err := s.candidateRepository.Update(candidate); err != nil {
-		_ = s.storageService.Delete(pdfURL)
-		return err
+	// Restore global fields before persisting so per-pairing overrides don't corrupt the DB
+	candidate.CountryApplied = origCountry
+	candidate.SalaryOffered = origSalary
+	
+	// If it's a default CV (no pairing), update the global candidate record
+	if pairingID == "" {
+		candidate.CVPDFURL = pdfURL
+		if err := s.candidateRepository.Update(candidate); err != nil {
+			_ = s.storageService.Delete(pdfURL)
+			return err
+		}
+	} else {
+		// If pairing-specific, ONLY store on the share record, don't overwrite global CV
+		share, err := s.shareRepository.GetActiveByPairingAndCandidate(pairingID, candidateID)
+		if err == nil && share != nil {
+			_ = s.shareRepository.UpdateCVURL(share.ID, pdfURL)
+		}
 	}
 
 	return nil
@@ -705,6 +867,12 @@ func (s *CandidateService) GetPairOverridesForCandidate(candidateID string) ([]*
 // resolveCVJobDetails looks up the per-pairing override first; if none exists
 // it falls back to the candidate's global country_applied / salary_offered.
 func (s *CandidateService) resolveCVJobDetails(candidateID, pairingID string) (countryApplied, salaryOffered string, err error) {
+	return s.ResolveCVJobDetails(candidateID, pairingID)
+}
+
+// ResolveCVJobDetails is an exported wrapper for resolveCVJobDetails, used by
+// the handler layer to present per-pairing country/salary to foreign agents.
+func (s *CandidateService) ResolveCVJobDetails(candidateID, pairingID string) (countryApplied, salaryOffered string, err error) {
 	if s.pairOverrideRepository == nil {
 		// No repository wired – return empty strings; caller will use candidate globals.
 		return "", "", nil
@@ -718,6 +886,31 @@ func (s *CandidateService) resolveCVJobDetails(candidateID, pairingID string) (c
 	}
 	// No override row exists – signal to keep candidate globals as-is.
 	return "", "", nil
+}
+
+func (s *CandidateService) tryAutoGenerateCV(candidateID, generatedBy string) {
+	docs, err := s.documentRepository.GetByCandidateID(candidateID)
+	if err != nil {
+		log.Printf("try_auto_generate_cv: fetch docs failed for %s: %v", candidateID, err)
+		return
+	}
+	hasPassport, hasPhoto := false, false
+	for _, d := range docs {
+		switch d.DocumentType {
+		case domain.Passport:
+			hasPassport = true
+		case domain.Photo:
+			hasPhoto = true
+		}
+	}
+	if !hasPassport || !hasPhoto {
+		return
+	}
+
+	log.Printf("try_auto_generate_cv: generating default CV for candidate=%s", candidateID)
+	if err := s.GenerateCV(candidateID, generatedBy, "", CandidateCVBranding{}); err != nil {
+		log.Printf("try_auto_generate_cv: failed for %s: %v", candidateID, err)
+	}
 }
 
 func (s *CandidateService) DeleteCandidate(candidateID, deletedBy string) error {
@@ -1010,4 +1203,351 @@ func (s *CandidateService) resolvePublishPairingTarget(publishedBy, explicitPair
 		}
 		return nil, ErrPublishPairingSelectionRequired
 	}
+}
+
+type BatchRegenerateCVsInput struct {
+	CandidateIDs []string `json:"candidate_ids"`
+	PairingID    string   `json:"pairing_id,omitempty"`
+}
+
+type BatchResult struct {
+	SuccessCount int      `json:"success_count"`
+	ErrorCount   int      `json:"error_count"`
+	Errors       []string `json:"errors"`
+}
+
+func (s *CandidateService) BatchRegenerateCVs(userID string, input BatchRegenerateCVsInput) *BatchResult {
+	result := &BatchResult{}
+	if len(input.CandidateIDs) == 0 {
+		return result
+	}
+
+	sem := make(chan struct{}, maxConcurrentGenCV)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, cid := range input.CandidateIDs {
+		cid = strings.TrimSpace(cid)
+		if cid == "" {
+			continue
+		}
+
+		if input.PairingID == "" {
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(id string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				if err := s.GenerateCV(id, userID, "", CandidateCVBranding{}); err != nil {
+					mu.Lock()
+					result.ErrorCount++
+					result.Errors = append(result.Errors, fmt.Sprintf("candidate %s default: %v", id, err))
+					mu.Unlock()
+					return
+				}
+
+				shares, err := s.shareRepository.ListByCandidateID(id, true)
+				if err != nil {
+					mu.Lock()
+					result.ErrorCount++
+					result.Errors = append(result.Errors, fmt.Sprintf("candidate %s shares: %v", id, err))
+					mu.Unlock()
+					return
+				}
+				for _, share := range shares {
+					if err := s.GenerateCV(id, userID, share.PairingID, CandidateCVBranding{}); err != nil {
+						mu.Lock()
+						result.ErrorCount++
+						result.Errors = append(result.Errors, fmt.Sprintf("candidate %s pairing %s: %v", id, share.PairingID, err))
+						mu.Unlock()
+						return
+					}
+				}
+				mu.Lock()
+				result.SuccessCount++
+				mu.Unlock()
+			}(cid)
+		} else {
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(id string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+				if err := s.GenerateCV(id, userID, input.PairingID, CandidateCVBranding{}); err != nil {
+					mu.Lock()
+					result.ErrorCount++
+					result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: %v", id, err))
+					mu.Unlock()
+					return
+				}
+				mu.Lock()
+				result.SuccessCount++
+				mu.Unlock()
+			}(cid)
+		}
+	}
+	wg.Wait()
+	return result
+}
+
+type BatchSetPairOverrideInput struct {
+	CandidateIDs   []string `json:"candidate_ids"`
+	PairingID      string   `json:"pairing_id" validate:"required"`
+	CountryApplied string   `json:"country_applied"`
+	SalaryOffered  string   `json:"salary_offered"`
+}
+
+func (s *CandidateService) BatchSetPairOverrides(callerID string, input BatchSetPairOverrideInput) *BatchResult {
+	result := &BatchResult{}
+	if s.pairOverrideRepository == nil {
+		result.ErrorCount = len(input.CandidateIDs)
+		result.Errors = append(result.Errors, "pair override feature not available")
+		return result
+	}
+	if len(input.CandidateIDs) == 0 {
+		return result
+	}
+
+	candidates, err := s.candidateRepository.GetByIDs(input.CandidateIDs)
+	if err != nil {
+		result.ErrorCount = len(input.CandidateIDs)
+		result.Errors = append(result.Errors, fmt.Sprintf("fetch candidates: %v", err))
+		return result
+	}
+
+	ownerMap := make(map[string]bool, len(candidates))
+	for _, c := range candidates {
+		ownerMap[c.ID] = c.CreatedBy == callerID
+	}
+
+	var overrides []*domain.CandidatePairOverride
+	for _, cid := range input.CandidateIDs {
+		cid = strings.TrimSpace(cid)
+		if cid == "" {
+			continue
+		}
+		if !ownerMap[cid] {
+			result.ErrorCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: forbidden", cid))
+			continue
+		}
+		overrides = append(overrides, &domain.CandidatePairOverride{
+			PairingID:      input.PairingID,
+			CandidateID:    cid,
+			CountryApplied: input.CountryApplied,
+			SalaryOffered:  input.SalaryOffered,
+		})
+	}
+
+	if len(overrides) == 0 {
+		return result
+	}
+
+	if err := s.pairOverrideRepository.BulkUpsert(overrides); err != nil {
+		result.ErrorCount = len(overrides)
+		result.Errors = append(result.Errors, fmt.Sprintf("bulk upsert: %v", err))
+		return result
+	}
+
+	result.SuccessCount = len(overrides)
+	return result
+}
+
+type BulkPublishInput struct {
+	CandidateIDs []string `json:"candidate_ids"`
+	PairingIDs   []string `json:"pairing_ids"`
+}
+
+func (s *CandidateService) BulkPublish(userID string, input BulkPublishInput) *BatchResult {
+	result := &BatchResult{}
+	if len(input.CandidateIDs) == 0 {
+		return result
+	}
+
+	// Load candidates
+	candidates, err := s.candidateRepository.GetByIDs(input.CandidateIDs)
+	if err != nil {
+		result.ErrorCount = len(input.CandidateIDs)
+		result.Errors = append(result.Errors, fmt.Sprintf("fetch candidates: %v", err))
+		return result
+	}
+
+	ownerMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		ownerMap[c.ID] = c
+	}
+
+	// Resolve target pairings
+	var targetPairings []*domain.AgencyPairing
+	if len(input.PairingIDs) > 0 {
+		for _, pid := range input.PairingIDs {
+			p, err := s.pairingService.GetPairingByID(pid)
+			if err != nil {
+				result.ErrorCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("pairing %s: %v", pid, err))
+				continue
+			}
+			if p.EthiopianUserID != userID {
+				result.ErrorCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("pairing %s: forbidden", pid))
+				continue
+			}
+			targetPairings = append(targetPairings, p)
+		}
+	} else {
+		// Publish to all active pairings
+		// Load user to get pairings
+		user, err := s.userRepository.GetByID(userID)
+		if err != nil {
+			result.ErrorCount = len(input.CandidateIDs)
+			result.Errors = append(result.Errors, fmt.Sprintf("fetch user: %v", err))
+			return result
+		}
+		_ = user // pairings loaded via pairing service
+		pairings, err := s.pairingService.ListActivePairingsForUser(userID)
+		if err != nil {
+			result.ErrorCount = len(input.CandidateIDs)
+			result.Errors = append(result.Errors, fmt.Sprintf("list pairings: %v", err))
+			return result
+		}
+		for _, p := range pairings {
+			if p.Status == domain.AgencyPairingActive {
+				targetPairings = append(targetPairings, p)
+			}
+		}
+	}
+
+	if len(targetPairings) == 0 {
+		result.ErrorCount = len(input.CandidateIDs)
+		result.Errors = append(result.Errors, "no valid target pairings")
+		return result
+	}
+
+	sem := make(chan struct{}, maxConcurrentGenCV)
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+
+	for _, cid := range input.CandidateIDs {
+		cid = strings.TrimSpace(cid)
+		if cid == "" {
+			continue
+		}
+
+		candidate, ok := ownerMap[cid]
+		if !ok {
+			mu.Lock()
+			result.ErrorCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: not found", cid))
+			mu.Unlock()
+			continue
+		}
+		if candidate.CreatedBy != userID {
+			mu.Lock()
+			result.ErrorCount++
+			result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: forbidden", cid))
+			mu.Unlock()
+			continue
+		}
+
+		// Mark candidate as available before sharing
+		if candidate.Status == domain.CandidateStatusDraft {
+			candidate.Status = domain.CandidateStatusAvailable
+			if err := s.candidateRepository.Update(candidate); err != nil {
+				mu.Lock()
+				result.ErrorCount++
+				result.Errors = append(result.Errors, fmt.Sprintf("candidate %s: status update failed: %v", cid, err))
+				mu.Unlock()
+				continue
+			}
+		}
+
+		for _, pairing := range targetPairings {
+			defaultCountry, defaultSalary, defaultCurrency := "", "", ""
+			if pairing.DefaultCountry != nil {
+				defaultCountry = *pairing.DefaultCountry
+			}
+			if pairing.DefaultSalary != nil {
+				defaultSalary = *pairing.DefaultSalary
+			}
+			if pairing.DefaultCurrency != nil {
+				defaultCurrency = *pairing.DefaultCurrency
+			}
+			sem <- struct{}{}
+			wg.Add(1)
+			go func(candID, pairingID, country, salary, currency string) {
+				defer wg.Done()
+				defer func() { <-sem }()
+
+				// Check if already shared
+				existingShare, err := s.shareRepository.GetActiveByPairingAndCandidate(pairingID, candID)
+				if err == nil && existingShare != nil {
+					mu.Lock()
+					result.SuccessCount++
+					mu.Unlock()
+					return
+				}
+
+				// Check if manual override already exists
+				var countryVal, salVal string
+				existingOverride, lookupErr := s.pairOverrideRepository.GetByPairingAndCandidate(pairingID, candID)
+				if lookupErr == nil && existingOverride != nil {
+					// Manual override exists, respect it (don't auto-fill)
+					countryVal = existingOverride.CountryApplied
+					salVal = existingOverride.SalaryOffered
+				} else {
+					// Auto-fill empty country/salary from partner defaults
+					countryVal = ""
+					if country != "" {
+						countryVal = country
+					}
+					salVal = ""
+					if salary != "" {
+						salVal = salary
+					}
+					if currency != "" {
+						if salVal != "" {
+							salVal = salVal + " " + currency
+						} else {
+							salVal = currency
+						}
+					}
+					if countryVal != "" || salVal != "" {
+						_ = s.pairOverrideRepository.BulkUpsert([]*domain.CandidatePairOverride{
+							{
+								PairingID:      pairingID,
+								CandidateID:    candID,
+								CountryApplied: countryVal,
+								SalaryOffered:  salVal,
+							},
+						})
+					}
+				}
+
+				// Share the candidate
+				shareErr := s.pairingService.ShareCandidate(candID, pairingID, userID)
+				if shareErr != nil {
+					mu.Lock()
+					result.ErrorCount++
+					result.Errors = append(result.Errors, fmt.Sprintf("candidate %s pairing %s: %v", candID, pairingID, shareErr))
+					mu.Unlock()
+					return
+				}
+
+				mu.Lock()
+				result.SuccessCount++
+				mu.Unlock()
+
+				// Generate per-pairing CV (failure does not undo the share)
+				if genErr := s.GenerateCV(candID, userID, pairingID, CandidateCVBranding{}); genErr != nil {
+					mu.Lock()
+					result.Errors = append(result.Errors, fmt.Sprintf("candidate %s pairing %s cv: %v", candID, pairingID, genErr))
+					mu.Unlock()
+				}
+			}(cid, pairing.ID, defaultCountry, defaultSalary, defaultCurrency)
+		}
+	}
+
+	wg.Wait()
+	return result
 }

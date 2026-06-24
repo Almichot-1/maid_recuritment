@@ -19,6 +19,7 @@ export interface DocumentUploadProps {
   description?: string
   mode?: "deferred" | "instant"
   disabled?: boolean
+  className?: string
 }
 
 export function DocumentUpload({
@@ -32,6 +33,7 @@ export function DocumentUpload({
   description,
   mode = "deferred",
   disabled = false,
+  className,
 }: DocumentUploadProps) {
   const [file, setFile] = React.useState<File | null>(null)
   const [objectURL, setObjectURL] = React.useState<string | null>(null)
@@ -215,7 +217,7 @@ export function DocumentUpload({
   }, [objectURL])
 
   return (
-    <div className="space-y-2">
+    <div className={cn("space-y-2", className)}>
       <div className="flex items-center justify-between">
         <label className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70">
           {title}

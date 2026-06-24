@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"net/http"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -185,7 +184,37 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 	}
 	pairingID, _ := middleware.PairingIDFromContext(r.Context())
 
-	selections, err := h.selectionService.GetSelectionsForWorkspace(userID, role, pairingID)
+	page, _ := parseIntWithDefault(r.URL.Query().Get("page"), 1)
+	pageSize, _ := parseIntWithDefault(r.URL.Query().Get("page_size"), 25)
+	if pageSize > 100 {
+		pageSize = 100
+	}
+
+	sortBy := "created_at"
+	sortOrder := "DESC"
+	if r.URL.Query().Get("sortBy") == "expiring" {
+		sortBy = "expires_at"
+		sortOrder = "ASC"
+	}
+
+	filters := domain.SelectionFilters{
+		PairingID: pairingID,
+		Page:      page,
+		PageSize:  pageSize,
+		SortBy:    sortBy,
+		SortOrder: sortOrder,
+	}
+	switch strings.TrimSpace(role) {
+	case string(domain.ForeignAgent):
+		filters.SelectedBy = userID
+	case string(domain.EthiopianAgent):
+		filters.CandidateOwner = userID
+	default:
+		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		return
+	}
+
+	selections, total, err := h.selectionService.ListSelections(filters)
 	if err != nil {
 		if h.tryWritePairingError(w, err) {
 			return
@@ -194,45 +223,8 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Support server-side sorting
-	sortBy := r.URL.Query().Get("sortBy")
-	if sortBy == "expiring" {
-		// Sort by expiring soon for pending selections
-		h.sortSelectionsByExpiring(selections)
-	}
-	// Default is "newest" (already sorted by created_at DESC in repository)
-
-	// Apply pagination
-	limit := 25
-	offset := 0
-	if limitStr := r.URL.Query().Get("limit"); limitStr != "" {
-		if l, err := strconv.Atoi(limitStr); err == nil && l > 0 && l <= 100 {
-			limit = l
-		}
-	}
-	if offsetStr := r.URL.Query().Get("offset"); offsetStr != "" {
-		if o, err := strconv.Atoi(offsetStr); err == nil && o >= 0 {
-			offset = o
-		}
-	}
-
-	// Store total count before pagination
-	totalCount := len(selections)
-
-	// Apply pagination to selections
-	endIdx := offset + limit
-	if endIdx > len(selections) {
-		endIdx = len(selections)
-	}
-	if offset >= len(selections) {
-		offset = len(selections)
-		endIdx = len(selections)
-	}
-	paginatedSelections := selections[offset:endIdx]
-
-	responses := make([]SelectionResponse, 0, len(paginatedSelections))
-	for _, selection := range paginatedSelections {
-		// Candidate data is already preloaded by the repository
+	responses := make([]SelectionResponse, 0, len(selections))
+	for _, selection := range selections {
 		response, err := h.mapSelectionResponse(selection, selection.Candidate)
 		if err != nil {
 			h.writeSelectionError(w, err)
@@ -241,21 +233,18 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 		responses = append(responses, response)
 	}
 
-	// Create response with pagination info
 	responseData := map[string]interface{}{
 		"selections": responses,
 		"pagination": map[string]interface{}{
-			"limit":    limit,
-			"offset":   offset,
-			"total":    totalCount,
-			"has_more": endIdx < totalCount,
+			"page":      page,
+			"page_size": pageSize,
+			"total":     total,
+			"has_more":  (page * pageSize) < int(total),
 		},
 	}
 
-	// Add caching headers
 	w.Header().Set("Cache-Control", "public, max-age=30")
 
-	// Calculate and set ETag for response caching
 	etag := h.calculateETag(responseData)
 	w.Header().Set("ETag", etag)
 

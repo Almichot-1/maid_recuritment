@@ -1,0 +1,2 @@
+ALTER TABLE candidates ADD COLUMN country_applied VARCHAR(255) NOT NULL DEFAULT '';
+ALTER TABLE candidates ADD COLUMN salary_offered VARCHAR(255) NOT NULL DEFAULT '';

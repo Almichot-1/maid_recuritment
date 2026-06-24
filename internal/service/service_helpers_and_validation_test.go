@@ -55,7 +55,7 @@ func TestCandidateHelpersAndUpdateSuccess(t *testing.T) {
 		updated = true
 		return nil
 	}
-	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{})
+	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	require.NoError(t, svc.UpdateCandidate("id", "owner", CandidateInput{FullName: "Updated", Languages: []string{"en"}, Skills: []string{"cook"}}))
 	assert.True(t, updated)

@@ -121,6 +121,37 @@ func (r *GormSelectionRepository) GetBySelectedBy(userID string) ([]*domain.Sele
 	return selections, nil
 }
 
+func (r *GormSelectionRepository) GetBySelectedByBatch(userID string) ([]*domain.Selection, error) {
+	selections := make([]*domain.Selection, 0)
+	if err := r.db.
+		Where("selected_by = ?", userID).
+		Order("created_at DESC").
+		Find(&selections).Error; err != nil {
+		return nil, fmt.Errorf("get selections by selected_by: %w", err)
+	}
+	if len(selections) == 0 {
+		return selections, nil
+	}
+	candidateIDs := make([]string, len(selections))
+	for i, s := range selections {
+		candidateIDs[i] = s.CandidateID
+	}
+	candidates := make([]*domain.Candidate, 0)
+	if err := r.db.Preload("Documents").Where("id IN ?", candidateIDs).Find(&candidates).Error; err != nil {
+		return nil, fmt.Errorf("batch load candidates: %w", err)
+	}
+	candidateMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		candidateMap[c.ID] = c
+	}
+	for _, s := range selections {
+		if c, ok := candidateMap[s.CandidateID]; ok {
+			s.Candidate = c
+		}
+	}
+	return selections, nil
+}
+
 func (r *GormSelectionRepository) GetBySelectedByAndPairing(userID, pairingID string) ([]*domain.Selection, error) {
 	selections := make([]*domain.Selection, 0)
 	if err := r.db.
@@ -130,6 +161,37 @@ func (r *GormSelectionRepository) GetBySelectedByAndPairing(userID, pairingID st
 		Order("created_at DESC").
 		Find(&selections).Error; err != nil {
 		return nil, fmt.Errorf("get selections by selected_by and pairing: %w", err)
+	}
+	return selections, nil
+}
+
+func (r *GormSelectionRepository) GetBySelectedByAndPairingBatch(userID, pairingID string) ([]*domain.Selection, error) {
+	selections := make([]*domain.Selection, 0)
+	if err := r.db.
+		Where("selected_by = ? AND pairing_id = ?", userID, pairingID).
+		Order("created_at DESC").
+		Find(&selections).Error; err != nil {
+		return nil, fmt.Errorf("get selections by selected_by and pairing: %w", err)
+	}
+	if len(selections) == 0 {
+		return selections, nil
+	}
+	candidateIDs := make([]string, len(selections))
+	for i, s := range selections {
+		candidateIDs[i] = s.CandidateID
+	}
+	candidates := make([]*domain.Candidate, 0)
+	if err := r.db.Preload("Documents").Where("id IN ?", candidateIDs).Find(&candidates).Error; err != nil {
+		return nil, fmt.Errorf("batch load candidates: %w", err)
+	}
+	candidateMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		candidateMap[c.ID] = c
+	}
+	for _, s := range selections {
+		if c, ok := candidateMap[s.CandidateID]; ok {
+			s.Candidate = c
+		}
 	}
 	return selections, nil
 }
@@ -164,6 +226,72 @@ func (r *GormSelectionRepository) GetByCandidateOwnerAndPairing(userID, pairingI
 	return selections, nil
 }
 
+func (r *GormSelectionRepository) GetByCandidateOwnerBatch(userID string) ([]*domain.Selection, error) {
+	selections := make([]*domain.Selection, 0)
+	if err := r.db.
+		Model(&domain.Selection{}).
+		Joins("JOIN candidates ON candidates.id = selections.candidate_id").
+		Where("candidates.created_by = ?", userID).
+		Order("selections.created_at DESC").
+		Find(&selections).Error; err != nil {
+		return nil, fmt.Errorf("get selections by candidate owner: %w", err)
+	}
+	if len(selections) == 0 {
+		return selections, nil
+	}
+	candidateIDs := make([]string, len(selections))
+	for i, s := range selections {
+		candidateIDs[i] = s.CandidateID
+	}
+	candidates := make([]*domain.Candidate, 0)
+	if err := r.db.Preload("Documents").Where("id IN ?", candidateIDs).Find(&candidates).Error; err != nil {
+		return nil, fmt.Errorf("batch load candidates: %w", err)
+	}
+	candidateMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		candidateMap[c.ID] = c
+	}
+	for _, s := range selections {
+		if c, ok := candidateMap[s.CandidateID]; ok {
+			s.Candidate = c
+		}
+	}
+	return selections, nil
+}
+
+func (r *GormSelectionRepository) GetByCandidateOwnerAndPairingBatch(userID, pairingID string) ([]*domain.Selection, error) {
+	selections := make([]*domain.Selection, 0)
+	if err := r.db.
+		Model(&domain.Selection{}).
+		Joins("JOIN candidates ON candidates.id = selections.candidate_id").
+		Where("candidates.created_by = ? AND selections.pairing_id = ?", userID, pairingID).
+		Order("selections.created_at DESC").
+		Find(&selections).Error; err != nil {
+		return nil, fmt.Errorf("get selections by candidate owner and pairing: %w", err)
+	}
+	if len(selections) == 0 {
+		return selections, nil
+	}
+	candidateIDs := make([]string, len(selections))
+	for i, s := range selections {
+		candidateIDs[i] = s.CandidateID
+	}
+	candidates := make([]*domain.Candidate, 0)
+	if err := r.db.Preload("Documents").Where("id IN ?", candidateIDs).Find(&candidates).Error; err != nil {
+		return nil, fmt.Errorf("batch load candidates: %w", err)
+	}
+	candidateMap := make(map[string]*domain.Candidate, len(candidates))
+	for _, c := range candidates {
+		candidateMap[c.ID] = c
+	}
+	for _, s := range selections {
+		if c, ok := candidateMap[s.CandidateID]; ok {
+			s.Candidate = c
+		}
+	}
+	return selections, nil
+}
+
 func (r *GormSelectionRepository) UpdateStatus(id string, status domain.SelectionStatus) error {
 	if strings.TrimSpace(id) == "" {
 		return fmt.Errorf("update selection status: id is required")
@@ -194,6 +322,73 @@ func (r *GormSelectionRepository) GetExpiredSelections() ([]*domain.Selection, e
 		return nil, fmt.Errorf("get expired selections: %w", err)
 	}
 	return selections, nil
+}
+
+func (r *GormSelectionRepository) baseQuery(filters domain.SelectionFilters) *gorm.DB {
+	query := r.db.Model(&domain.Selection{})
+
+	if strings.TrimSpace(filters.SelectedBy) != "" {
+		query = query.Where("selected_by = ?", strings.TrimSpace(filters.SelectedBy))
+	}
+	if strings.TrimSpace(filters.PairingID) != "" {
+		query = query.Where("pairing_id = ?", strings.TrimSpace(filters.PairingID))
+	}
+	if strings.TrimSpace(filters.CandidateOwner) != "" {
+		query = query.
+			Joins("JOIN candidates ON candidates.id = selections.candidate_id").
+			Where("candidates.created_by = ?", strings.TrimSpace(filters.CandidateOwner))
+	}
+	if len(filters.Statuses) > 0 {
+		query = query.Where("status IN ?", filters.Statuses)
+	}
+
+	return query
+}
+
+func (r *GormSelectionRepository) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	query := r.baseQuery(filters)
+
+	page := filters.Page
+	if page <= 0 {
+		page = 1
+	}
+	pageSize := filters.PageSize
+	if pageSize <= 0 {
+		pageSize = 25
+	}
+	if pageSize > 100 {
+		pageSize = 100
+	}
+	offset := (page - 1) * pageSize
+
+	sortBy := filters.SortBy
+	sortOrder := filters.SortOrder
+	if sortBy == "" {
+		sortBy = "created_at"
+	}
+	if sortOrder == "" {
+		sortOrder = "DESC"
+	}
+
+	selections := make([]*domain.Selection, 0)
+	if err := query.
+		Preload("Candidate").
+		Order(sortBy + " " + sortOrder).
+		Offset(offset).
+		Limit(pageSize).
+		Find(&selections).Error; err != nil {
+		return nil, fmt.Errorf("list selections: %w", err)
+	}
+	return selections, nil
+}
+
+func (r *GormSelectionRepository) Count(filters domain.SelectionFilters) (int64, error) {
+	query := r.baseQuery(filters)
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return 0, fmt.Errorf("count selections: %w", err)
+	}
+	return total, nil
 }
 
 func isValidSelectionStatus(status domain.SelectionStatus) bool {

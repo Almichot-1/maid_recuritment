@@ -20,11 +20,12 @@ import (
 )
 
 type PairingAgencySummary struct {
-	ID          string `json:"id"`
-	FullName    string `json:"full_name"`
-	CompanyName string `json:"company_name"`
-	Email       string `json:"email"`
-	Role        string `json:"role"`
+	ID               string `json:"id"`
+	FullName         string `json:"full_name"`
+	CompanyName      string `json:"company_name"`
+	Email            string `json:"email"`
+	Role             string `json:"role"`
+	OperatingCountry string `json:"operating_country"`
 }
 
 type PairingWorkspaceSummary struct {
@@ -37,6 +38,7 @@ type PairingWorkspaceSummary struct {
 	Notes            string               `json:"notes,omitempty"`
 	DefaultCountry   string               `json:"default_country,omitempty"`
 	DefaultCurrency  string               `json:"default_currency,omitempty"`
+	DefaultSalary    string               `json:"default_salary,omitempty"`
 	PartnerLogoURL   string               `json:"partner_logo_url,omitempty"`
 }
 
@@ -228,6 +230,7 @@ func (h *PairingHandler) GetCandidateShares(w http.ResponseWriter, r *http.Reque
 type UpdatePairingDefaultsRequest struct {
 	DefaultCountry  string `json:"default_country" validate:"required"`
 	DefaultCurrency string `json:"default_currency" validate:"required"`
+	DefaultSalary   string `json:"default_salary"`
 }
 
 func (h *PairingHandler) UpdateDefaults(w http.ResponseWriter, r *http.Request) {
@@ -253,7 +256,7 @@ func (h *PairingHandler) UpdateDefaults(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	pairing, err := h.pairingService.UpdatePairingDefaults(pairingID, userID, req.DefaultCountry, req.DefaultCurrency)
+	pairing, err := h.pairingService.UpdatePairingDefaults(pairingID, userID, req.DefaultCountry, req.DefaultCurrency, req.DefaultSalary)
 	if err != nil {
 		h.writePairingError(w, err)
 		return
@@ -362,6 +365,9 @@ func (h *PairingHandler) mapWorkspace(pairing *domain.AgencyPairing, userID, rol
 	if pairing.DefaultCurrency != nil {
 		workspace.DefaultCurrency = *pairing.DefaultCurrency
 	}
+	if pairing.DefaultSalary != nil {
+		workspace.DefaultSalary = *pairing.DefaultSalary
+	}
 	if pairing.PartnerLogoURL != nil {
 		workspace.PartnerLogoURL = *pairing.PartnerLogoURL
 	}
@@ -373,12 +379,17 @@ func mapPairingAgencySummary(user *domain.User) PairingAgencySummary {
 	if user == nil {
 		return PairingAgencySummary{}
 	}
+	operatingCountry := ""
+	if user.OperatingCountry != nil {
+		operatingCountry = *user.OperatingCountry
+	}
 	return PairingAgencySummary{
-		ID:          user.ID,
-		FullName:    user.FullName,
-		CompanyName: user.CompanyName,
-		Email:       user.Email,
-		Role:        string(user.Role),
+		ID:               user.ID,
+		FullName:         user.FullName,
+		CompanyName:      user.CompanyName,
+		Email:            user.Email,
+		Role:             string(user.Role),
+		OperatingCountry: operatingCountry,
 	}
 }
 

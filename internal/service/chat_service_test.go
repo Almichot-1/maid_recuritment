@@ -22,6 +22,9 @@ func (r *chatNoopAuditRepository) Create(log *domain.AuditLog) error { return ni
 func (r *chatNoopAuditRepository) List(filters domain.AuditLogFilters) ([]*domain.AuditLog, error) {
 	return []*domain.AuditLog{}, nil
 }
+func (r *chatNoopAuditRepository) Count(filters domain.AuditLogFilters) (int64, error) {
+	return 0, nil
+}
 
 type chatMemoryUserRepository struct {
 	mu    sync.RWMutex
@@ -261,6 +264,18 @@ func (r *chatMemoryShareRepository) Deactivate(pairingID, candidateID string, un
 	return nil
 }
 
+func (r *chatMemoryShareRepository) UpdateCVURL(shareID, cvURL string) error {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	for _, share := range r.shares {
+		if share.ID == shareID {
+			share.CVPDFURL = cvURL
+			return nil
+		}
+	}
+	return repository.ErrCandidatePairShareNotFound
+}
+
 type chatMemoryCandidateRepository struct {
 	mu         sync.RWMutex
 	candidates map[string]*domain.Candidate
@@ -315,6 +330,9 @@ func (r *chatMemoryCandidateRepository) Lock(candidateID, lockedBy string, expir
 	return nil
 }
 func (r *chatMemoryCandidateRepository) Unlock(candidateID string) error { return nil }
+func (r *chatMemoryCandidateRepository) GetByIDs(ids []string) ([]*domain.Candidate, error) {
+	return nil, nil
+}
 
 type chatMemorySelectionRepository struct {
 	mu               sync.RWMutex
@@ -392,6 +410,12 @@ func (r *chatMemorySelectionRepository) UpdateStatus(id string, status domain.Se
 }
 func (r *chatMemorySelectionRepository) GetExpiredSelections() ([]*domain.Selection, error) {
 	return []*domain.Selection{}, nil
+}
+func (r *chatMemorySelectionRepository) List(filters domain.SelectionFilters) ([]*domain.Selection, error) {
+	return nil, nil
+}
+func (r *chatMemorySelectionRepository) Count(filters domain.SelectionFilters) (int64, error) {
+	return 0, nil
 }
 
 type chatMemoryThreadRepository struct {
