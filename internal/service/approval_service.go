@@ -24,9 +24,10 @@ type ApprovalService struct {
 	approvalRepository  domain.ApprovalRepository
 	selectionRepository domain.SelectionRepository
 	candidateRepository domain.CandidateRepository
-	statusStepService   *StatusStepService
+	progressService     *SelectionProgressService
 	notificationService NotificationSender
 	platformSettings    PlatformSettingsReader
+	selectionUpdates    SelectionUpdateSender
 	db                  *gorm.DB
 }
 
@@ -34,7 +35,6 @@ func NewApprovalService(
 	approvalRepository domain.ApprovalRepository,
 	selectionRepository domain.SelectionRepository,
 	candidateRepository domain.CandidateRepository,
-	statusStepService *StatusStepService,
 	notificationService NotificationSender,
 ) (*ApprovalService, error) {
 	if approvalRepository == nil {
@@ -45,9 +45,6 @@ func NewApprovalService(
 	}
 	if candidateRepository == nil {
 		return nil, fmt.Errorf("candidate repository is nil")
-	}
-	if statusStepService == nil {
-		return nil, fmt.Errorf("status step service is nil")
 	}
 	if notificationService == nil {
 		return nil, fmt.Errorf("notification service is nil")
@@ -62,7 +59,6 @@ func NewApprovalService(
 		approvalRepository:  approvalRepository,
 		selectionRepository: selectionRepository,
 		candidateRepository: candidateRepository,
-		statusStepService:   statusStepService,
 		notificationService: notificationService,
 		db:                  dbSource.DB(),
 	}, nil
@@ -70,6 +66,14 @@ func NewApprovalService(
 
 func (s *ApprovalService) SetPlatformSettingsReader(platformSettings PlatformSettingsReader) {
 	s.platformSettings = platformSettings
+}
+
+func (s *ApprovalService) SetSelectionUpdateSender(sender SelectionUpdateSender) {
+	s.selectionUpdates = sender
+}
+
+func (s *ApprovalService) SetProgressService(progressService *SelectionProgressService) {
+	s.progressService = progressService
 }
 
 func (s *ApprovalService) ApproveSelection(selectionID, userID string) error {
@@ -82,19 +86,22 @@ func (s *ApprovalService) ApproveSelection(selectionID, userID string) error {
 		return fmt.Errorf("user id is required")
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	var (
+		finalStatus string
+		pairingID   string
+	)
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
 		selection, candidate, err := s.loadSelectionAndCandidateForDecision(tx, selectionID)
 		if err != nil {
 			return err
 		}
 
+		pairingID = selection.PairingID
+
 		if !isInvolvedUser(selection, candidate, userID) {
 			return ErrNotAuthorized
 		}
-		if requiresEmployerDocumentReview(candidate, userID) && !selectionHasRequiredSupportingDocuments(selection) {
-			return ErrSelectionSupportingDocumentsRequired
-		}
-
 		existingApproval, err := s.findApprovalInTx(tx, selectionID, userID)
 		if err != nil {
 			return err
@@ -118,42 +125,13 @@ func (s *ApprovalService) ApproveSelection(selectionID, userID string) error {
 			return fmt.Errorf("create approval: %w", err)
 		}
 
-		approvals, err := s.getApprovalsInTx(tx, selectionID)
-		if err != nil {
-			return err
-		}
+		isOwner := strings.TrimSpace(userID) == strings.TrimSpace(candidate.CreatedBy)
 
-		ownerApproved := false
-		selectorApproved := false
-		for _, item := range approvals {
-			if item.Decision != domain.ApprovalApproved {
-				continue
-			}
-			if strings.TrimSpace(item.UserID) == strings.TrimSpace(candidate.CreatedBy) {
-				ownerApproved = true
-			}
-			if strings.TrimSpace(item.UserID) == strings.TrimSpace(selection.SelectedBy) {
-				selectorApproved = true
-			}
-		}
-
-		requireBothApprovals := true
-		if s.platformSettings != nil {
-			settings, err := s.platformSettings.Get()
-			if err == nil && settings != nil {
-				requireBothApprovals = settings.RequireBothApprovals
-			}
-		}
-
-		shouldFinalize := ownerApproved && selectorApproved
-		if !requireBothApprovals {
-			shouldFinalize = selectorApproved
-		}
-
-		if shouldFinalize {
+		if isOwner {
 			if err := tx.Model(&domain.Selection{}).Where("id = ?", selectionID).Update("status", domain.SelectionApproved).Error; err != nil {
 				return fmt.Errorf("update selection status approved: %w", err)
 			}
+			finalStatus = string(domain.SelectionApproved)
 
 			if err := tx.Model(&domain.Candidate{}).Where("id = ?", selection.CandidateID).Updates(map[string]any{
 				"status":          domain.CandidateStatusInProgress,
@@ -164,48 +142,40 @@ func (s *ApprovalService) ApproveSelection(selectionID, userID string) error {
 				return fmt.Errorf("update candidate in_progress: %w", err)
 			}
 
-			if err := s.statusStepService.initializeStepsWithTx(tx, selection.CandidateID, candidate.CreatedBy); err != nil {
-				return fmt.Errorf("initialize status steps: %w", err)
+			// Create progress tracking record inside the transaction
+			progress := &domain.SelectionProgress{
+				ID:            uuid.NewString(),
+				SelectionID:   selectionID,
+				UpdatedBy:     candidate.CreatedBy,
+				COCStatus:     domain.ProgressStatusPending,
+				MedicalStatus: domain.ProgressStatusPending,
+				VisaStatus:    domain.VisaStatusPending,
+				TicketStatus:  domain.TicketStatusPending,
+				ArrivalStatus: domain.ArrivalStatusNotArrived,
+			}
+			if err := tx.Create(progress).Error; err != nil {
+				return fmt.Errorf("create progress tracking: %w", err)
 			}
 
-			if err := s.notificationService.Send(candidate.CreatedBy, "Selection approved", "Both parties approved the selection.", "approval", "selection", selectionID); err != nil {
+			if err := s.notificationService.Send(candidate.CreatedBy, "Selection approved", "The selection has been approved and recruitment tracking has started.", "approval", "selection", selectionID); err != nil {
 				return fmt.Errorf("notify owner approved: %w", err)
 			}
-			if err := s.notificationService.Send(selection.SelectedBy, "Selection approved", "Both parties approved the selection.", "approval", "selection", selectionID); err != nil {
+			if err := s.notificationService.Send(selection.SelectedBy, "Selection approved", "The Ethiopian agency approved your selection. Recruitment tracking has started.", "approval", "selection", selectionID); err != nil {
 				return fmt.Errorf("notify selector approved: %w", err)
 			}
-			return nil
 		}
 
-		waitingMessage := "Waiting for the other party to approve."
-		if !requireBothApprovals {
-			waitingMessage = "Waiting for the foreign agency to approve."
-		}
-		if err := s.notificationService.Send(userID, "Approval received", waitingMessage, "approval", "selection", selectionID); err != nil {
-			return fmt.Errorf("notify waiting approval: %w", err)
-		}
-
-		otherPartyID := selection.SelectedBy
-		otherPartyMessage := "The Ethiopian agency approved this selection. Open the selection to continue."
-		if strings.TrimSpace(userID) == strings.TrimSpace(selection.SelectedBy) {
-			otherPartyID = candidate.CreatedBy
-			otherPartyMessage = "The foreign agency approved this selection. Open the selection to continue."
-		}
-		if strings.TrimSpace(otherPartyID) != "" && strings.TrimSpace(otherPartyID) != strings.TrimSpace(userID) {
-			if err := s.notificationService.Send(otherPartyID, "Approval needed", otherPartyMessage, "approval", "selection", selectionID); err != nil {
-				return fmt.Errorf("notify counterpart approval: %w", err)
-			}
-		}
 		return nil
 	})
-}
-
-func requiresEmployerDocumentReview(candidate *domain.Candidate, userID string) bool {
-	if candidate == nil {
-		return false
+	if err != nil {
+		return err
 	}
 
-	return strings.TrimSpace(candidate.CreatedBy) == strings.TrimSpace(userID)
+	if s.selectionUpdates != nil && finalStatus != "" {
+		s.selectionUpdates.PushSelectionUpdate(selectionID, finalStatus, "approve", pairingID)
+	}
+
+	return nil
 }
 
 func (s *ApprovalService) RejectSelection(selectionID, userID, reason string) error {
@@ -220,11 +190,15 @@ func (s *ApprovalService) RejectSelection(selectionID, userID, reason string) er
 		return fmt.Errorf("user id is required")
 	}
 
-	return s.db.Transaction(func(tx *gorm.DB) error {
+	var pairingID string
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
 		selection, candidate, err := s.loadSelectionAndCandidateForDecision(tx, selectionID)
 		if err != nil {
 			return err
 		}
+
+		pairingID = selection.PairingID
 
 		if !isInvolvedUser(selection, candidate, userID) {
 			return ErrNotAuthorized
@@ -276,6 +250,15 @@ func (s *ApprovalService) RejectSelection(selectionID, userID, reason string) er
 
 		return nil
 	})
+	if err != nil {
+		return err
+	}
+
+	if s.selectionUpdates != nil {
+		s.selectionUpdates.PushSelectionUpdate(selectionID, string(domain.SelectionRejected), "reject", pairingID)
+	}
+
+	return nil
 }
 
 func (s *ApprovalService) GetApprovals(selectionID string) ([]*domain.Approval, error) {
@@ -297,10 +280,6 @@ func (s *ApprovalService) loadSelectionAndCandidateForDecision(tx *gorm.DB, sele
 	if selection.Status != domain.SelectionPending {
 		return nil, nil, ErrSelectionNotPending
 	}
-	if time.Now().UTC().After(selection.ExpiresAt) {
-		return nil, nil, ErrSelectionNotPending
-	}
-
 	var candidate domain.Candidate
 	if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", selection.CandidateID).First(&candidate).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {

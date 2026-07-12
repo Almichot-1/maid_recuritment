@@ -12,7 +12,6 @@ import (
 	"time"
 
 	"maid-recruitment-tracking/internal/domain"
-	"maid-recruitment-tracking/internal/repository"
 )
 
 const (
@@ -33,20 +32,75 @@ var (
 	ErrInvalidDefaultForeignPairing    = errors.New("default foreign pairing is invalid")
 )
 
+// isoToNationality maps ISO 3166-1 alpha-3 codes to full nationality names.
+// The MRZ stores the ISO code (e.g. "ETH") but the candidate form uses full
+// nationality adjectives (e.g. "Ethiopian").
+var isoToNationality = map[string]string{
+	"ETH": "Ethiopian",
+	"ERI": "Eritrean",
+	"KEN": "Kenyan",
+	"SOM": "Somali",
+	"SDN": "Sudanese",
+	"SSD": "South Sudanese",
+	"DJI": "Djiboutian",
+	"ARE": "Emirati",
+	"SAU": "Saudi",
+	"QAT": "Qatari",
+	"KWT": "Kuwaiti",
+	"OMN": "Omani",
+	"BHR": "Bahraini",
+	"LBN": "Lebanese",
+	"JOR": "Jordanian",
+	"EGY": "Egyptian",
+	"MAR": "Moroccan",
+	"TUN": "Tunisian",
+	"DZA": "Algerian",
+	"LBY": "Libyan",
+	"IRQ": "Iraqi",
+	"SYR": "Syrian",
+	"YEM": "Yemeni",
+	"PSE": "Palestinian",
+	"IND": "Indian",
+	"PAK": "Pakistani",
+	"BGD": "Bangladeshi",
+	"LKA": "Sri Lankan",
+	"NPL": "Nepali",
+	"PHL": "Filipino",
+	"IDN": "Indonesian",
+	"MMR": "Myanmar",
+	"KHM": "Cambodian",
+	"VNM": "Vietnamese",
+	"THA": "Thai",
+	"CHN": "Chinese",
+	"NGA": "Nigerian",
+	"GHA": "Ghanaian",
+	"ZAF": "South African",
+	"UGA": "Ugandan",
+	"TZA": "Tanzanian",
+	"RWA": "Rwandan",
+}
+
 type CandidateInput struct {
 	FullName            string
 	Nationality         string
 	DateOfBirth         *time.Time
 	Age                 *int
 	PlaceOfBirth        string
+	PassportNumber      string
+	IssueDate           *time.Time
+	ExpiryDate          *time.Time
+	Gender              string
+	IssuingAuthority    string
+	ExperienceAbroad    []domain.ExperienceEntry
 	Religion            string
 	MaritalStatus       string
 	ChildrenCount       *int
 	EducationLevel      string
 	ExperienceYears     *int
 	CountryOfExperience string
-	Languages           []string
+	Languages           []domain.LanguageEntry
 	Skills              []string
+	Remark              string
 }
 
 type UploadCandidateDocumentInput struct {
@@ -66,13 +120,14 @@ type CandidateCVBranding struct {
 	ForeignAgencyLogoDataURL string
 }
 
-// SetCandidatePairOverrideInput carries the per-pairing country and salary
-// overrides an Ethiopian agent wants to apply to a candidate's CV.
+// SetCandidatePairOverrideInput carries the per-pairing country, salary, and
+// logo overrides an Ethiopian agent wants to apply to a candidate's CV.
 type SetCandidatePairOverrideInput struct {
 	PairingID      string
 	CandidateID    string
 	CountryApplied string
 	SalaryOffered  string
+	LogoURL        string
 }
 
 type PublishCandidateInput struct {
@@ -97,7 +152,6 @@ type CandidateService struct {
 	pairingService         *PairingService
 	medicalService         *MedicalDocumentService
 	passportOCRService     *PassportOCRService
-	statusStepService      *StatusStepService
 }
 
 func NewCandidateService(
@@ -113,7 +167,6 @@ func NewCandidateService(
 	medicalRepository domain.MedicalDataRepository,
 	medicalService *MedicalDocumentService,
 	passportOCRService *PassportOCRService,
-	statusStepService *StatusStepService,
 ) (*CandidateService, error) {
 	if candidateRepository == nil {
 		return nil, fmt.Errorf("candidate repository is nil")
@@ -141,7 +194,6 @@ func NewCandidateService(
 		medicalRepository:      medicalRepository,
 		medicalService:         medicalService,
 		passportOCRService:     passportOCRService,
-		statusStepService:      statusStepService,
 	}, nil
 }
 
@@ -153,7 +205,7 @@ func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput
 		return nil, err
 	}
 
-	languages, err := marshalStringSlice(data.Languages)
+	languages, err := marshalLanguages(data.Languages)
 	if err != nil {
 		return nil, fmt.Errorf("create candidate: marshal languages: %w", err)
 	}
@@ -169,6 +221,12 @@ func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput
 		DateOfBirth:         normalizeCandidateDate(data.DateOfBirth),
 		Age:                 data.Age,
 		PlaceOfBirth:        strings.TrimSpace(data.PlaceOfBirth),
+		PassportNumber:      strings.TrimSpace(data.PassportNumber),
+		IssueDate:           normalizeCandidateDate(data.IssueDate),
+		ExpiryDate:          normalizeCandidateDate(data.ExpiryDate),
+		Gender:              strings.ToUpper(strings.TrimSpace(data.Gender)),
+		IssuingAuthority:    strings.TrimSpace(data.IssuingAuthority),
+		ExperienceAbroad:    marshalExperienceAbroad(data.ExperienceAbroad),
 		Religion:            strings.TrimSpace(data.Religion),
 		MaritalStatus:       strings.TrimSpace(data.MaritalStatus),
 		ChildrenCount:       data.ChildrenCount,
@@ -177,6 +235,7 @@ func (s *CandidateService) CreateCandidate(createdBy string, data CandidateInput
 		CountryOfExperience: strings.TrimSpace(data.CountryOfExperience),
 		Languages:           languages,
 		Skills:              skills,
+		Remark:              strings.TrimSpace(data.Remark),
 		Status:              domain.CandidateStatusDraft,
 	}
 	if candidate.Age == nil {
@@ -218,7 +277,7 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 		return ErrCandidateLocked
 	}
 
-	languages, err := marshalStringSlice(data.Languages)
+	languages, err := marshalLanguages(data.Languages)
 	if err != nil {
 		return fmt.Errorf("update candidate: marshal languages: %w", err)
 	}
@@ -235,6 +294,12 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 		candidate.Age = deriveAgePointer(candidate.DateOfBirth)
 	}
 	candidate.PlaceOfBirth = strings.TrimSpace(data.PlaceOfBirth)
+	candidate.PassportNumber = strings.TrimSpace(data.PassportNumber)
+	candidate.IssueDate = normalizeCandidateDate(data.IssueDate)
+	candidate.ExpiryDate = normalizeCandidateDate(data.ExpiryDate)
+	candidate.Gender = strings.ToUpper(strings.TrimSpace(data.Gender))
+	candidate.IssuingAuthority = strings.TrimSpace(data.IssuingAuthority)
+	candidate.ExperienceAbroad = marshalExperienceAbroad(data.ExperienceAbroad)
 	candidate.Religion = strings.TrimSpace(data.Religion)
 	candidate.MaritalStatus = strings.TrimSpace(data.MaritalStatus)
 	candidate.ChildrenCount = data.ChildrenCount
@@ -243,6 +308,7 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 	candidate.CountryOfExperience = strings.TrimSpace(data.CountryOfExperience)
 	candidate.Languages = languages
 	candidate.Skills = skills
+	candidate.Remark = strings.TrimSpace(data.Remark)
 
 	if err := s.candidateRepository.Update(candidate); err != nil {
 		return err
@@ -276,6 +342,46 @@ func (s *CandidateService) UpdateCandidate(id, updatedBy string, data CandidateI
 	}
 
 	return nil
+}
+
+// UpdateCandidateStatus changes only the candidate's overall status
+func (s *CandidateService) UpdateCandidateStatus(id, updatedBy string, status string) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("candidate id is required")
+	}
+	if strings.TrimSpace(updatedBy) == "" {
+		return ErrForbidden
+	}
+
+	candidate, err := s.candidateRepository.GetByID(id)
+	if err != nil {
+		return err
+	}
+
+	if candidate.CreatedBy != strings.TrimSpace(updatedBy) {
+		return ErrForbidden
+	}
+
+	validStatuses := []domain.CandidateStatus{
+		domain.CandidateStatusDraft,
+		domain.CandidateStatusAvailable,
+		domain.CandidateStatusLocked,
+		domain.CandidateStatusInProgress,
+		domain.CandidateStatusCompleted,
+		domain.CandidateStatusRejected,
+	}
+	valid := false
+	for _, vs := range validStatuses {
+		if string(vs) == status {
+			valid = true
+			break
+		}
+	}
+	if !valid {
+		return fmt.Errorf("invalid candidate status: %s", status)
+	}
+
+	return s.candidateRepository.UpdateStatus(id, domain.CandidateStatus(status))
 }
 
 func (s *CandidateService) GetCandidate(id string) (*domain.Candidate, []*domain.Document, error) {
@@ -342,7 +448,8 @@ func (s *CandidateService) ListCandidatesForWorkspace(role, userID, pairingID st
 			return nil, err
 		}
 		filters.CreatedBy = ""
-		filters.Statuses = []domain.CandidateStatus{domain.CandidateStatusAvailable}
+		filters.Statuses = []domain.CandidateStatus{domain.CandidateStatusAvailable, domain.CandidateStatusLocked}
+		filters.CurrentUserID = strings.TrimSpace(userID)
 		filters.PairingID = pairing.ID
 		filters.SharedOnly = true
 	default:
@@ -370,8 +477,8 @@ func (s *CandidateService) PublishCandidate(id, publishedBy string, input Publis
 	if candidate.CreatedBy != strings.TrimSpace(publishedBy) {
 		return nil, ErrForbidden
 	}
-	if candidate.Status != domain.CandidateStatusDraft {
-		return nil, repository.ErrInvalidStatusTransition
+	if candidate.Status != domain.CandidateStatusDraft && candidate.Status != domain.CandidateStatusAvailable {
+		return nil, fmt.Errorf("publish candidate: candidate status must be draft or available, got %s", candidate.Status)
 	}
 
 	log.Printf("publish_candidate: calling resolvePublishPairingTarget for user=%s", publishedBy)
@@ -430,13 +537,15 @@ func (s *CandidateService) PublishCandidate(id, publishedBy string, input Publis
 		}
 	}
 
-	candidate.Status = domain.CandidateStatusAvailable
-	log.Printf("publish_candidate: calling Update for candidate=%s", id)
-	if err := s.candidateRepository.Update(candidate); err != nil {
-		log.Printf("publish_candidate: Update failed: %v", err)
-		return nil, err
+	if candidate.Status != domain.CandidateStatusAvailable {
+		candidate.Status = domain.CandidateStatusAvailable
+		log.Printf("publish_candidate: calling Update for candidate=%s", id)
+		if err := s.candidateRepository.Update(candidate); err != nil {
+			log.Printf("publish_candidate: Update failed: %v", err)
+			return nil, err
+		}
+		log.Printf("publish_candidate: Update succeeded")
 	}
-	log.Printf("publish_candidate: Update succeeded")
 
 	result := &PublishCandidateResult{}
 	if autoShareTarget == nil || s.pairingService == nil {
@@ -709,7 +818,7 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy, pairingID string
 	// Apply per-pairing overrides when a pairingID was supplied.
 	if trimmedPairing := strings.TrimSpace(pairingID); trimmedPairing != "" {
 		// 1. Resolve overrides
-		countryOverride, salaryOverride, err := s.resolveCVJobDetails(candidateID, trimmedPairing)
+		countryOverride, salaryOverride, logoOverride, err := s.resolveCVJobDetails(candidateID, trimmedPairing)
 		if err != nil {
 			log.Printf("generate_cv: could not resolve pair overrides for candidate=%s pairing=%s: %v", candidateID, trimmedPairing, err)
 		} else {
@@ -718,6 +827,9 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy, pairingID string
 			}
 			if salaryOverride != "" {
 				candidate.SalaryOffered = salaryOverride
+			}
+			if logoOverride != "" {
+				branding.ForeignAgencyLogoDataURL = logoOverride
 			}
 		}
 
@@ -732,7 +844,7 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy, pairingID string
 
 		// 3. Apply pairing defaults if no manual override was set
 		if pairing != nil {
-			if countryOverride == "" && pairing.DefaultCountry != nil && *pairing.DefaultCountry != "" {
+			if countryOverride == "" && origCountry == "" && pairing.DefaultCountry != nil && *pairing.DefaultCountry != "" {
 				candidate.CountryApplied = *pairing.DefaultCountry
 			}
 
@@ -787,11 +899,12 @@ func (s *CandidateService) GenerateCV(candidateID, generatedBy, pairingID string
 		return err
 	}
 
+	timestamp := time.Now().Unix()
 	var pdfFileName string
 	if pairingID != "" {
-		pdfFileName = fmt.Sprintf("candidates/%s/cv/%s.pdf", candidateID, pairingID)
+		pdfFileName = fmt.Sprintf("candidates/%s/cv/%s_%d.pdf", candidateID, pairingID, timestamp)
 	} else {
-		pdfFileName = fmt.Sprintf("candidates/%s/cv/default.pdf", candidateID)
+		pdfFileName = fmt.Sprintf("candidates/%s/cv/default_%d.pdf", candidateID, timestamp)
 	}
 	pdfURL, err := s.storageService.Upload(bytes.NewReader(pdfBytes), pdfFileName, "application/pdf")
 	if err != nil {
@@ -851,6 +964,7 @@ func (s *CandidateService) SetPairOverride(callerID string, input SetCandidatePa
 		CandidateID:    strings.TrimSpace(input.CandidateID),
 		CountryApplied: strings.TrimSpace(input.CountryApplied),
 		SalaryOffered:  strings.TrimSpace(input.SalaryOffered),
+		LogoURL:        strings.TrimSpace(input.LogoURL),
 	}
 	return s.pairOverrideRepository.Upsert(override)
 }
@@ -866,26 +980,26 @@ func (s *CandidateService) GetPairOverridesForCandidate(candidateID string) ([]*
 
 // resolveCVJobDetails looks up the per-pairing override first; if none exists
 // it falls back to the candidate's global country_applied / salary_offered.
-func (s *CandidateService) resolveCVJobDetails(candidateID, pairingID string) (countryApplied, salaryOffered string, err error) {
+func (s *CandidateService) resolveCVJobDetails(candidateID, pairingID string) (countryApplied, salaryOffered, logoURL string, err error) {
 	return s.ResolveCVJobDetails(candidateID, pairingID)
 }
 
 // ResolveCVJobDetails is an exported wrapper for resolveCVJobDetails, used by
-// the handler layer to present per-pairing country/salary to foreign agents.
-func (s *CandidateService) ResolveCVJobDetails(candidateID, pairingID string) (countryApplied, salaryOffered string, err error) {
+// the handler layer to present per-pairing country/salary/logo to foreign agents.
+func (s *CandidateService) ResolveCVJobDetails(candidateID, pairingID string) (countryApplied, salaryOffered, logoURL string, err error) {
 	if s.pairOverrideRepository == nil {
 		// No repository wired – return empty strings; caller will use candidate globals.
-		return "", "", nil
+		return "", "", "", nil
 	}
 	override, err := s.pairOverrideRepository.GetByPairingAndCandidate(pairingID, candidateID)
 	if err != nil {
-		return "", "", err
+		return "", "", "", err
 	}
 	if override != nil {
-		return override.CountryApplied, override.SalaryOffered, nil
+		return override.CountryApplied, override.SalaryOffered, override.LogoURL, nil
 	}
 	// No override row exists – signal to keep candidate globals as-is.
-	return "", "", nil
+	return "", "", "", nil
 }
 
 func (s *CandidateService) tryAutoGenerateCV(candidateID, generatedBy string) {
@@ -985,11 +1099,6 @@ func (s *CandidateService) RemoveCandidateDocument(candidateID, documentID, remo
 				return nil, err
 			}
 		}
-		if s.statusStepService != nil {
-			if err := s.statusStepService.ReopenMedicalStep(candidateID, removedBy); err != nil {
-				return nil, err
-			}
-		}
 	}
 
 	return target, nil
@@ -1045,7 +1154,11 @@ func (s *CandidateService) applyPassportAutofill(candidateID, updatedBy string, 
 		candidate.FullName = holderName
 	}
 	if nationality := strings.TrimSpace(passportData.Nationality); nationality != "" {
-		candidate.Nationality = nationality
+		if full, ok := isoToNationality[nationality]; ok {
+			candidate.Nationality = full
+		} else {
+			candidate.Nationality = nationality
+		}
 	}
 	if !passportData.DateOfBirth.IsZero() {
 		dateOfBirth := passportData.DateOfBirth.UTC()
@@ -1056,6 +1169,23 @@ func (s *CandidateService) applyPassportAutofill(candidateID, updatedBy string, 
 	}
 	if placeOfBirth := strings.TrimSpace(passportData.PlaceOfBirth); placeOfBirth != "" {
 		candidate.PlaceOfBirth = placeOfBirth
+	}
+	if passportNumber := strings.TrimSpace(passportData.PassportNumber); passportNumber != "" {
+		candidate.PassportNumber = passportNumber
+	}
+	if passportData.IssueDate != nil && !passportData.IssueDate.IsZero() {
+		issueDate := passportData.IssueDate.UTC()
+		candidate.IssueDate = &issueDate
+	}
+	if !passportData.ExpiryDate.IsZero() {
+		expiryDate := passportData.ExpiryDate.UTC()
+		candidate.ExpiryDate = &expiryDate
+	}
+	if gender := strings.TrimSpace(passportData.Gender); gender != "" {
+		candidate.Gender = gender
+	}
+	if issuingAuthority := strings.TrimSpace(passportData.IssuingAuthority); issuingAuthority != "" {
+		candidate.IssuingAuthority = issuingAuthority
 	}
 
 	return s.candidateRepository.Update(candidate)
@@ -1081,6 +1211,16 @@ func validateCandidateInput(data CandidateInput) error {
 		return ErrInvalidCandidateInput
 	}
 	if data.ExperienceYears != nil && (*data.ExperienceYears < 0 || *data.ExperienceYears > 30) {
+		return ErrInvalidCandidateInput
+	}
+
+	gender := strings.ToUpper(strings.TrimSpace(data.Gender))
+	if gender != "" && gender != "M" && gender != "F" && gender != "MALE" && gender != "FEMALE" {
+		return ErrInvalidCandidateInput
+	}
+	if data.IssueDate != nil && data.ExpiryDate != nil &&
+		!data.IssueDate.IsZero() && !data.ExpiryDate.IsZero() &&
+		data.IssueDate.UTC().After(data.ExpiryDate.UTC()) {
 		return ErrInvalidCandidateInput
 	}
 
@@ -1116,6 +1256,46 @@ func marshalStringSlice(values []string) (json.RawMessage, error) {
 	}
 
 	return json.RawMessage(data), nil
+}
+
+func marshalLanguages(entries []domain.LanguageEntry) (json.RawMessage, error) {
+	normalized := make([]domain.LanguageEntry, 0, len(entries))
+	for _, e := range entries {
+		lang := strings.TrimSpace(e.Language)
+		prof := strings.TrimSpace(e.Proficiency)
+		if lang == "" {
+			continue
+		}
+		if prof == "" {
+			prof = "Basic"
+		}
+		normalized = append(normalized, domain.LanguageEntry{Language: lang, Proficiency: prof})
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return nil, err
+	}
+	return json.RawMessage(data), nil
+}
+
+func marshalExperienceAbroad(entries []domain.ExperienceEntry) json.RawMessage {
+	normalized := make([]domain.ExperienceEntry, 0, len(entries))
+	for _, e := range entries {
+		country := strings.TrimSpace(e.Country)
+		if country == "" {
+			continue
+		}
+		years := e.Years
+		if years < 0 {
+			years = 0
+		}
+		normalized = append(normalized, domain.ExperienceEntry{Country: country, Years: years})
+	}
+	data, err := json.Marshal(normalized)
+	if err != nil {
+		return json.RawMessage("[]")
+	}
+	return json.RawMessage(data)
 }
 
 func normalizeCandidateDate(value *time.Time) *time.Time {
@@ -1296,6 +1476,7 @@ type BatchSetPairOverrideInput struct {
 	PairingID      string   `json:"pairing_id" validate:"required"`
 	CountryApplied string   `json:"country_applied"`
 	SalaryOffered  string   `json:"salary_offered"`
+	LogoURL        string   `json:"logo_url"`
 }
 
 func (s *CandidateService) BatchSetPairOverrides(callerID string, input BatchSetPairOverrideInput) *BatchResult {
@@ -1337,6 +1518,7 @@ func (s *CandidateService) BatchSetPairOverrides(callerID string, input BatchSet
 			CandidateID:    cid,
 			CountryApplied: input.CountryApplied,
 			SalaryOffered:  input.SalaryOffered,
+			LogoURL:        input.LogoURL,
 		})
 	}
 

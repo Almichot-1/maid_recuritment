@@ -23,7 +23,6 @@ import { usePairingContext } from "@/hooks/use-pairings";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader } from "@/components/ui/card";
-import { Checkbox } from "@/components/ui/checkbox";
 import {
   Form,
   FormControl,
@@ -41,8 +40,9 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { VerifiedOcrInput } from "@/components/ui/verified-ocr-input";
 import { DocumentUpload } from "./document-upload";
-import { PassportData } from "@/types";
+import { ExperienceEntry, PassportData, CandidatePairOverride } from "@/types";
 
 const SKILLS_OPTIONS = [
   "Cooking",
@@ -56,8 +56,39 @@ const SKILLS_OPTIONS = [
   "Pet Care",
 ];
 
+const DEFAULT_FORM_VALUES: CandidateFormValues = {
+  full_name: "",
+  nationality: "Ethiopian",
+  date_of_birth: "",
+  age: undefined,
+  place_of_birth: "",
+  passport_number: "",
+  gender: "",
+  issue_date: "",
+  expiry_date: "",
+  experience_abroad: [],
+  religion: "",
+  marital_status: "",
+  children_count: 0,
+  education_level: "Secondary",
+  skills: ["Cleaning", "Childcare", "Elderly Care", "Laundry", "Ironing"],
+  languages: [],
+  remark: "",
+};
+
 const LANGUAGES_OPTIONS = ["Arabic", "English", "Amharic", "French", "Swahili"];
 const PROFICIENCY_OPTIONS = ["Basic", "Intermediate", "Fluent"];
+const COUNTRIES_OPTIONS = [
+  "Saudi Arabia",
+  "United Arab Emirates",
+  "Qatar",
+  "Kuwait",
+  "Oman",
+  "Bahrain",
+  "Lebanon",
+  "Jordan",
+  "Yemen",
+]
 const RELIGION_OPTIONS = ["Muslim", "Christian", "Other"];
 const MARITAL_STATUS_OPTIONS = ["Single", "Married", "Divorced", "Widowed"];
 const EDUCATION_LEVEL_OPTIONS = [
@@ -68,6 +99,29 @@ const EDUCATION_LEVEL_OPTIONS = [
   "Degree",
   "Other",
 ];
+
+const NATIONALITY_OPTIONS = [
+  "Ethiopian",
+  "Eritrean",
+  "Kenyan",
+  "Somali",
+  "Sudanese",
+  "South Sudanese",
+  "Djiboutian",
+  "Other",
+];
+
+const ISO_TO_NATIONALITY: Record<string, string> = {
+  ETH: "Ethiopian",
+  ERI: "Eritrean",
+  KEN: "Kenyan",
+  SOM: "Somali",
+  SDN: "Sudanese",
+  SSD: "South Sudanese",
+  DJI: "Djiboutian",
+};
+
+const GENDER_OPTIONS = ["Female", "Male"];
 
 const PASSPORT_OCR_PREVIEW_MAX_DIMENSION = 1800;
 const PASSPORT_OCR_PREVIEW_QUALITY = 0.88;
@@ -103,6 +157,12 @@ export type CandidateFormValues = {
   date_of_birth?: string;
   age?: number | string;
   place_of_birth?: string;
+  passport_number?: string;
+  gender?: string;
+  issue_date?: string;
+  expiry_date?: string;
+  issuing_authority?: string;
+  experience_abroad?: ExperienceEntry[];
   religion?: string;
   marital_status?: string;
   children_count?: number | string;
@@ -111,12 +171,14 @@ export type CandidateFormValues = {
   country_of_experience?: string;
   skills: string[];
   languages: Array<{ language: string; proficiency: string }>;
+  remark?: string;
 };
 
 export type PartnerOverrideEntry = {
   pairing_id: string;
   country_applied: string;
   salary_offered: string;
+  logo_url?: string;
 };
 
 function SectionTitle({
@@ -160,11 +222,11 @@ export function CandidateForm({
   const { hasLogo } = useAgencyBranding();
 
   const { context: pairingContext } = usePairingContext();
-  const [partnerOverrides, setPartnerOverrides] = React.useState<Record<string, { country: string; salary: string }>>({});
+  const [partnerOverrides, setPartnerOverrides] = React.useState<Record<string, { country: string; salary: string; logo_url?: string }>>({});
+  const [partnerLogoUrls, setPartnerLogoUrls] = React.useState<Record<string, string>>({});
   const { mutateAsync: parsePassport, isPending: isParsingPassport } =
     useParsePassport(candidateId);
   const [documentResetKey, setDocumentResetKey] = React.useState(0);
-  const [ageAutoSyncEnabled, setAgeAutoSyncEnabled] = React.useState(true);
   const [isPassportProcessing, setIsPassportProcessing] = React.useState(false);
   const passportPreviewCacheRef = React.useRef(
     new Map<string, PassportData>(),
@@ -175,42 +237,61 @@ export function CandidateForm({
   const activePassportRequestKeyRef = React.useRef<string | null>(null);
   const activePassportAbortRef = React.useRef<AbortController | null>(null);
   const passportRequestSequenceRef = React.useRef(0);
+  const [ocrDetectedValues, setOcrDetectedValues] = React.useState<Record<string, string>>({});
   // Debounce timer: prevents firing OCR for every rapid file change.
   // Only the file selected after 400 ms of inactivity triggers the API call.
   const passportDebounceTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const blankFormValues = React.useMemo<CandidateFormValues>(
-    () => ({
-      full_name: "",
-      nationality: "",
-      date_of_birth: "",
-      age: undefined,
-      place_of_birth: "",
-      religion: "",
-      marital_status: "",
-      children_count: undefined,
-      education_level: "",
-      experience_years: undefined,
-      country_of_experience: undefined,
-      skills: [],
-      languages: [
-        { language: LANGUAGES_OPTIONS[0], proficiency: PROFICIENCY_OPTIONS[0] },
-      ],
-    }),
-    [],
-  );
+  const mergedDefaultValues = React.useMemo<CandidateFormValues>(() => {
+    if (!initialData) return { ...DEFAULT_FORM_VALUES };
+    const merged = { ...DEFAULT_FORM_VALUES };
+    for (const [key, value] of Object.entries(initialData)) {
+      if (value === null || value === undefined) continue;
+      if (typeof value === "string" && value.trim() === "") continue;
+      if (Array.isArray(value) && value.length === 0) continue;
+      (merged as Record<string, unknown>)[key] = value;
+    }
+    return merged;
+  }, [initialData]);
 
   const form = useForm<CandidateFormValues, undefined, CandidateInput>({
     resolver: zodResolver(candidateSchema) as never,
-    defaultValues: initialData || blankFormValues,
+    defaultValues: mergedDefaultValues,
   });
 
   const { fields, append, remove } = useFieldArray({
     control: form.control,
     name: "languages",
   });
+  const { fields: experienceFields, append: appendExperience, remove: removeExperience } = useFieldArray({
+    control: form.control,
+    name: "experience_abroad",
+  });
   const watchedDateOfBirth = form.watch("date_of_birth");
   const watchedAge = form.watch("age");
+  const watchedNationality = form.watch("nationality");
+
+  React.useEffect(() => {
+    if (watchedNationality) {
+      const currentPoB = form.getValues("place_of_birth");
+      if (!currentPoB) {
+        const map: Record<string, string> = {
+          "Ethiopian": "Ethiopia",
+          "Eritrean": "Eritrea",
+          "Kenyan": "Kenya",
+          "Somali": "Somalia",
+          "Sudanese": "Sudan",
+          "South Sudanese": "South Sudan",
+          "Djiboutian": "Djibouti",
+        };
+        const mapped = map[watchedNationality] || watchedNationality;
+        form.setValue("place_of_birth", mapped, {
+          shouldDirty: true,
+          shouldValidate: true,
+        });
+      }
+    }
+  }, [watchedNationality, form]);
 
   const isEditing = mode === "edit";
   const addLanguageEntry = () =>
@@ -219,25 +300,39 @@ export function CandidateForm({
       proficiency: PROFICIENCY_OPTIONS[0],
     });
 
-  // Initialize per-partner overrides from workspace defaults (create mode)
+  // Initialize per-partner overrides
   React.useEffect(() => {
-    if (mode !== "create") return
     if (!pairingContext?.workspaces?.length) return
 
     const initial: Record<string, { country: string; salary: string }> = {}
-    for (const ws of pairingContext.workspaces) {
-      if (ws.status === "active" || ws.status === "approved") {
-        const sal = ws.default_salary
-        const curr = ws.default_currency
-        const salaryVal = sal && curr ? `${sal} ${curr}` : (sal || curr || "")
+
+    if (mode === "create") {
+      // Create mode: pre-fill from workspace defaults
+      for (const ws of pairingContext.workspaces) {
+        if (ws.status === "active" || ws.status === "approved") {
+          const sal = ws.default_salary
+          const curr = ws.default_currency
+          const salaryVal = sal && curr ? `${sal} ${curr}` : (sal || curr || "")
+          initial[ws.id] = {
+            country: ws.default_country || "",
+            salary: salaryVal,
+          }
+        }
+      }
+    } else if (mode === "edit" && initialData) {
+      // Edit mode: pre-fill from existing pair_overrides
+      const overrides = (initialData as unknown as { pair_overrides?: CandidatePairOverride[] }).pair_overrides
+      for (const ws of pairingContext.workspaces) {
+        const ov = overrides?.find((o) => o.pairing_id === ws.id)
         initial[ws.id] = {
-          country: ws.default_country || "",
-          salary: salaryVal,
+          country: ov?.country_applied || "",
+          salary: ov?.salary_offered || "",
         }
       }
     }
+
     setPartnerOverrides(initial)
-  }, [mode, pairingContext?.workspaces])
+  }, [mode, pairingContext?.workspaces, initialData])
 
   React.useEffect(() => {
     if (!onDraftChange) {
@@ -246,7 +341,7 @@ export function CandidateForm({
 
     const subscription = form.watch((values) => {
       onDraftChange({
-        ...blankFormValues,
+        ...DEFAULT_FORM_VALUES,
         ...values,
         skills: values.skills || [],
         languages:
@@ -255,43 +350,47 @@ export function CandidateForm({
                 language: language.language || LANGUAGES_OPTIONS[0],
                 proficiency: language.proficiency || PROFICIENCY_OPTIONS[0],
               }))
-            : blankFormValues.languages,
+            : DEFAULT_FORM_VALUES.languages,
+        experience_abroad:
+          values.experience_abroad && values.experience_abroad.length > 0
+            ? values.experience_abroad.map((item) => ({
+                country: item.country || "",
+                years: item.years || 0,
+              }))
+            : [],
       });
     });
 
     return () => subscription.unsubscribe();
-  }, [blankFormValues, form, onDraftChange]);
+  }, [form, onDraftChange]);
 
   React.useEffect(() => {
     const derivedAge = calculateAgeFromDate(watchedDateOfBirth);
-    if (derivedAge === null || !ageAutoSyncEnabled) {
+    if (derivedAge === null) {
       return;
     }
-
     const currentAge =
       typeof watchedAge === "number"
         ? watchedAge
         : typeof watchedAge === "string" && watchedAge.trim()
           ? Number(watchedAge)
           : null;
-
-    if (currentAge === null || Number.isNaN(currentAge)) {
+    if (currentAge === null || Number.isNaN(currentAge) || currentAge !== derivedAge) {
       form.setValue("age", derivedAge, {
         shouldDirty: true,
         shouldValidate: true,
       });
     }
-  }, [ageAutoSyncEnabled, form, watchedAge, watchedDateOfBirth]);
+  }, [form, watchedAge, watchedDateOfBirth]);
 
   const resetForNextCandidate = React.useCallback(() => {
-    form.reset(blankFormValues);
-    setAgeAutoSyncEnabled(true);
+    form.reset(DEFAULT_FORM_VALUES);
     setDocumentResetKey((current) => current + 1);
     onDocumentChange?.("passport", null);
     onDocumentChange?.("photo", null);
     onDocumentChange?.("video", null);
     onClearDraft?.();
-  }, [blankFormValues, form, onClearDraft, onDocumentChange]);
+  }, [form, onClearDraft, onDocumentChange]);
 
   React.useEffect(() => {
     if (resetSignal <= 0) {
@@ -308,12 +407,26 @@ export function CandidateForm({
         ? "create_another"
         : "default";
     
+    // Validate all active workspaces have country and salary filled
+    const activeWorkspaces = pairingContext?.workspaces?.filter(
+      (ws) => ws.status === "active" || ws.status === "approved"
+    ) || []
+    const hasEmptyOverrides = activeWorkspaces.some((ws) => {
+      const val = partnerOverrides[ws.id]
+      return !val?.country || !val?.salary
+    })
+    if (hasEmptyOverrides) {
+      toast.error("Set country and salary for all partners before saving.")
+      return
+    }
+
     const overridesArr = Object.entries(partnerOverrides)
-      .filter(([, val]) => val.country || val.salary)
+      .filter(([, val]) => val.country && val.salary)
       .map(([pairing_id, val]) => ({
         pairing_id,
         country_applied: val.country,
         salary_offered: val.salary,
+        logo_url: partnerLogoUrls[pairing_id] || undefined,
       }))
     
     const result = await onSubmit(data, { submitter: submitMode, partnerOverrides: overridesArr.length > 0 ? overridesArr : undefined });
@@ -346,6 +459,8 @@ export function CandidateForm({
   });
 
   const applyPassportAutofill = React.useCallback((parsed: PassportData) => {
+    const detected: Record<string, string> = {};
+
     if (parsed.holder_name?.trim()) {
       form.setValue("full_name", parsed.holder_name.trim(), {
         shouldDirty: true,
@@ -354,7 +469,9 @@ export function CandidateForm({
     }
 
     if (parsed.nationality?.trim()) {
-      form.setValue("nationality", parsed.nationality.trim().toUpperCase(), {
+      const iso = parsed.nationality.trim().toUpperCase();
+      const nationality = ISO_TO_NATIONALITY[iso] || iso;
+      form.setValue("nationality", nationality, {
         shouldDirty: true,
         shouldValidate: true,
       });
@@ -362,7 +479,6 @@ export function CandidateForm({
 
     const normalizedDateOfBirth = normalizeDateInputValue(parsed.date_of_birth);
     if (normalizedDateOfBirth) {
-      setAgeAutoSyncEnabled(true);
       form.setValue("date_of_birth", normalizedDateOfBirth, {
         shouldDirty: true,
         shouldValidate: true,
@@ -378,10 +494,54 @@ export function CandidateForm({
     }
 
     if (parsed.place_of_birth?.trim()) {
-      form.setValue("place_of_birth", parsed.place_of_birth.trim(), {
+      const val = parsed.place_of_birth.trim();
+      form.setValue("place_of_birth", val, {
         shouldDirty: true,
         shouldValidate: true,
       });
+      detected.place_of_birth = val;
+    }
+
+    if (parsed.passport_number?.trim()) {
+      const val = parsed.passport_number.trim();
+      form.setValue("passport_number", val, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      detected.passport_number = val;
+    }
+    const normalizedIssueDate = normalizeDateInputValue(parsed.issue_date);
+    if (normalizedIssueDate) {
+      form.setValue("issue_date", normalizedIssueDate, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      detected.issue_date = normalizedIssueDate;
+    }
+    const normalizedExpiryDate = normalizeDateInputValue(parsed.expiry_date);
+    if (normalizedExpiryDate) {
+      form.setValue("expiry_date", normalizedExpiryDate, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+      detected.expiry_date = normalizedExpiryDate;
+    }
+    if (parsed.gender?.trim()) {
+      const genderValue = parsed.gender.trim().toUpperCase() === "M" ? "Male" : parsed.gender.trim().toUpperCase() === "F" ? "Female" : parsed.gender.trim();
+      form.setValue("gender", genderValue, {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+    if (parsed.issuing_authority?.trim()) {
+      form.setValue("issuing_authority", parsed.issuing_authority.trim(), {
+        shouldDirty: true,
+        shouldValidate: true,
+      });
+    }
+
+    if (Object.keys(detected).length > 0) {
+      setOcrDetectedValues(detected);
     }
   }, [form]);
 
@@ -392,7 +552,18 @@ export function CandidateForm({
       passportDebounceTimerRef.current = null;
     }
 
-    if (!file || !file.type.startsWith("image/")) {
+    if (!file) {
+      setIsPassportProcessing(false);
+      passportRequestSequenceRef.current += 1;
+      activePassportAbortRef.current?.abort();
+      activePassportAbortRef.current = null;
+      activePassportRequestKeyRef.current = null;
+      return;
+    }
+
+    const isImageType = file.type.startsWith("image/");
+    const isImageExt = /\.(jpg|jpeg|png|webp|bmp|tiff?)$/i.test(file.name);
+    if (!isImageType && !isImageExt) {
       setIsPassportProcessing(false);
       passportRequestSequenceRef.current += 1;
       activePassportAbortRef.current?.abort();
@@ -505,8 +676,8 @@ export function CandidateForm({
 
   return (
     <Form {...form}>
-      <form onSubmit={handleFormSubmit} className="w-full">
-        <div className="space-y-6">
+      <form id="candidate-form" onSubmit={handleFormSubmit} className="w-full">
+        <div className="space-y-6 pb-28">
             <Card className="overflow-hidden border-border/70 bg-[radial-gradient(circle_at_top_left,_rgba(251,191,36,0.22),_transparent_32%),linear-gradient(135deg,rgba(15,23,42,0.98),rgba(30,41,59,0.96))] text-white shadow-xl">
               <CardContent className="space-y-5 p-5 sm:p-6">
                 <div className="space-y-4">
@@ -680,16 +851,25 @@ export function CandidateForm({
                     render={({ field }) => (
                       <FormItem>
                         <FormLabel>Nationality</FormLabel>
-                        <FormControl>
-                          <Input
-                            placeholder="For example: ETH or Ethiopian"
-                            {...field}
-                            value={field.value ?? ""}
-                          />
-                        </FormControl>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select nationality" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {NATIONALITY_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
                         <FormDescription>
-                          Type the exact value you want printed in the CV
-                          applicants detail table.
+                          Select the nationality for the CV details section.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -736,17 +916,15 @@ export function CandidateForm({
                                 ? field.value
                                 : ""
                             }
-                            onBlur={field.onBlur}
-                            onChange={(event) => {
-                              setAgeAutoSyncEnabled(false);
-                              field.onChange(event);
-                            }}
+                            readOnly
+                            className="bg-muted/50 cursor-default"
+                            tabIndex={-1}
                             ref={field.ref}
                           />
                         </FormControl>
                         <FormDescription>
-                          Edit this if the agency wants a specific CV age
-                          display.
+                          Auto-calculated from date of birth. Change DOB to
+                          update.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
@@ -758,22 +936,195 @@ export function CandidateForm({
                     name="place_of_birth"
                     render={({ field }) => (
                       <FormItem>
-                        <FormLabel>Place of birth</FormLabel>
                         <FormControl>
-                          <Input
-                            placeholder="For example: Legambo"
+                          <VerifiedOcrInput
+                            id="place_of_birth"
+                            label="Place of birth"
+                            placeholder="Auto-filled from passport OCR"
+                            ocrDetectedValue={ocrDetectedValues.place_of_birth}
                             {...field}
                             value={field.value ?? ""}
                           />
                         </FormControl>
                         <FormDescription>
-                          Use the exact town or city name the employer should
-                          see.
+                          Auto-filled from passport OCR — edit if needed.
                         </FormDescription>
                         <FormMessage />
                       </FormItem>
                     )}
                   />
+
+                  <FormField
+                    control={form.control}
+                    name="passport_number"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <VerifiedOcrInput
+                            id="passport_number"
+                            label="Passport number"
+                            placeholder="e.g., EQ1817015"
+                            ocrDetectedValue={ocrDetectedValues.passport_number}
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Manually correct any OCR misreads here.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="gender"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Gender</FormLabel>
+                        <Select
+                          onValueChange={field.onChange}
+                          value={field.value || undefined}
+                        >
+                          <FormControl>
+                            <SelectTrigger>
+                              <SelectValue placeholder="Select gender" />
+                            </SelectTrigger>
+                          </FormControl>
+                          <SelectContent>
+                            {GENDER_OPTIONS.map((option) => (
+                              <SelectItem key={option} value={option}>
+                                {option}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <FormDescription>
+                          Auto-filled from passport OCR.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="issue_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <VerifiedOcrInput
+                            id="issue_date"
+                            label="Passport issue date"
+                            type="date"
+                            ocrDetectedValue={ocrDetectedValues.issue_date}
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Auto-filled from passport OCR.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <FormField
+                    control={form.control}
+                    name="expiry_date"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormControl>
+                          <VerifiedOcrInput
+                            id="expiry_date"
+                            label="Passport expiry date"
+                            type="date"
+                            ocrDetectedValue={ocrDetectedValues.expiry_date}
+                            {...field}
+                            value={field.value ?? ""}
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          Manually correct any OCR misread of the expiry date.
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+
+                  <div className="md:col-span-2 xl:col-span-3 space-y-3">
+                    <div className="flex items-center justify-between">
+                      <label className="text-base font-medium">Experience abroad</label>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => appendExperience({ country: "", years: 0 })}
+                      >
+                        <Plus className="h-4 w-4 mr-1" />
+                        Add experience
+                      </Button>
+                    </div>
+                    {experienceFields.map((field, index) => (
+                      <div key={field.id} className="flex gap-3 items-start">
+                        <FormField
+                          control={form.control}
+                          name={`experience_abroad.${index}.country`}
+                          render={({ field }) => (
+                            <FormItem className="flex-1">
+                              <Select onValueChange={field.onChange} value={field.value || ""}>
+                                <FormControl>
+                                  <SelectTrigger>
+                                    <SelectValue placeholder="Select country" />
+                                  </SelectTrigger>
+                                </FormControl>
+                                <SelectContent>
+                                  {COUNTRIES_OPTIONS.map((c) => (
+                                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <FormField
+                          control={form.control}
+                          name={`experience_abroad.${index}.years`}
+                          render={({ field }) => (
+                            <FormItem className="w-24">
+                              <FormControl>
+                                <Input
+                                  type="number"
+                                  min={0}
+                                  max={50}
+                                  placeholder="Years"
+                                  {...field}
+                                  value={field.value ?? 0}
+                                  onChange={(e) => field.onChange(parseInt(e.target.value) || 0)}
+                                />
+                              </FormControl>
+                              <FormMessage />
+                            </FormItem>
+                          )}
+                        />
+                        <Button
+                          type="button"
+                          variant="ghost"
+                          size="icon"
+                          className="mt-0 shrink-0"
+                          onClick={() => removeExperience(index)}
+                        >
+                          <Trash2 className="h-4 w-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))}
+                    {experienceFields.length === 0 && (
+                      <p className="text-sm text-muted-foreground">No experience abroad added yet.</p>
+                    )}
+                  </div>
 
                   <FormField
                     control={form.control}
@@ -902,58 +1253,6 @@ export function CandidateForm({
                     )}
                   />
 
-                  <FormField
-                    control={form.control}
-                    name="experience_years"
-                    render={({ field }) => (
-                      <FormItem>
-                        <FormLabel>Years of experience</FormLabel>
-                        <FormControl>
-                          <Input
-                            type="number"
-                            min={0}
-                            max={30}
-                            name={field.name}
-                            value={
-                              typeof field.value === "number" ||
-                              typeof field.value === "string"
-                                ? field.value
-                                : ""
-                            }
-                            onBlur={field.onBlur}
-                            onChange={field.onChange}
-                            ref={field.ref}
-                          />
-                        </FormControl>
-                        <FormDescription>
-                          How long she has worked in similar roles
-                        </FormDescription>
-                        <FormMessage />
-                      </FormItem>
-                    )}
-                  />
-
-                  {form.watch("experience_years") && Number(form.watch("experience_years")) > 0 && (
-                    <FormField
-                      control={form.control}
-                      name="country_of_experience"
-                      render={({ field }) => (
-                        <FormItem>
-                          <FormLabel>Country of experience</FormLabel>
-                          <FormControl>
-                            <Input
-                              placeholder="e.g., Saudi Arabia, UAE, Kuwait"
-                              {...field}
-                            />
-                          </FormControl>
-                          <FormDescription>
-                            Where did she gain this work experience? (Optional)
-                          </FormDescription>
-                          <FormMessage />
-                        </FormItem>
-                      )}
-                    />
-                  )}
                 </div>
               </CardContent>
             </Card>
@@ -967,7 +1266,7 @@ export function CandidateForm({
                 />
               </CardHeader>
               <CardContent className="space-y-5">
-                {mode === "create" && pairingContext?.workspaces && pairingContext.workspaces.length > 0 && (
+                {pairingContext?.workspaces && pairingContext.workspaces.length > 0 && (
                   <div className="space-y-4">
                     <div>
                       <h4 className="text-sm font-semibold text-foreground">Job details per partner</h4>
@@ -981,37 +1280,49 @@ export function CandidateForm({
                         .map((ws) => {
                           const val = partnerOverrides[ws.id] || { country: "", salary: "" }
                           return (
-                            <div key={ws.id} className="grid gap-3 rounded-lg border border-border/70 bg-muted/20 p-4 sm:grid-cols-[1fr_1.5fr_1.5fr]">
-                              <div className="flex items-center text-sm font-medium text-foreground">
-                                {ws.partner_agency?.company_name || ws.partner_agency?.full_name || ws.partner_agency?.email || "Partner"}
+                            <div key={ws.id} className="space-y-3 rounded-lg border border-border/70 bg-muted/20 p-4">
+                              <div className="grid gap-3 sm:grid-cols-[1fr_1.5fr_1.5fr]">
+                                <div className="flex items-center text-sm font-medium text-foreground">
+                                  {ws.partner_agency?.company_name || ws.partner_agency?.full_name || ws.partner_agency?.email || "Partner"}
+                                </div>
+                                <select
+                                  className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
+                                  value={val.country}
+                                  onChange={(e) =>
+                                    setPartnerOverrides((prev) => ({
+                                      ...prev,
+                                      [ws.id]: { ...prev[ws.id], country: e.target.value },
+                                    }))
+                                  }
+                                >
+                                  <option value="">Select country</option>
+                                  <option value="Saudi Arabia">Saudi Arabia</option>
+                                  <option value="United Arab Emirates">United Arab Emirates</option>
+                                  <option value="Kuwait">Kuwait</option>
+                                  <option value="Qatar">Qatar</option>
+                                  <option value="Bahrain">Bahrain</option>
+                                  <option value="Oman">Oman</option>
+                                  <option value="Lebanon">Lebanon</option>
+                                  <option value="Jordan">Jordan</option>
+                                </select>
+                                <Input
+                                  placeholder="e.g., 1000 SR, 400 USD"
+                                  value={val.salary}
+                                  onChange={(e) =>
+                                    setPartnerOverrides((prev) => ({
+                                      ...prev,
+                                      [ws.id]: { ...prev[ws.id], salary: e.target.value },
+                                    }))
+                                  }
+                                />
                               </div>
-                              <select
-                                className="flex h-10 w-full rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
-                                value={val.country}
-                                onChange={(e) =>
-                                  setPartnerOverrides((prev) => ({
-                                    ...prev,
-                                    [ws.id]: { ...prev[ws.id], country: e.target.value },
-                                  }))
-                                }
-                              >
-                                <option value="">Default country</option>
-                                <option value="Saudi Arabia">Saudi Arabia</option>
-                                <option value="United Arab Emirates">United Arab Emirates</option>
-                                <option value="Kuwait">Kuwait</option>
-                                <option value="Qatar">Qatar</option>
-                                <option value="Bahrain">Bahrain</option>
-                                <option value="Oman">Oman</option>
-                                <option value="Lebanon">Lebanon</option>
-                                <option value="Jordan">Jordan</option>
-                              </select>
                               <Input
-                                placeholder="e.g., 1000 SR, 400 USD"
-                                value={val.salary}
+                                placeholder="Partner logo URL (optional)"
+                                value={partnerLogoUrls[ws.id] || ""}
                                 onChange={(e) =>
-                                  setPartnerOverrides((prev) => ({
+                                  setPartnerLogoUrls((prev) => ({
                                     ...prev,
-                                    [ws.id]: { ...prev[ws.id], salary: e.target.value },
+                                    [ws.id]: e.target.value,
                                   }))
                                 }
                               />
@@ -1036,45 +1347,36 @@ export function CandidateForm({
                 <FormField
                   control={form.control}
                   name="skills"
-                  render={() => (
+                  render={({ field }) => (
                     <FormItem>
-                      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
-                        {SKILLS_OPTIONS.map((skill) => (
-                          <FormField
-                            key={skill}
-                            control={form.control}
-                            name="skills"
-                            render={({ field }) => {
-                              const checked = field.value?.includes(skill);
-                              return (
-                                <FormItem className="rounded-2xl border border-border/70 bg-muted/20 p-4 transition-colors hover:bg-muted/40">
-                                  <div className="flex items-center gap-3">
-                                    <FormControl>
-                                      <Checkbox
-                                        checked={checked}
-                                        onCheckedChange={(nextChecked) => {
-                                          return nextChecked
-                                            ? field.onChange([
-                                                ...(field.value || []),
-                                                skill,
-                                              ])
-                                            : field.onChange(
-                                                (field.value || []).filter(
-                                                  (value) => value !== skill,
-                                                ),
-                                              );
-                                        }}
-                                      />
-                                    </FormControl>
-                                    <FormLabel className="cursor-pointer text-sm font-semibold">
-                                      {skill}
-                                    </FormLabel>
-                                  </div>
-                                </FormItem>
-                              );
-                            }}
-                          />
-                        ))}
+                      <div className="flex flex-wrap gap-2">
+                        {SKILLS_OPTIONS.map((skill) => {
+                          const checked = field.value?.includes(skill);
+                          return (
+                            <button
+                              key={skill}
+                              type="button"
+                              onClick={() => {
+                                const next = checked
+                                  ? (field.value || []).filter((s) => s !== skill)
+                                  : [...(field.value || []), skill];
+                                field.onChange(next);
+                              }}
+                              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-sm font-medium transition-all ${
+                                checked
+                                  ? "border-primary/60 bg-primary/10 text-primary shadow-sm"
+                                  : "border-border/70 bg-muted/30 text-muted-foreground hover:border-primary/40 hover:text-foreground"
+                              }`}
+                            >
+                              <span
+                                className={`h-2 w-2 rounded-full transition-colors ${
+                                  checked ? "bg-primary" : "bg-muted-foreground/30"
+                                }`}
+                              />
+                              {skill}
+                            </button>
+                          );
+                        })}
                       </div>
                       <FormMessage />
                     </FormItem>
@@ -1169,7 +1471,6 @@ export function CandidateForm({
                         type="button"
                         variant="outline"
                         className="border-dashed text-destructive hover:text-destructive"
-                        disabled={fields.length === 1}
                         onClick={() => remove(index)}
                       >
                         <Trash2 className="mr-2 h-4 w-4" />
@@ -1190,15 +1491,48 @@ export function CandidateForm({
                 </Button>
               </CardContent>
             </Card>
+
+            <Card className="border-border/70 shadow-sm">
+              <CardHeader>
+                <SectionTitle
+                  icon={<UserSquare2 className="h-5 w-5" />}
+                  title="Additional notes"
+                  description="Add an optional, brief remark that will be visible on the candidate's CV."
+                />
+              </CardHeader>
+              <CardContent>
+                <FormField
+                  control={form.control}
+                  name="remark"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Remark (Optional)</FormLabel>
+                      <FormControl>
+                        <Input
+                          placeholder="e.g., Highly recommended, beginner, fast learner..."
+                          {...field}
+                          value={field.value ?? ""}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </CardContent>
+            </Card>
         </div>
 
-        <div className="mt-8 flex flex-col-reverse gap-3 border-t border-border/70 pt-6 sm:flex-row sm:justify-end">
+      </form>
+
+      <div className="fixed bottom-0 left-0 right-0 z-50 border-t border-border/70 bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60 shadow-[0_-4px_20px_rgba(0,0,0,0.08)]">
+        <div className="mx-auto flex max-w-6xl items-center justify-end gap-3 px-3 py-4 sm:px-5 lg:px-6">
           {!isEditing ? (
             <Button
               type="submit"
+              form="candidate-form"
               size="lg"
               variant="outline"
-              className="min-w-[220px]"
+              className="min-w-[180px]"
               data-submit-mode="create_another"
               disabled={isLoading}
             >
@@ -1212,8 +1546,9 @@ export function CandidateForm({
           ) : null}
           <Button
             type="submit"
+            form="candidate-form"
             size="lg"
-            className="min-w-[220px]"
+            className="min-w-[180px] shadow-md"
             data-submit-mode="default"
             disabled={isLoading}
           >
@@ -1229,7 +1564,7 @@ export function CandidateForm({
                 : "Create Candidate"}
           </Button>
         </div>
-      </form>
+      </div>
     </Form>
   );
 }

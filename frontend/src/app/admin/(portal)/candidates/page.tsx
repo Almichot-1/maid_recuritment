@@ -24,11 +24,11 @@ export default function AdminCandidatesPage() {
     page,
     pageSize
   )
-  const candidates = candidatesData?.candidates ?? []
   const meta = candidatesData?.meta
 
   const filtered = React.useMemo(() => {
-    return candidates.filter((candidate) => {
+    const list = candidatesData?.candidates ?? []
+    return list.filter((candidate) => {
       const matchesSearch =
         !search ||
         candidate.full_name.toLowerCase().includes(search.toLowerCase()) ||
@@ -40,15 +40,16 @@ export default function AdminCandidatesPage() {
         candidate.agency_name.toLowerCase() === agency.toLowerCase()
       return matchesSearch && matchesAgency
     })
-  }, [agency, candidates, search])
+  }, [agency, candidatesData, search])
 
   const agencyOptions = React.useMemo(() => {
+    const list = candidatesData?.candidates ?? []
     const values = new Set<string>()
-    for (const candidate of candidates) {
+    for (const candidate of list) {
       values.add(candidate.company_name || candidate.agency_name)
     }
     return Array.from(values).sort()
-  }, [candidates])
+  }, [candidatesData])
 
   React.useEffect(() => {
     setPage(1)

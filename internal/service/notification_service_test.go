@@ -72,6 +72,9 @@ func (m *notificationCandidateRepoMock) GetByIDs(ids []string) ([]*domain.Candid
 func (m *notificationCandidateRepoMock) GetByIDLean(id string) (*domain.Candidate, error) {
 	return m.GetByID(id)
 }
+func (m *notificationCandidateRepoMock) UpdateStatus(id string, status domain.CandidateStatus) error {
+	return nil
+}
 
 type notificationSelectionRepoMock struct {
 	byID          map[string]*domain.Selection

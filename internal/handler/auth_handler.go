@@ -46,7 +46,8 @@ type ResetPasswordRequest struct {
 }
 
 type AuthResponse struct {
-	User AuthUserView `json:"user"`
+	User  AuthUserView `json:"user"`
+	Token string       `json:"token,omitempty"`
 }
 
 type RegisterResponse struct {
@@ -181,7 +182,8 @@ func (h *AuthHandler) Login(w http.ResponseWriter, r *http.Request) {
 
 	middleware.SetSessionCookie(w, r, middleware.UserSessionCookieName, token, middleware.UserSessionMaxAgeSeconds)
 	_ = utils.WriteJSON(w, http.StatusOK, AuthResponse{
-		User: mapUserToAuthUserView(user, sessionID),
+		User:  mapUserToAuthUserView(user, sessionID),
+		Token: token,
 	})
 }
 
@@ -328,8 +330,10 @@ func (h *AuthHandler) Me(w http.ResponseWriter, r *http.Request) {
 	}
 
 	sessionID, _ := middleware.SessionIDFromContext(r.Context())
-	_ = utils.WriteJSON(w, http.StatusOK, map[string]AuthUserView{
-		"user": mapUserToAuthUserView(user, sessionID),
+	token, _ := middleware.TokenFromContext(r.Context())
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]interface{}{
+		"user":  mapUserToAuthUserView(user, sessionID),
+		"token": token,
 	})
 }
 

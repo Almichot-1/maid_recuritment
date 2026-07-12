@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"encoding/base64"
 	"errors"
 	"io"
@@ -38,6 +39,7 @@ func (m *candidateDocRepoBehaviorMock) Delete(id string) error { return nil }
 type candidateStorageBehaviorMock struct {
 	uploadFn func(fileName, contentType string) (string, error)
 	deleteFn func(url string) error
+	openFn   func(fileURL string) (io.ReadCloser, string, error)
 }
 
 func (m *candidateStorageBehaviorMock) Upload(file io.Reader, fileName, contentType string) (string, error) {
@@ -51,6 +53,12 @@ func (m *candidateStorageBehaviorMock) Delete(url string) error {
 		return m.deleteFn(url)
 	}
 	return nil
+}
+func (m *candidateStorageBehaviorMock) Open(fileURL string) (io.ReadCloser, string, error) {
+	if m.openFn != nil {
+		return m.openFn(fileURL)
+	}
+	return io.NopCloser(bytes.NewReader(nil)), "", nil
 }
 
 func TestCandidateService_MoreBranches(t *testing.T) {
@@ -69,7 +77,7 @@ func TestCandidateService_MoreBranches(t *testing.T) {
 		return &domain.Candidate{ID: id, CreatedBy: "owner-1", FullName: "Name", Status: domain.CandidateStatusDraft, Languages: []byte(`["en"]`), Skills: []byte(`["s1"]`)}, nil
 	}
 
-	service, err := NewCandidateService(repo, docRepo, storage, NewPDFService(), &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
+	service, err := NewCandidateService(repo, docRepo, storage, NewPDFService(storage), &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, docs, err := service.GetCandidate("cand-1")
@@ -104,32 +112,6 @@ func TestCandidateService_MoreBranches(t *testing.T) {
 	}
 
 	err = service.GenerateCV("cand-1", "owner-1", "", CandidateCVBranding{})
-	require.Error(t, err)
-}
-
-func TestStatusStepService_NewValidationAndStepNotFound(t *testing.T) {
-	_, err := NewStatusStepService(nil, &candidateRepositoryMock{}, &selectionRepositoryMock{}, &notificationSenderMock{foreignByID: map[string]bool{}})
-	require.Error(t, err)
-
-	service := &StatusStepService{
-		statusStepRepository: &statusStepRepoBehaviorMock{getByCandidateIDFn: func(candidateID string) ([]*domain.StatusStep, error) {
-			return []*domain.StatusStep{}, nil
-		}},
-		candidateRepository: &statusStepCandidateRepoMock{getByIDFn: func(id string) (*domain.Candidate, error) {
-			return &domain.Candidate{ID: id, CreatedBy: "owner-1"}, nil
-		}},
-		selectionRepository: &statusStepSelectionRepoMock{},
-		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
-	}
-
-	err = service.UpdateStep("cand-1", "Missing", "owner-1", domain.InProgress, "")
-	require.ErrorIs(t, err, ErrStepNotFound)
-
-	err = service.UpdateStep("cand-1", "", "owner-1", domain.InProgress, "")
-	require.Error(t, err)
-	err = service.UpdateStep("cand-1", "x", "", domain.InProgress, "")
-	require.Error(t, err)
-	err = service.UpdateStep("cand-1", "x", "owner-1", domain.StepStatus("bad"), "")
 	require.Error(t, err)
 }
 

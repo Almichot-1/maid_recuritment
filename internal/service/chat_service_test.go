@@ -333,6 +333,9 @@ func (r *chatMemoryCandidateRepository) Unlock(candidateID string) error { retur
 func (r *chatMemoryCandidateRepository) GetByIDs(ids []string) ([]*domain.Candidate, error) {
 	return nil, nil
 }
+func (r *chatMemoryCandidateRepository) UpdateStatus(id string, status domain.CandidateStatus) error {
+	return nil
+}
 
 type chatMemorySelectionRepository struct {
 	mu               sync.RWMutex

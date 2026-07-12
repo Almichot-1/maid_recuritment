@@ -8,7 +8,6 @@ import { format } from "date-fns"
 import {
   AlertTriangle,
   BadgeCheck,
-  CheckCircle2,
   ChevronRight,
   Clock,
   Eye,
@@ -31,13 +30,13 @@ import {
   useSelectionApprovals,
   useUploadSelectionDocument,
 } from "@/hooks/use-selections"
-import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
+import { useSelectionProgress, useUpdateProgress } from "@/hooks/use-selection-progress"
+import { mapProgressToSteps, mapOldStatusToNew, stepToPayload } from "@/components/process-tracking/process-tracking-page"
 import { resolveCandidateChatThread } from "@/hooks/use-chat"
 import { SelectionStatus } from "@/types"
 import { ApprovalDialog } from "@/components/selections/approval-dialog"
 import { StatusTimeline } from "@/components/candidates/status-timeline"
 import { DocumentUpload } from "@/components/candidates/document-upload"
-import { LockCountdown } from "@/components/selections/lock-countdown"
 import Image from "next/image"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -52,12 +51,13 @@ export default function SelectionDetailPage() {
   const { data: selection, isLoading: isSelectionLoading } = useSelection(selectionId)
   const candidateId = selection?.candidate_id
   const { data: trackingCandidate } = useCandidate(candidateId)
-  const { data: progressData, isLoading: isProgressLoading } = useCandidateProgress(candidateId)
+  const { data: selectionProgress, isLoading: isProgressLoading } = useSelectionProgress(selectionId)
   const { data: approvalStatus, isLoading: isApprovalsLoading } = useSelectionApprovals(selectionId)
   const { mutate: approveSelection, isPending: isApproving } = useApproveSelection(selectionId, candidateId)
   const { mutate: rejectSelection, isPending: isRejecting } = useRejectSelection(selectionId, candidateId)
   const { mutateAsync: uploadSelectionDocument, isPending: isUploadingSelectionDocument } = useUploadSelectionDocument(selectionId)
-  const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId || "")
+  const updateProgress = useUpdateProgress(selectionId || "")
+  const isUpdatingStep = updateProgress.isPending
   const { mutateAsync: uploadCandidateDocument, isPending: isUploadingMedicalDocument } = useUploadDocument(candidateId || "")
   const { mutateAsync: removeCandidateDocument, isPending: isRemovingMedicalDocument } = useDeleteCandidateDocument(candidateId || "")
 
@@ -98,20 +98,27 @@ export default function SelectionDetailPage() {
   const isApproved = selection.status === SelectionStatus.APPROVED
   const isRejected = selection.status === SelectionStatus.REJECTED
   const isExpired = selection.status === SelectionStatus.EXPIRED
-  const showTrackingTimeline = !!progressData && progressData.steps.length > 0
+  const steps = selectionProgress ? mapProgressToSteps(selectionProgress) : []
+  const showTrackingTimeline = steps.length > 0
   const trackingPageHref = `/candidates/${selection.candidate_id}/tracking`
   const canUpdateProgress = isEthiopianAgent && candidate.created_by === user?.id
   const hasEmployerContract = !!selection.employer_contract?.file_url
-  const hasRequiredEmployerDocuments = hasEmployerContract
-  const approvalBlockedByEmployerPackage = isEthiopianAgent && !hasRequiredEmployerDocuments
-  const failedStep = progressData?.steps.find((step) => step.step_status === "failed")
+  const failedStep = steps.find((step) => step.step_status === "failed")
+  const completedSteps = steps.filter((step) => step.step_status === "completed").length
+  const progressPercentage = steps.length > 0 ? Math.round((completedSteps / steps.length) * 100) : 0
   const medicalDocument = trackingCandidate?.documents?.find((document) => document.document_type === "medical")
 
-  const handleUpdateStep = (stepName: string, status: string, notes?: string, cocStatus?: string, arrivalCity?: string) => {
-    if (!candidateId || !canUpdateProgress) {
+  const handleUpdateStep = async (stepName: string, status: string, notes?: string, cocStatus?: string, arrivalCity?: string) => {
+    if (!selectionId || !canUpdateProgress) {
       return
     }
-    updateStep({ step_name: stepName, status, notes, coc_status: cocStatus, arrival_city: arrivalCity })
+    const mappedStatus = mapOldStatusToNew(stepName, status)
+    const payload: Record<string, string> = {
+      ...stepToPayload(stepName, mappedStatus),
+      ...(cocStatus ? { coc_type: cocStatus } : {}),
+      ...(arrivalCity ? { arrival_city: arrivalCity } : {}),
+    }
+    await updateProgress.mutateAsync(payload)
   }
 
   const handleRemoveMedicalDocument = async () => {
@@ -232,11 +239,6 @@ export default function SelectionDetailPage() {
                     <p>Candidate status: {candidate.status.replaceAll("_", " ")}</p>
                   </div>
 
-                  {isPending && (
-                    <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 dark:border-amber-900/50 dark:bg-amber-950/20">
-                      <LockCountdown expiresAt={selection.expires_at} className="text-sm" />
-                    </div>
-                  )}
                 </div>
               </div>
             </CardContent>
@@ -244,52 +246,48 @@ export default function SelectionDetailPage() {
 
           <Card>
             <CardHeader>
-              <CardTitle>Approval Status</CardTitle>
-              <CardDescription>Both agencies must approve before the recruitment workflow advances.</CardDescription>
+              <CardTitle>Selection Status</CardTitle>
+              <CardDescription>The current state of this candidate selection.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="grid gap-4 sm:grid-cols-2">
-                <ApprovalPartyCard
-                  label="Ethiopian Agent"
-                  approved={!!selection.ethiopian_approved}
-                />
-                <ApprovalPartyCard
-                  label="Foreign Agent"
-                  approved={!!selection.foreign_approved}
-                />
-              </div>
-
-              {approvalStatus && approvalStatus.pending_approval_from.length > 0 && (
-                <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
-                  Waiting on: {approvalStatus.pending_approval_from.join(", ")}
-                </div>
-              )}
-
-              <Separator />
-
-              <div className="space-y-3">
-                <h3 className="text-sm font-semibold">Decision Log</h3>
-                {approvalStatus && approvalStatus.approvals.length > 0 ? (
-                  approvalStatus.approvals.map((approval) => (
-                    <div key={`${approval.user_id}-${approval.decided_at}`} className="rounded-lg border p-3">
-                      <div className="flex items-center justify-between gap-3">
-                        <div>
-                          <p className="font-medium">{approval.user_name || approval.role}</p>
-                          <p className="text-xs text-muted-foreground">{approval.role.replaceAll("_", " ")}</p>
-                        </div>
-                        <Badge variant={approval.decision === "approved" ? "default" : "destructive"}>
-                          {approval.decision}
-                        </Badge>
-                      </div>
-                      <p className="mt-2 text-xs text-muted-foreground">
-                        {format(new Date(approval.decided_at), "MMM dd, yyyy h:mm a")}
-                      </p>
-                    </div>
-                  ))
-                ) : (
-                  <p className="text-sm text-muted-foreground">No approval decisions have been recorded yet.</p>
+              <div className="flex items-center gap-3">
+                <SelectionStatusBadge status={selection.status} />
+                {isPending && (
+                  <span className="text-sm text-muted-foreground">
+                    Waiting for Ethiopian agency to respond
+                  </span>
                 )}
               </div>
+
+              <div className="text-sm text-muted-foreground space-y-1">
+                <p>Selected by foreign agency</p>
+                <p>on {format(new Date(selection.created_at), "MMMM dd, yyyy")}</p>
+              </div>
+
+              {approvalStatus && approvalStatus.approvals.length > 0 && (
+                <>
+                  <Separator />
+                  <div className="space-y-3">
+                    <h3 className="text-sm font-semibold">Decision Log</h3>
+                    {approvalStatus.approvals.map((approval) => (
+                      <div key={`${approval.user_id}-${approval.decided_at}`} className="rounded-lg border p-3">
+                        <div className="flex items-center justify-between gap-3">
+                          <div>
+                            <p className="font-medium">{approval.user_name || approval.role}</p>
+                            <p className="text-xs text-muted-foreground">{approval.role.replaceAll("_", " ")}</p>
+                          </div>
+                          <Badge variant={approval.decision === "approved" ? "default" : "destructive"}>
+                            {approval.decision}
+                          </Badge>
+                        </div>
+                        <p className="mt-2 text-xs text-muted-foreground">
+                          {format(new Date(approval.decided_at), "MMM dd, yyyy h:mm a")}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
             </CardContent>
           </Card>
 
@@ -297,7 +295,7 @@ export default function SelectionDetailPage() {
             <CardHeader>
               <CardTitle>Employer Contract Package</CardTitle>
               <CardDescription>
-                The foreign employer uploads the requested contract and employer ID here so the Ethiopian agency can review them before approval.
+                The foreign employer can optionally upload contract documents here.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-5">
@@ -314,13 +312,6 @@ export default function SelectionDetailPage() {
                 />
               </div>
 
-              {isPending && !hasRequiredEmployerDocuments ? (
-                <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                  {isEthiopianAgent
-                    ? "The employer contract is still pending. Wait for the foreign agency to upload the contract before you approve."
-                    : "Upload the employer contract here so the Ethiopian agency can review it and complete approval."}
-                </div>
-              ) : null}
 
               {!isEthiopianAgent && isPending ? (
                 <div className="grid gap-4 md:grid-cols-2">
@@ -354,7 +345,7 @@ export default function SelectionDetailPage() {
             <CardHeader>
               <CardTitle>Recruitment Tracking</CardTitle>
               <CardDescription>
-                After both agencies approve, this is where {candidate.full_name}&apos;s shared recruitment process becomes visible.
+                Once the Ethiopian agency approves, the recruitment tracking steps become visible here.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -375,22 +366,22 @@ export default function SelectionDetailPage() {
                   ) : null}
 
                   <div className="space-y-2">
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="text-muted-foreground">Overall candidate status</span>
-                      <span className="font-semibold capitalize">
-                        {progressData.overall_status.replaceAll("_", " ")}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-3 text-sm">
-                      <span className="text-muted-foreground">Progress</span>
-                      <span className="font-semibold">{Math.round(progressData.progress_percentage)}%</span>
-                    </div>
-                    <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
-                      <div
-                        className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500"
-                        style={{ width: `${progressData.progress_percentage}%` }}
-                      />
-                    </div>
+                  <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground">Overall candidate status</span>
+                        <span className="font-semibold capitalize">
+                          {trackingCandidate?.status?.replaceAll("_", " ") ?? "pending"}
+                        </span>
+                      </div>
+                      <div className="flex items-center justify-between gap-3 text-sm">
+                        <span className="text-muted-foreground">Progress</span>
+                        <span className="font-semibold">{progressPercentage}%</span>
+                      </div>
+                      <div className="h-2 w-full overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500"
+                          style={{ width: `${progressPercentage}%` }}
+                        />
+                      </div>
                   </div>
 
                   <Separator />
@@ -411,7 +402,7 @@ export default function SelectionDetailPage() {
                   </div>
 
                   <StatusTimeline
-                    steps={progressData.steps}
+                    steps={steps}
                     canUpdate={canUpdateProgress}
                     onUpdateStep={handleUpdateStep}
                     isUpdating={isUpdatingStep}
@@ -438,36 +429,38 @@ export default function SelectionDetailPage() {
               <CardTitle>Actions</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3">
-              {isPending && !userHasApproved && (
+              {isPending && isEthiopianAgent && !selection.ethiopian_approved && (
                 <>
-                  {approvalBlockedByEmployerPackage ? (
-                    <div className="rounded-[1.4rem] border border-amber-300/40 bg-amber-50/80 px-4 py-3 text-sm text-amber-900 dark:border-amber-900/50 dark:bg-amber-950/30 dark:text-amber-100">
-                      Approval is blocked until the foreign agency finishes the contract package.
-                    </div>
-                  ) : null}
-                  {!isEthiopianAgent && !hasRequiredEmployerDocuments ? (
-                    <div className="rounded-[1.4rem] border border-sky-300/40 bg-sky-50/80 px-4 py-3 text-sm text-sky-900 dark:border-sky-900/50 dark:bg-sky-950/30 dark:text-sky-100">
-                      You can record your approval now, but the Ethiopian agency still needs your contract and employer ID upload before the process can move forward.
-                    </div>
-                  ) : null}
                   <Button
                     className="w-full bg-green-600 hover:bg-green-700"
                     onClick={() => setApproveDialogOpen(true)}
-                    disabled={isApproving || isRejecting || approvalBlockedByEmployerPackage}
+                    disabled={isApproving || isRejecting}
                   >
                     {isApproving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
                     Approve Selection
                   </Button>
                   <Button
                     variant="outline"
-                    className="w-full text-red-600 border-red-600 hover:bg-red-50 dark:hover:bg-red-950/20"
+                    className="w-full text-orange-600 border-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20"
                     onClick={() => setRejectDialogOpen(true)}
                     disabled={isApproving || isRejecting}
                   >
                     {isRejecting && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-                    Reject Selection
+                    Unlock Candidate
                   </Button>
                 </>
+              )}
+
+              {isPending && isEthiopianAgent && selection.ethiopian_approved && (
+                <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  You have approved this selection. The recruitment process can begin.
+                </div>
+              )}
+
+              {isPending && !isEthiopianAgent && (
+                <div className="rounded-lg border bg-muted/40 p-3 text-sm text-muted-foreground">
+                  Waiting for the Ethiopian agency to respond to your selection.
+                </div>
               )}
 
               {isPending && userHasApproved && (
@@ -478,7 +471,7 @@ export default function SelectionDetailPage() {
 
               {isApproved && (
                 <div className="rounded-lg border border-green-200 bg-green-50 p-3 text-sm text-green-800 dark:border-green-900/50 dark:bg-green-950/20 dark:text-green-200">
-                  Both parties approved this selection. The candidate can continue through the recruitment steps.
+                  Selection approved. The candidate can continue through the recruitment steps.
                 </div>
               )}
 
@@ -513,7 +506,14 @@ export default function SelectionDetailPage() {
                 Open chat about this candidate
               </Button>
 
-              {(isApproved || showTrackingTimeline) ? (
+              {showTrackingTimeline ? (
+                <Button variant="outline" className="w-full" asChild>
+                  <Link href={trackingPageHref}>
+                    <Sparkles className="mr-2 h-4 w-4" />
+                    Open {candidate.full_name} Tracking
+                  </Link>
+                </Button>
+              ) : (isApproved && steps.length === 0) ? (
                 <Button variant="outline" className="w-full" asChild>
                   <Link href={trackingPageHref}>
                     <Sparkles className="mr-2 h-4 w-4" />
@@ -572,27 +572,11 @@ function SelectionStatusBadge({ status }: { status: SelectionStatus }) {
       return <Badge className="bg-red-500 hover:bg-red-600 text-white">Rejected</Badge>
     case SelectionStatus.EXPIRED:
       return <Badge className="bg-slate-500 hover:bg-slate-600 text-white">Expired</Badge>
+    case SelectionStatus.RELEASED:
+      return <Badge className="bg-orange-500 hover:bg-orange-600 text-white">Released</Badge>
     default:
       return <Badge variant="secondary">{status}</Badge>
   }
-}
-
-function ApprovalPartyCard({ label, approved }: { label: string; approved: boolean }) {
-  return (
-    <div className="rounded-lg border p-4">
-      <div className="flex items-center justify-between gap-3">
-        <span className="font-medium">{label}</span>
-        {approved ? (
-          <CheckCircle2 className="h-5 w-5 text-green-600" />
-        ) : (
-          <Clock className="h-5 w-5 text-muted-foreground" />
-        )}
-      </div>
-      <p className="mt-2 text-sm text-muted-foreground">
-        {approved ? "Approval recorded" : "Still pending"}
-      </p>
-    </div>
-  )
 }
 
 function SupportingDocumentCard({

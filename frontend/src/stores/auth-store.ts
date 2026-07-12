@@ -5,13 +5,15 @@ import { getApiBaseUrl } from '@/lib/api-base-url';
 
 interface AuthMeResponse {
   user: User;
+  token?: string;
 }
 
 interface AuthState {
   user: User | null;
+  authToken: string | null;
   isAuthenticated: boolean;
   isLoading: boolean;
-  setAuth: (user: User) => void;
+  setAuth: (user: User, token?: string) => void;
   updateUser: (updates: Partial<User>) => void;
   logout: () => void;
   loadFromStorage: () => Promise<void>;
@@ -19,14 +21,17 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>((set) => ({
   user: null,
+  authToken: null,
   isAuthenticated: false,
   isLoading: true, // Start true until hydrated
   
-  setAuth: (user: User) => {
+  setAuth: (user: User, token?: string) => {
     localStorage.setItem('auth_user', JSON.stringify(user));
-    localStorage.removeItem('auth_token');
+    if (token) {
+      localStorage.setItem('auth_token', token);
+    }
     usePairingStore.getState().clear();
-    set({ user, isAuthenticated: true, isLoading: false });
+    set({ user, authToken: token ?? null, isAuthenticated: true, isLoading: false });
   },
 
   updateUser: (updates: Partial<User>) =>
@@ -44,7 +49,7 @@ export const useAuthStore = create<AuthState>((set) => ({
     localStorage.removeItem('auth_token');
     localStorage.removeItem('auth_user');
     usePairingStore.getState().clear();
-    set({ user: null, isAuthenticated: false, isLoading: false });
+    set({ user: null, authToken: null, isAuthenticated: false, isLoading: false });
   },
   
   loadFromStorage: async () => {
@@ -64,14 +69,17 @@ export const useAuthStore = create<AuthState>((set) => ({
       }
 
       const data = (await response.json()) as AuthMeResponse;
+      const token = data.token || localStorage.getItem('auth_token');
+      if (token) {
+        localStorage.setItem('auth_token', token);
+      }
       localStorage.setItem('auth_user', JSON.stringify(data.user));
-      localStorage.removeItem('auth_token');
-      set({ user: data.user, isAuthenticated: true, isLoading: false });
+      set({ user: data.user, authToken: token, isAuthenticated: true, isLoading: false });
     } catch (error) {
       console.error('Failed to load auth state from storage', error);
       localStorage.removeItem('auth_token');
       localStorage.removeItem('auth_user');
-      set({ user: null, isAuthenticated: false, isLoading: false });
+      set({ user: null, authToken: null, isAuthenticated: false, isLoading: false });
     }
   }
 }));

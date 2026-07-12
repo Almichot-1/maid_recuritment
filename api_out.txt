@@ -1,0 +1,5 @@
+
+2026/07/02 19:21:37 [35mC:/Users/NOOR AL MUSABAH/Documents/PROJECT_2/internal/repository/db.go:43
+[0m[31m[error] [0mfailed to initialize database, got error failed to connect to `user=postgres database=maid_recruitment`:
+	[::1]:5432 (localhost): dial error: dial tcp [::1]:5432: connectex: No connection could be made because the target machine actively refused it.
+	127.0.0.1:5432 (localhost): dial error: dial tcp 127.0.0.1:5432: connectex: No connection could be made because the target machine actively refused it.

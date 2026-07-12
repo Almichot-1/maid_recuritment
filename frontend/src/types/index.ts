@@ -59,11 +59,17 @@ export enum CandidateStatus {
   REJECTED = 'rejected'
 }
 
-/** Per-pairing country/salary override returned only to the candidate owner. */
+/** Per-pairing country/salary/logo override returned only to the candidate owner. */
 export interface CandidatePairOverride {
   pairing_id: string;
   country_applied: string;
   salary_offered: string;
+  logo_url?: string;
+}
+
+export interface ExperienceEntry {
+  country: string;
+  years: number;
 }
 
 export interface Candidate {
@@ -73,14 +79,21 @@ export interface Candidate {
   date_of_birth?: string;
   age?: number;
   place_of_birth?: string;
+  passport_number?: string;
+  gender?: string;
+  issue_date?: string;
+  expiry_date?: string;
+  issuing_authority?: string;
+  experience_abroad?: ExperienceEntry[];
   religion?: string;
   marital_status?: string;
   children_count?: number;
   education_level?: string;
   experience_years?: number;
   country_of_experience?: string;
-  languages: string[];
+  languages: Array<{ language: string; proficiency?: string }>;
   skills: string[];
+  remark?: string;
   status: CandidateStatus;
   created_by: string;
   cv_pdf_url?: string;
@@ -108,7 +121,8 @@ export enum SelectionStatus {
   PENDING = 'pending',
   APPROVED = 'approved',
   REJECTED = 'rejected',
-  EXPIRED = 'expired'
+  EXPIRED = 'expired',
+  RELEASED = 'released'
 }
 
 export interface SelectionCandidateSummary {
@@ -136,8 +150,93 @@ export interface Selection {
   foreign_approved?: boolean;
   employer_contract?: SelectionSupportingDocument;
   employer_id?: SelectionSupportingDocument;
+  progress?: SelectionProgressSummary;
   selected_by_name?: string;
 }
+
+export interface SelectionProgressSummary {
+  coc_status: string;
+  medical_status: string;
+  visa_status: string;
+  ticket_status: string;
+  arrival_status: string;
+}
+
+// Progress Tracking Types
+export interface SelectionProgress {
+  id: string;
+  selection_id: string;
+  updated_by: string;
+
+  // COC
+  coc_status: string;
+  coc_type?: string;
+  coc_document?: SelectionSupportingDocument;
+
+  // Medical
+  medical_status: string;
+  medical_document?: SelectionSupportingDocument;
+
+  // Visa
+  visa_status: string;
+  visa_document?: SelectionSupportingDocument;
+
+  // Ticket
+  ticket_status: string;
+  ticket_document?: SelectionSupportingDocument;
+
+  // Arrival
+  arrival_status: string;
+  arrival_date?: string;
+  arrival_city?: string;
+  destination_country?: string;
+  departure_date?: string;
+  arrival_document?: SelectionSupportingDocument;
+
+  notes?: string;
+  progress_percentage: number;
+  updated_by_name?: string;
+
+  created_at: string;
+  updated_at: string;
+}
+
+export interface BatchProgressUpdateResult {
+  updated: number;
+  total: number;
+  failed: Array<{ selection_id: string; error: string }>;
+}
+
+export const PROGRESS_STATUS = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'in_progress',
+  DONE: 'done',
+  FAILED: 'failed',
+} as const;
+
+export const COC_TYPE = {
+  ONLINE: 'online',
+  OFFLINE: 'offline',
+} as const;
+
+export const VISA_STATUS = {
+  PENDING: 'pending',
+  IN_PROGRESS: 'in_progress',
+  APPROVED: 'approved',
+  REJECTED: 'rejected',
+} as const;
+
+export const TICKET_STATUS = {
+  PENDING: 'pending',
+  BOOKED: 'booked',
+  CONFIRMED: 'confirmed',
+} as const;
+
+export const ARRIVAL_STATUS = {
+  NOT_ARRIVED: 'not_arrived',
+  IN_TRANSIT: 'in_transit',
+  ARRIVED: 'arrived',
+} as const;
 
 export interface SelectionSupportingDocument {
   file_url: string;
@@ -153,29 +252,18 @@ export interface Approval {
   decided_at: string;
 }
 
-export interface StatusStep {
+export interface StepItem {
   id: string;
-  candidate_id: string;
   step_name: string;
-  step_status: 'pending' | 'in_progress' | 'completed' | 'failed';
-  completed_at?: string;
+  step_status: string;
   notes?: string;
-  medical_document_url?: string;
   coc_status?: string;
   arrival_city?: string;
-  updated_at: string;
-  updated_by: {
-    id: string;
-    name: string;
-  };
-}
-
-export interface CandidateProgress {
-  candidate_id: string;
-  overall_status: CandidateStatus;
-  steps: StatusStep[];
-  progress_percentage: number;
-  last_updated_at: string;
+  medical_document_url?: string;
+  document_url?: string;
+  document_name?: string;
+  updated_at?: string;
+  updated_by?: { id: string; name: string };
 }
 
 export interface PassportData {

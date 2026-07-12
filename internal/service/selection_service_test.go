@@ -111,6 +111,9 @@ func (m *candidateRepositoryMock) GetByIDs(ids []string) ([]*domain.Candidate, e
 func (m *candidateRepositoryMock) GetByIDLean(id string) (*domain.Candidate, error) {
 	return m.GetByID(id)
 }
+func (m *candidateRepositoryMock) UpdateStatus(id string, status domain.CandidateStatus) error {
+	return nil
+}
 
 type notificationSenderMock struct {
 	mu           sync.Mutex

@@ -224,7 +224,7 @@ func (s *PassportOCRService) ParsePreviewWithMetrics(file io.Reader, fileName st
 	if err != nil {
 		return nil, metrics, err
 	}
-	if contentType != "image/jpeg" && contentType != "image/png" {
+	if contentType != "image/jpeg" && contentType != "image/png" && contentType != "image/webp" && contentType != "image/bmp" && contentType != "image/tiff" {
 		return nil, metrics, ErrPassportOCRRequiresImage
 	}
 
@@ -551,32 +551,6 @@ func (s *PassportOCRService) extractPreviewFallbackFields(tempPath string, dateO
 		return placeOfBirth, issueDate
 	}
 
-	if rawText, err := s.ocrProcessor.ExtractFastText(tempPath); err == nil {
-		placeOfBirth, issueDate := resolveFromText(rawText)
-
-		// If FastText already resolved everything we need, skip the slower full
-		// ExtractText call entirely — saves one Tesseract spawn on the free tier.
-		if (!needPlaceOfBirth || placeOfBirth != "") && (!needIssueDate || !issueDate.IsZero()) {
-			return placeOfBirth, issueDate
-		}
-
-		// Update which fields still need resolution before the heavy call.
-		residualNeedPlace := needPlaceOfBirth && placeOfBirth == ""
-		residualNeedDate := needIssueDate && issueDate.IsZero()
-
-		if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
-			fullPlaceOfBirth, fullIssueDate := resolveFromText(rawText)
-			if residualNeedPlace && fullPlaceOfBirth != "" {
-				placeOfBirth = fullPlaceOfBirth
-			}
-			if residualNeedDate && !fullIssueDate.IsZero() {
-				issueDate = fullIssueDate
-			}
-		}
-		return placeOfBirth, issueDate
-	}
-
-	// FastText failed entirely — try the full extraction directly.
 	if rawText, err := s.ocrProcessor.ExtractText(tempPath); err == nil {
 		return resolveFromText(rawText)
 	}
@@ -592,7 +566,7 @@ func extractPlaceOfBirthFromOCRText(text string, dateOfBirth time.Time) string {
 	lines := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
 	month := strings.ToUpper(dateOfBirth.Format("Jan"))
 	day := dateOfBirth.Day()
-	datePattern := regexp.MustCompile(fmt.Sprintf(`(?i)\b%d\s*%s(?:['\s]*\d{1,2})?\b`, day, month))
+	datePattern := regexp.MustCompile(fmt.Sprintf(`(?i)\b%02d\s*%s(?:['\s]*\d{1,2})?\b`, day, month))
 
 	for index, rawLine := range lines {
 		upperLine := strings.ToUpper(strings.TrimSpace(rawLine))
@@ -606,6 +580,12 @@ func extractPlaceOfBirthFromOCRText(text string, dateOfBirth time.Time) string {
 
 		if candidate := cleanupPlaceOfBirthValue(datePattern.ReplaceAllString(rawLine, " ")); candidate != "" {
 			return candidate
+		}
+
+		if index-1 >= 0 {
+			if candidate := cleanupPlaceOfBirthValue(lines[index-1]); candidate != "" {
+				return candidate
+			}
 		}
 
 		if index+1 < len(lines) {
@@ -657,6 +637,7 @@ func cleanupPlaceOfBirthValue(value string) string {
 var (
 	passportIssueISO      = regexp.MustCompile(`\b(\d{4})-(\d{2})-(\d{2})\b`)
 	passportIssueSlash    = regexp.MustCompile(`\b(\d{2})[\./-](\d{2})[\./-](\d{4})\b`)
+	passportIssueSlashYY  = regexp.MustCompile(`\b(\d{2})[\./-](\d{2})[\./-](\d{2})\b`)
 	passportIssueDMMMYY   = regexp.MustCompile(`\b(\d{1,2})\s*([A-Z]{3})\s*(\d{2})\b`)
 	passportIssueDMMMYYYY = regexp.MustCompile(`\b(\d{1,2})\s*([A-Z]{3})\s*(\d{4})\b`)
 )
@@ -738,6 +719,22 @@ func extractPassportIssueCandidates(text string) []time.Time {
 			} else {
 				year += 1900
 			}
+		}
+		if parsed := safePassportIssueDate(year, month, day); !parsed.IsZero() {
+			candidates = append(candidates, parsed)
+		}
+	}
+
+	for _, match := range passportIssueSlashYY.FindAllStringSubmatch(text, -1) {
+		day, _ := strconv.Atoi(match[1])
+		month, _ := strconv.Atoi(match[2])
+		yy, _ := strconv.Atoi(match[3])
+		currentYY := time.Now().UTC().Year() % 100
+		year := yy
+		if yy <= currentYY+1 {
+			year = 2000 + yy
+		} else {
+			year = 1900 + yy
 		}
 		if parsed := safePassportIssueDate(year, month, day); !parsed.IsZero() {
 			candidates = append(candidates, parsed)

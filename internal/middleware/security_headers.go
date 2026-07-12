@@ -8,8 +8,18 @@ import (
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		headers := w.Header()
-		headers.Set("Cache-Control", "no-store")
-		headers.Set("Pragma", "no-cache")
+
+		if r.Method == http.MethodGet {
+			path := r.URL.Path
+			if strings.HasPrefix(path, "/api/v1") {
+				headers.Set("Cache-Control", "public, max-age=30")
+			} else {
+				headers.Set("Cache-Control", "no-store")
+			}
+		} else {
+			headers.Set("Cache-Control", "no-store")
+		}
+
 		headers.Set("X-Content-Type-Options", "nosniff")
 		headers.Set("X-Frame-Options", "DENY")
 		headers.Set("Referrer-Policy", "no-referrer")

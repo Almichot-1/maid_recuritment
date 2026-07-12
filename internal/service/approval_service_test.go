@@ -64,19 +64,7 @@ type approvalTestApproval struct {
 
 func (approvalTestApproval) TableName() string { return "approvals" }
 
-type approvalTestStatusStep struct {
-	ID          string     `gorm:"primaryKey;column:id"`
-	CandidateID string     `gorm:"column:candidate_id"`
-	StepName    string     `gorm:"column:step_name"`
-	StepStatus  string     `gorm:"column:step_status"`
-	CompletedAt *time.Time `gorm:"column:completed_at"`
-	Notes       string     `gorm:"column:notes"`
-	UpdatedBy   string     `gorm:"column:updated_by"`
-	CreatedAt   time.Time  `gorm:"column:created_at"`
-	UpdatedAt   time.Time  `gorm:"column:updated_at"`
-}
 
-func (approvalTestStatusStep) TableName() string { return "status_steps" }
 
 func (m *approvalRepositoryMock) DB() *gorm.DB                           { return m.db }
 func (m *approvalRepositoryMock) Create(approval *domain.Approval) error { return nil }
@@ -87,23 +75,6 @@ func (m *approvalRepositoryMock) GetBySelectionAndUser(selectionID, userID strin
 	return nil, nil
 }
 
-type statusStepRepositoryMock struct {
-	db *gorm.DB
-}
-
-func (m *statusStepRepositoryMock) DB() *gorm.DB                         { return m.db }
-func (m *statusStepRepositoryMock) Create(step *domain.StatusStep) error { return nil }
-func (m *statusStepRepositoryMock) GetByCandidateID(candidateID string) ([]*domain.StatusStep, error) {
-	return nil, nil
-}
-func (m *statusStepRepositoryMock) GetByCandidateIDs(candidateIDs []string) ([]*domain.StatusStep, error) {
-	return nil, nil
-}
-func (m *statusStepRepositoryMock) GetByCandidateIDAndStepName(candidateID, stepName string) (*domain.StatusStep, error) {
-	return nil, nil
-}
-func (m *statusStepRepositoryMock) Update(step *domain.StatusStep) error { return nil }
-
 func setupApprovalService(t *testing.T) (*ApprovalService, *gorm.DB) {
 	t.Helper()
 
@@ -111,23 +82,14 @@ func setupApprovalService(t *testing.T) (*ApprovalService, *gorm.DB) {
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
 
-	err = db.AutoMigrate(&approvalTestCandidate{}, &approvalTestSelection{}, &approvalTestApproval{}, &approvalTestStatusStep{})
+	err = db.AutoMigrate(&approvalTestCandidate{}, &approvalTestSelection{}, &approvalTestApproval{})
 	require.NoError(t, err)
 
 	notifier := &notificationSenderMock{foreignByID: map[string]bool{}}
-	statusStepService, err := NewStatusStepService(
-		&statusStepRepositoryMock{db: db},
-		&candidateRepositoryMock{},
-		&selectionRepositoryMock{db: db},
-		notifier,
-	)
-	require.NoError(t, err)
-
 	service, err := NewApprovalService(
 		&approvalRepositoryMock{db: db},
 		&selectionRepositoryMock{db: db},
 		&candidateRepositoryMock{},
-		statusStepService,
 		notifier,
 	)
 	require.NoError(t, err)
@@ -215,11 +177,6 @@ func TestApprovalService_BothApprovalsNeededToProceed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, domain.CandidateStatusInProgress, candidate.Status)
 	assert.Nil(t, candidate.LockedBy)
-
-	var steps []domain.StatusStep
-	err = db.Where("candidate_id = ?", "cand-1").Find(&steps).Error
-	require.NoError(t, err)
-	assert.Len(t, steps, len(predefinedStepNames()))
 }
 
 func TestApprovalService_OnlyEthiopianApprovalRequiresEmployerPackage(t *testing.T) {
@@ -266,20 +223,4 @@ func TestApprovalService_CannotApproveExpiredSelection(t *testing.T) {
 	require.ErrorIs(t, err, ErrSelectionNotPending)
 }
 
-func TestApprovalService_ApprovalInitializesStatusSteps(t *testing.T) {
-	service, db := setupApprovalService(t)
-	seedApprovalScenario(t, db, domain.SelectionPending, time.Now().UTC().Add(2*time.Hour))
 
-	require.NoError(t, service.ApproveSelection("sel-1", "owner-1"))
-	require.NoError(t, service.ApproveSelection("sel-1", "selector-1"))
-
-	var steps []domain.StatusStep
-	err := db.Where("candidate_id = ?", "cand-1").Order("created_at asc").Find(&steps).Error
-	require.NoError(t, err)
-	require.Len(t, steps, len(predefinedStepNames()))
-
-	for _, step := range steps {
-		assert.Equal(t, domain.Pending, step.StepStatus)
-		assert.Equal(t, "owner-1", step.UpdatedBy)
-	}
-}

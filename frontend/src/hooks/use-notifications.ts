@@ -45,8 +45,8 @@ export function useNotifications(unreadOnly: boolean = false, options: UseNotifi
       return response.data;
     },
     enabled: enabled && Boolean(user) && (!requiresWorkspace || (isPairingReady && Boolean(activePairingId))),
-    staleTime: 60000,
-    refetchInterval,
+    staleTime: 120_000,
+    refetchInterval: refetchInterval === 60000 ? 120_000 : refetchInterval,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
       const status = (error as AxiosError)?.response?.status;
@@ -72,8 +72,8 @@ export function useUnreadCount() {
       return response.data;
     },
     enabled: Boolean(user) && (!requiresWorkspace || (isPairingReady && Boolean(activePairingId))),
-    staleTime: 30_000,
-    refetchInterval: 60_000,
+    staleTime: 120_000,
+    refetchInterval: 120_000,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
       const status = (error as AxiosError)?.response?.status;

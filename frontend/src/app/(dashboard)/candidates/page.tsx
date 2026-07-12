@@ -2,12 +2,12 @@
 
 import * as React from "react"
 import { useRouter, useSearchParams } from "next/navigation"
-import { Plus, Grid3x3, List, CheckSquare, Download, Pencil, RefreshCw, Send, Trash2 } from "lucide-react"
+import { Plus, Grid3x3, List, CheckSquare } from "lucide-react"
 import Link from "next/link"
 import { toast } from "sonner"
 
 import { useCurrentUser } from "@/hooks/use-auth"
-import { useCandidates, useBatchPublishCandidates, useBatchDeleteCandidates } from "@/hooks/use-candidates"
+import { useCandidates, useBatchPublishCandidates, useBatchDeleteCandidates, useBatchLockCandidates, useBatchUnlockCandidates } from "@/hooks/use-candidates"
 import { usePairingContext } from "@/hooks/use-pairings"
 import { PageHeader } from "@/components/layout/page-header"
 import { Button } from "@/components/ui/button"
@@ -22,8 +22,7 @@ import {
 import { CandidateFilters } from "@/components/candidates/candidate-filters"
 import { CandidateGrid } from "@/components/candidates/candidate-grid"
 import { CandidateTable } from "@/components/candidates/candidate-table"
-import { CandidatePagination } from "@/components/candidates/candidate-pagination"
-import { BatchPublishBar } from "@/components/candidates/batch-publish-bar"
+import { BatchActionBar } from "@/components/candidates/batch-action-bar"
 import { Skeleton } from "@/components/ui/skeleton"
 import {
   Select,
@@ -32,17 +31,11 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
 import { BulkCvActionsDialog } from "@/components/candidates/bulk-cv-actions"
 import { BulkSetOverrideDialog } from "@/components/candidates/bulk-set-override-dialog"
 import { BulkPublishDialog } from "@/components/candidates/bulk-publish-dialog"
+import { BatchShareDialog } from "@/components/candidates/batch-share-dialog"
+import { WhatsAppPreviewDialog } from "@/components/candidates/whatsapp-preview-dialog"
 
 export default function CandidatesPage() {
   const router = useRouter()
@@ -75,7 +68,6 @@ export default function CandidatesPage() {
     const params = new URLSearchParams(searchParams.toString())
     params.set("sort_by", sortBy)
     params.set("sort_order", sortOrder)
-    params.set("page", "1")
     router.push(`?${params.toString()}`)
   }
   
@@ -87,9 +79,13 @@ export default function CandidatesPage() {
   const [bulkOverrideDialogOpen, setBulkOverrideDialogOpen] = React.useState(false)
   const [bulkPublishDialogOpen, setBulkPublishDialogOpen] = React.useState(false)
   const [bulkDeleteDialogOpen, setBulkDeleteDialogOpen] = React.useState(false)
+  const [batchShareDialogOpen, setBatchShareDialogOpen] = React.useState(false)
+  const [whatsappDialogOpen, setWhatsappDialogOpen] = React.useState(false)
 
-  const { mutateAsync: batchPublish, isPending: isPublishingBatch } = useBatchPublishCandidates()
+  const { isPending: isPublishingBatch } = useBatchPublishCandidates()
   const { mutateAsync: batchDelete, isPending: isDeletingBatch } = useBatchDeleteCandidates()
+  const { mutateAsync: batchLock } = useBatchLockCandidates()
+  const { mutateAsync: batchUnlock } = useBatchUnlockCandidates()
 
   // Load view preference from localStorage
   React.useEffect(() => {
@@ -105,7 +101,7 @@ export default function CandidatesPage() {
     localStorage.setItem("candidates_view_mode", mode)
   }
 
-  // Build filters from URL params
+  // Build filters from URL params (no pagination — show all)
   const filters = React.useMemo(() => {
     return {
       search: searchParams.get("search") || undefined,
@@ -115,8 +111,8 @@ export default function CandidatesPage() {
       min_experience: searchParams.get("min_experience") ? Number(searchParams.get("min_experience")) : undefined,
       max_experience: searchParams.get("max_experience") ? Number(searchParams.get("max_experience")) : undefined,
       languages: searchParams.get("languages") || undefined,
-      page: searchParams.get("page") ? Number(searchParams.get("page")) : 1,
-      page_size: searchParams.get("page_size") ? Number(searchParams.get("page_size")) : 12,
+      page: 1,
+      page_size: 99999,
       sort_by: searchParams.get("sort_by") || undefined,
       sort_order: searchParams.get("sort_order") || undefined,
     }
@@ -143,13 +139,36 @@ export default function CandidatesPage() {
 
   const handleBatchDelete = async () => {
     if (selectedIds.size === 0) return
-    await batchDelete(Array.from(selectedIds))
-    handleClearSelection()
+    try {
+      await batchDelete(Array.from(selectedIds))
+    } catch {
+      // error toast handled by mutation onError
+    } finally {
+      setBulkDeleteDialogOpen(false)
+      handleClearSelection()
+    }
   }
 
   const handleClearSelection = () => {
     setSelectedIds(new Set())
     setSelectionMode(false)
+  }
+
+  const handleBatchLock = async () => {
+    if (selectedIds.size === 0) return
+    await batchLock(Array.from(selectedIds))
+    handleClearSelection()
+  }
+
+  const handleBatchUnlock = async () => {
+    if (selectedIds.size === 0) return
+    await batchUnlock(Array.from(selectedIds))
+    handleClearSelection()
+  }
+
+  const handleBatchWhatsapp = () => {
+    if (selectedIds.size === 0) return
+    setWhatsappDialogOpen(true)
   }
 
   const handleBatchPublish = async () => {
@@ -162,23 +181,18 @@ export default function CandidatesPage() {
       return
     }
 
-    // Show bulk publish dialog for partner selection
     if (workspaceIds.length > 0) {
       setBulkPublishDialogOpen(true)
       return
     }
-
-    // Otherwise, publish directly
-    try {
-      await batchPublish({
-        candidateIds: Array.from(selectedIds),
-        pairingIds: workspaceIds,
-      })
-      handleClearSelection()
-    } catch {
-      toast.error("Failed to batch publish candidates")
-    }
   }
+
+  const handleBulkCvAction = (action: "regenerate" | "download") => {
+    setBulkCvAction(action)
+    setBulkCvDialogOpen(true)
+  }
+
+  const totalCount = data?.data.length || 0
 
   const pageHeader = (
     <PageHeader
@@ -197,61 +211,8 @@ export default function CandidatesPage() {
                 onClick={() => setSelectionMode(true)}
               >
                 <CheckSquare className="mr-2 h-5 w-5" />
-                <span className="hidden sm:inline">
-                  {isEthiopianAgent ? "Batch Publish" : "Batch Select"}
-                </span>
+                <span className="hidden sm:inline">Select</span>
               </Button>
-            )}
-            {selectionMode && (
-              <div className="flex flex-wrap items-center gap-2">
-                <Button variant="outline" size="lg" onClick={handleClearSelection}>
-                  Cancel
-                </Button>
-                {selectedIds.size !== data?.data.length && (
-                  <Button variant="ghost" size="sm" onClick={handleSelectAll}>
-                    Select All ({data?.data.length || 0})
-                  </Button>
-                )}
-                <DropdownMenu>
-                  <DropdownMenuTrigger asChild>
-                    <Button variant="outline" size="lg">
-                      Bulk CV
-                    </Button>
-                  </DropdownMenuTrigger>
-                  <DropdownMenuContent align="end">
-                    <DropdownMenuLabel>CV Operations</DropdownMenuLabel>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onClick={() => { setBulkCvAction("download"); setBulkCvDialogOpen(true); }}>
-                      <Download className="mr-2 h-4 w-4" />
-                      Download CVs (ZIP)
-                    </DropdownMenuItem>
-                    {isEthiopianAgent && (
-                      <>
-                        <DropdownMenuItem onClick={() => { setBulkCvAction("regenerate"); setBulkCvDialogOpen(true); }}>
-                          <RefreshCw className="mr-2 h-4 w-4" />
-                          Regenerate CVs
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setBulkOverrideDialogOpen(true)}>
-                          <Pencil className="mr-2 h-4 w-4" />
-                          Set Partner Overrides
-                        </DropdownMenuItem>
-                        <DropdownMenuItem onClick={() => setBulkPublishDialogOpen(true)}>
-                          <Send className="mr-2 h-4 w-4" />
-                          Publish to Partners
-                        </DropdownMenuItem>
-                        <DropdownMenuSeparator />
-                        <DropdownMenuItem
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => setBulkDeleteDialogOpen(true)}
-                        >
-                          <Trash2 className="mr-2 h-4 w-4" />
-                          Delete Selected
-                        </DropdownMenuItem>
-                      </>
-                    )}
-                  </DropdownMenuContent>
-                </DropdownMenu>
-              </div>
             )}
             {!selectionMode && isEthiopianAgent && (
               <Button asChild size="lg" className="shadow-md">
@@ -329,36 +290,48 @@ export default function CandidatesPage() {
             ) : (
               <CandidateTable candidates={data.data} />
             )}
-            
-            <CandidatePagination
-              currentPage={filters.page}
-              pageSize={filters.page_size}
-              total={data.meta.total}
-            />
           </>
         )}
       </div>
 
-      {/* Batch Publish Bar */}
-      {isEthiopianAgent && selectionMode && (
-        <BatchPublishBar
+      {/* Unified Batch Action Bar */}
+      {selectionMode && (
+        <BatchActionBar
           selectedCount={selectedIds.size}
-          onPublish={handleBatchPublish}
+          totalCount={totalCount}
+          isEthiopianAgent={isEthiopianAgent}
           onClear={handleClearSelection}
+          onSelectAll={handleSelectAll}
+          onShare={() => setBatchShareDialogOpen(true)}
+          onPublish={handleBatchPublish}
+          onBulkCvDownload={() => handleBulkCvAction("download")}
+          onBulkCvRegenerate={() => handleBulkCvAction("regenerate")}
+          onBulkOverride={() => setBulkOverrideDialogOpen(true)}
+          onDelete={() => setBulkDeleteDialogOpen(true)}
+          onLock={!isEthiopianAgent ? handleBatchLock : undefined}
+          onUnlock={!isEthiopianAgent ? handleBatchUnlock : undefined}
+          onWhatsappShare={!isEthiopianAgent ? handleBatchWhatsapp : undefined}
           isPublishing={isPublishingBatch}
+          isDeleting={isDeletingBatch}
         />
       )}
 
       <BulkCvActionsDialog
         open={bulkCvDialogOpen}
-        onOpenChange={setBulkCvDialogOpen}
+        onOpenChange={(open) => {
+          setBulkCvDialogOpen(open)
+          if (!open) handleClearSelection()
+        }}
         candidateIds={Array.from(selectedIds)}
         workspaces={context?.workspaces || []}
         defaultAction={bulkCvAction}
       />
       <BulkSetOverrideDialog
         open={bulkOverrideDialogOpen}
-        onOpenChange={setBulkOverrideDialogOpen}
+        onOpenChange={(open) => {
+          setBulkOverrideDialogOpen(open)
+          if (!open) handleClearSelection()
+        }}
         candidateIds={Array.from(selectedIds)}
         workspaces={context?.workspaces || []}
       />
@@ -367,7 +340,27 @@ export default function CandidatesPage() {
         onOpenChange={setBulkPublishDialogOpen}
         candidateIds={Array.from(selectedIds)}
         workspaces={context?.workspaces || []}
+        onSuccess={handleClearSelection}
       />
+
+      <BatchShareDialog
+        open={batchShareDialogOpen}
+        onOpenChange={setBatchShareDialogOpen}
+        candidateIds={Array.from(selectedIds)}
+        workspaces={context?.workspaces || []}
+        onSuccess={handleClearSelection}
+      />
+
+      {!isEthiopianAgent && (
+        <WhatsAppPreviewDialog
+          open={whatsappDialogOpen}
+          onOpenChange={(open) => {
+            setWhatsappDialogOpen(open)
+            if (!open) handleClearSelection()
+          }}
+          candidates={(data?.data || []).filter((c) => selectedIds.has(c.id))}
+        />
+      )}
 
       <Dialog open={bulkDeleteDialogOpen} onOpenChange={setBulkDeleteDialogOpen}>
         <DialogContent>

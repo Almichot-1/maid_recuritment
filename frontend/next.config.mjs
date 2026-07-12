@@ -26,7 +26,14 @@ const nextConfig = {
 				hostname: "localhost",
 			},
 		],
+		formats: ["image/avif", "image/webp"],
+		deviceSizes: [375, 640, 750, 828, 1080, 1200],
+		imageSizes: [16, 32, 48, 64, 96, 128, 256],
 	},
+	compress: true,
+	poweredByHeader: false,
+	reactStrictMode: true,
+	swcMinify: true,
 	async headers() {
 		return [
 			{
@@ -38,6 +45,18 @@ const nextConfig = {
 					{ key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
 					{ key: "Strict-Transport-Security", value: "max-age=31536000; includeSubDomains" },
 					{ key: "Content-Security-Policy", value: "frame-ancestors 'none'; base-uri 'self'; object-src 'none'" },
+				],
+			},
+			{
+			source: "/branding/:path*",
+			headers: [
+				{ key: "Cache-Control", value: "public, max-age=31536000, immutable" },
+			],
+		},
+		{
+			source: "/:path*.webp",
+			headers: [
+				{ key: "Cache-Control", value: "public, max-age=31536000, immutable" },
 				],
 			},
 		];

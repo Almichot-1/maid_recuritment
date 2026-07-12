@@ -172,7 +172,8 @@ func NewChatHandler(chatService *service.ChatService, allowedOrigins []string) *
 			CheckOrigin: func(r *http.Request) bool {
 				origin := strings.TrimSpace(r.Header.Get("Origin"))
 				if origin == "" {
-					return false
+					log.Printf("[CheckOrigin] WARN chat: empty origin — allowing connection")
+					return true
 				}
 				return isAllowedOrigin(origin, normalizedOrigins)
 			},

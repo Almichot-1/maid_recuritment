@@ -1,12 +1,47 @@
 package ocr
 
 import (
+	"fmt"
 	"regexp"
 	"strconv"
 	"strings"
 	"time"
 	"unicode"
 )
+
+// levenshteinDistance computes the Levenshtein (edit) distance between
+// two strings — the minimum number of single-character edits needed
+// to transform one into the other.
+func levenshteinDistance(a, b string) int {
+	if len(a) == 0 {
+		return len(b)
+	}
+	if len(b) == 0 {
+		return len(a)
+	}
+
+	// Use two-row DP for O(n) space
+	prev := make([]int, len(b)+1)
+	curr := make([]int, len(b)+1)
+
+	for j := range prev {
+		prev[j] = j
+	}
+
+	for i := 0; i < len(a); i++ {
+		curr[0] = i + 1
+		for j := 0; j < len(b); j++ {
+			cost := 1
+			if a[i] == b[j] {
+				cost = 0
+			}
+			curr[j+1] = min(curr[j]+1, min(prev[j+1]+1, prev[j]+cost))
+		}
+		prev, curr = curr, prev
+	}
+
+	return prev[len(b)]
+}
 
 func extractMRZLinesFromText(text string) (string, string) {
 	text = strings.ReplaceAll(text, "\r", "")
@@ -116,14 +151,34 @@ func splitMRZText(text string) (string, string) {
 
 func extractVisualZoneFields(text string, overallConf float64) *VisualZoneData {
 	vz := &VisualZoneData{}
-	vz.PlaceOfBirth, vz.PlaceOfBirthConf = findLabelValue(text, []string{"PLACE OF BIRTH", "BIRTH PLACE", "PLACE OF BIR", "PLACE OF BIRTHH"}, overallConf)
+	vz.PlaceOfBirth, vz.PlaceOfBirthConf = findLabelValue(text, []string{"PLACE OF BIRTH", "BIRTH PLACE", "PLACE OF BIR", "PLACE OF BIRTHH",
+		"PLACE 0F BIRTH", "PIACE OF BIRTH", "PLACE OF B1RTH", "BIRTH PLACEH",
+		"LIEU DE NAISSANCE", "GEBURTSORT", "LUGAR DE NACIMIENTO",
+		"LUOGO DI NASCITA", "MESTO NAROZENI",
+	}, overallConf)
 	if vz.PlaceOfBirth == "" {
 		if pb := findPlaceOfBirthFallback(text); pb != "" {
 			vz.PlaceOfBirth = pb
 			vz.PlaceOfBirthConf = overallConf
 		}
 	}
-	vz.Authority, vz.AuthorityConf = findLabelValue(text, []string{"ISSUING AUTHORITY", "AUTHORITY", "ISSUING AUTH"}, overallConf)
+	if vz.PlaceOfBirth == "" {
+		if pb := findPlaceOfBirthByKeywordFallback(text); pb != "" {
+			vz.PlaceOfBirth = pb
+			vz.PlaceOfBirthConf = overallConf
+		}
+	}
+	if vz.PlaceOfBirth == "" {
+		vz.PlaceOfBirth, vz.PlaceOfBirthConf = findLabelValueWithThreshold(text, []string{"PLACE OF BIRTH", "BIRTH PLACE", "PLACE OF BIR", "PLACE OF BIRTHH",
+			"PLACE 0F BIRTH", "PIACE OF BIRTH", "PLACE OF B1RTH", "BIRTH PLACEH",
+			"LIEU DE NAISSANCE", "GEBURTSORT", "LUGAR DE NACIMIENTO",
+			"LUOGO DI NASCITA", "MESTO NAROZENI",
+		}, overallConf, 0.5)
+	}
+	vz.Authority, vz.AuthorityConf = findLabelValue(text, []string{"ISSUING AUTHORITY", "AUTHORITY", "ISSUING AUTH",
+		"ISSUED BY", "AUTHORIZED BY", "COMPETENT AUTHORITY",
+		"AUTORITE COMPETENTE", "EXPEDITRICE",
+	}, overallConf)
 	if vz.Authority == "" {
 		if a := findAuthorityFallback(text); a != "" {
 			vz.Authority = a
@@ -163,33 +218,92 @@ func findLabelValue(text string, labels []string, conf float64) (string, float64
 			label := labelsUpper[li]
 			labelNorm := labelsNorm[li]
 
+			// Stage 1: exact match (fast path)
 			if idx := strings.Index(lUpper, label); idx >= 0 {
-				vUpper := strings.TrimSpace(strings.TrimPrefix(lUpper[idx:], label))
-				vUpper = strings.TrimLeft(vUpper, ":- ")
-				vUpper = strings.TrimSpace(vUpper)
-				if vUpper != "" {
-					return cleanupVisualValue(vUpper), conf
+				if value, ok := extractLabelValue(lUpper, lOrig, origLines, i, idx, label); ok {
+					return value, conf
 				}
-				if next := nextNonEmptyLine(origLines, i+1, 3); next != "" {
-					return cleanupVisualValue(next), conf
+				continue
+			}
+
+			// Stage 2: normalized alphanumeric match
+			lNorm := normalizeLettersDigits(lUpper)
+			if labelNorm != "" && strings.Contains(lNorm, labelNorm) {
+				if value, ok := extractLabelValueFromLine(lOrig, origLines, i); ok {
+					return value, conf
+				}
+			}
+
+			// Stage 3: fuzzy match via Levenshtein distance
+			// Only try if line is long enough to contain the label
+			if len(lUpper) >= len(label)-2 {
+				dist := levenshteinDistance(
+					lUpper[:min(len(lUpper), len(label)+5)],
+					label,
+				)
+				similarity := 1.0 - float64(dist)/float64(len(label))
+				if similarity >= 0.7 {
+					if value, ok := extractLabelValueFromLine(lOrig, origLines, i); ok {
+						return value, conf
+					}
+				}
+			}
+		}
+	}
+	return "", 0
+}
+
+func findLabelValueWithThreshold(text string, labels []string, conf float64, minSimilarity float64) (string, float64) {
+	upper := strings.ToUpper(text)
+	origLines := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
+	upperLines := strings.Split(strings.ReplaceAll(upper, "\r", ""), "\n")
+
+	labelsUpper := make([]string, 0, len(labels))
+	labelsNorm := make([]string, 0, len(labels))
+	for _, label := range labels {
+		value := strings.TrimSpace(strings.ToUpper(label))
+		if value == "" {
+			continue
+		}
+		labelsUpper = append(labelsUpper, value)
+		labelsNorm = append(labelsNorm, normalizeLettersDigits(value))
+	}
+
+	for i := 0; i < len(upperLines); i++ {
+		lUpper := strings.TrimSpace(upperLines[i])
+		lOrig := strings.TrimSpace(origLines[i])
+		if lUpper == "" {
+			continue
+		}
+
+		for li := 0; li < len(labelsUpper); li++ {
+			label := labelsUpper[li]
+			labelNorm := labelsNorm[li]
+
+			if idx := strings.Index(lUpper, label); idx >= 0 {
+				if value, ok := extractLabelValue(lUpper, lOrig, origLines, i, idx, label); ok {
+					return value, conf
 				}
 				continue
 			}
 
 			lNorm := normalizeLettersDigits(lUpper)
 			if labelNorm != "" && strings.Contains(lNorm, labelNorm) {
-				if parts := strings.SplitN(lOrig, ":", 2); len(parts) == 2 {
-					if v := strings.TrimSpace(parts[1]); v != "" {
-						return cleanupVisualValue(v), conf
-					}
+				if value, ok := extractLabelValueFromLine(lOrig, origLines, i); ok {
+					return value, conf
 				}
-				if parts := strings.SplitN(lOrig, "-", 2); len(parts) == 2 {
-					if v := strings.TrimSpace(parts[1]); v != "" {
-						return cleanupVisualValue(v), conf
+			}
+
+			if len(lUpper) >= len(label)-2 {
+				dist := levenshteinDistance(
+					lUpper[:min(len(lUpper), len(label)+5)],
+					label,
+				)
+				similarity := 1.0 - float64(dist)/float64(len(label))
+				if similarity >= minSimilarity {
+					if value, ok := extractLabelValueFromLine(lOrig, origLines, i); ok {
+						return value, conf
 					}
-				}
-				if next := nextNonEmptyLine(origLines, i+1, 3); next != "" {
-					return cleanupVisualValue(next), conf
 				}
 			}
 		}
@@ -232,13 +346,43 @@ func findDateOfIssue(text string, conf float64) (time.Time, float64) {
 	linesUpper := strings.Split(upper, "\n")
 	linesOrig := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
 
+	labels := []string{"DATE OF ISSUE", "ISSUE DATE", "DATE D'EMISSION", "DATE DE DELIVRANCE", "AUSSTELLUNGSDATUM", "FECHA DE EXPEDICION", "FECHA DE EMISION", "DATA DI RILASCIO"}
+	labelsNorm := make([]string, len(labels))
+	for i, l := range labels {
+		labelsNorm[i] = normalizeLettersDigits(l)
+	}
+
 	for i := 0; i < len(linesUpper); i++ {
 		line := strings.TrimSpace(linesUpper[i])
 		if line == "" {
 			continue
 		}
 		lNorm := normalizeLettersDigits(line)
-		if !strings.Contains(line, "DATE OF ISSUE") && !strings.Contains(line, "ISSUE DATE") && !strings.Contains(lNorm, "DATEOFISSUE") && !strings.Contains(lNorm, "ISSUEDATE") {
+
+		matched := false
+		// Stage 1: exact match
+		if containsAny(line, labels) {
+			matched = true
+		}
+		// Stage 2: normalized alphanumeric match
+		if !matched && containsAny(lNorm, labelsNorm) {
+			matched = true
+		}
+		// Stage 3: fuzzy match via Levenshtein distance
+		if !matched {
+			for _, label := range labels {
+				if len(line) >= len(label)-2 {
+					end := min(len(line), len(label)+5)
+					dist := levenshteinDistance(line[:end], label)
+					similarity := 1.0 - float64(dist)/float64(len(label))
+					if similarity >= 0.7 {
+						matched = true
+						break
+					}
+				}
+			}
+		}
+		if !matched {
 			continue
 		}
 		for j := i; j < len(linesOrig) && j <= i+3; j++ {
@@ -331,6 +475,48 @@ func findPlaceOfBirthFallback(text string) string {
 	return ""
 }
 
+func findPlaceOfBirthByKeywordFallback(text string) string {
+	upper := strings.ToUpper(strings.ReplaceAll(text, "\r", ""))
+	linesUpper := strings.Split(upper, "\n")
+	linesOrig := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
+
+	keywords := []string{"BIRTH", "B1RTH", "BIRTHH"}
+
+	for i := 0; i < len(linesUpper) && i < len(linesOrig); i++ {
+		lU := strings.TrimSpace(linesUpper[i])
+		if lU == "" {
+			continue
+		}
+
+		for _, kw := range keywords {
+			if !strings.Contains(lU, kw) {
+				continue
+			}
+
+			if parts := strings.SplitN(lU, ":", 2); len(parts) == 2 {
+				if strings.Contains(strings.ToUpper(parts[0]), kw) {
+					if v := strings.TrimSpace(parts[1]); v != "" {
+						return cleanupVisualValue(v)
+					}
+				}
+			}
+
+			if parts := strings.SplitN(lU, "-", 2); len(parts) == 2 {
+				if strings.Contains(strings.ToUpper(parts[0]), kw) {
+					if v := strings.TrimSpace(parts[1]); v != "" {
+						return cleanupVisualValue(v)
+					}
+				}
+			}
+
+			if next := nextNonEmptyLine(linesOrig, i+1, 4); next != "" {
+				return cleanupVisualValue(next)
+			}
+		}
+	}
+	return ""
+}
+
 func findPlaceOfBirthNearBirthDate(text string, dateOfBirth time.Time) string {
 	if strings.TrimSpace(text) == "" || dateOfBirth.IsZero() {
 		return ""
@@ -339,7 +525,7 @@ func findPlaceOfBirthNearBirthDate(text string, dateOfBirth time.Time) string {
 	lines := strings.Split(strings.ReplaceAll(text, "\r", ""), "\n")
 	month := strings.ToUpper(dateOfBirth.Format("Jan"))
 	day := dateOfBirth.Day()
-	datePattern := regexp.MustCompile(`(?i)\b` + strconv.Itoa(day) + `\s*` + month + `(?:['\s]*\d{1,2})?\b`)
+	datePattern := regexp.MustCompile(fmt.Sprintf(`(?i)\b%02d\s*%s(?:['\s]*\d{1,2})?\b`, day, month))
 
 	for index, rawLine := range lines {
 		upperLine := strings.ToUpper(strings.TrimSpace(rawLine))
@@ -351,11 +537,44 @@ func findPlaceOfBirthNearBirthDate(text string, dateOfBirth time.Time) string {
 			return candidate
 		}
 
+		if index-1 >= 0 {
+			if candidate := cleanupPlaceOfBirthCandidate(lines[index-1]); candidate != "" {
+				return candidate
+			}
+		}
+
 		if index+1 < len(lines) {
 			if candidate := cleanupPlaceOfBirthCandidate(lines[index+1]); candidate != "" {
 				return candidate
 			}
 		}
+	}
+
+	return ""
+}
+
+func extractPlaceOfBirthFromRawText(rawText string, dateOfBirth time.Time) string {
+	if strings.TrimSpace(rawText) == "" {
+		return ""
+	}
+
+	if pb, _ := findLabelValueWithThreshold(rawText, []string{
+		"PLACE OF BIRTH", "BIRTH PLACE", "PLACE OF BIR", "PLACE OF BIRTHH",
+		"PLACE 0F BIRTH", "PIACE OF BIRTH", "PLACE OF B1RTH", "BIRTH PLACEH",
+		"LIEU DE NAISSANCE", "GEBURTSORT", "LUGAR DE NACIMIENTO",
+		"LUOGO DI NASCITA", "MESTO NAROZENI",
+	}, 0, 0.5); pb != "" {
+		return pb
+	}
+
+	if !dateOfBirth.IsZero() {
+		if pb := findPlaceOfBirthNearBirthDate(rawText, dateOfBirth); pb != "" {
+			return pb
+		}
+	}
+
+	if pb := findPlaceOfBirthByKeywordFallback(rawText); pb != "" {
+		return pb
 	}
 
 	return ""
@@ -433,6 +652,7 @@ func nextNonEmptyLine(lines []string, startIndex, maxLookahead int) string {
 var (
 	reISO      = regexp.MustCompile(`\b(\d{4})-(\d{2})-(\d{2})\b`)
 	reSlash    = regexp.MustCompile(`\b(\d{2})[\./](\d{2})[\./](\d{4})\b`)
+	reSlashYY  = regexp.MustCompile(`\b(\d{2})[\./](\d{2})[\./](\d{2})\b`)
 	reDMMMYY   = regexp.MustCompile(`\b(\d{2})\s*([A-Z]{3})\s*(\d{2})\b`)
 	reDMMMYYYY = regexp.MustCompile(`\b(\d{2})\s*([A-Z]{3})\s*(\d{4})\b`)
 )
@@ -477,6 +697,15 @@ func extractDates(line string) []time.Time {
 	for _, m := range reDMMMYY.FindAllStringSubmatch(line, -1) {
 		d, _ := strconv.Atoi(m[1])
 		mo := monthFromMMM(m[2])
+		yy, _ := strconv.Atoi(m[3])
+		y := expand2DigitYear(yy)
+		if t := safeDate(y, mo, d); !t.IsZero() {
+			out = append(out, t)
+		}
+	}
+	for _, m := range reSlashYY.FindAllStringSubmatch(line, -1) {
+		d, _ := strconv.Atoi(m[1])
+		mo, _ := strconv.Atoi(m[2])
 		yy, _ := strconv.Atoi(m[3])
 		y := expand2DigitYear(yy)
 		if t := safeDate(y, mo, d); !t.IsZero() {
@@ -549,7 +778,7 @@ func pickLikelyIssueDate(dates []time.Time) time.Time {
 	best := time.Time{}
 	for _, d := range dates {
 		d = d.UTC()
-		if d.IsZero() || d.After(now.AddDate(0, 0, 1)) || d.Before(cutoffPast) {
+		if d.IsZero() || !d.Before(now) || d.Before(cutoffPast) {
 			continue
 		}
 		if best.IsZero() || d.After(best) {
@@ -557,4 +786,56 @@ func pickLikelyIssueDate(dates []time.Time) time.Time {
 		}
 	}
 	return best
+}
+
+// min returns the smaller of two integers.
+func min(a, b int) int {
+	if a < b {
+		return a
+	}
+	return b
+}
+
+// extractLabelValue extracts the value after a matched label on the same line
+// or from the next non-empty line.
+func extractLabelValue(upperLine, origLine string, origLines []string, lineIndex int, matchIdx int, label string) (string, bool) {
+	vUpper := strings.TrimSpace(strings.TrimPrefix(upperLine[matchIdx:], label))
+	vUpper = strings.TrimLeft(vUpper, ":- ")
+	vUpper = strings.TrimSpace(vUpper)
+	if vUpper != "" {
+		return cleanupVisualValue(vUpper), true
+	}
+	if next := nextNonEmptyLine(origLines, lineIndex+1, 3); next != "" {
+		return cleanupVisualValue(next), true
+	}
+	return "", false
+}
+
+// extractLabelValueFromLine tries to extract a value from the current line
+// (after colon or dash separator) or from the next non-empty line.
+func extractLabelValueFromLine(origLine string, origLines []string, lineIndex int) (string, bool) {
+	if parts := strings.SplitN(origLine, ":", 2); len(parts) == 2 {
+		if v := strings.TrimSpace(parts[1]); v != "" {
+			return cleanupVisualValue(v), true
+		}
+	}
+	if parts := strings.SplitN(origLine, "-", 2); len(parts) == 2 {
+		if v := strings.TrimSpace(parts[1]); v != "" {
+			return cleanupVisualValue(v), true
+		}
+	}
+	if next := nextNonEmptyLine(origLines, lineIndex+1, 3); next != "" {
+		return cleanupVisualValue(next), true
+	}
+	return "", false
+}
+
+// containsAny checks if the string contains any of the substrings.
+func containsAny(s string, substrings []string) bool {
+	for _, sub := range substrings {
+		if strings.Contains(s, sub) {
+			return true
+		}
+	}
+	return false
 }

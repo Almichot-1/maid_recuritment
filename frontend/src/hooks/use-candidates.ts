@@ -45,6 +45,7 @@ export interface SetPairOverrideRequest {
   pairing_id: string;
   country_applied?: string;
   salary_offered?: string;
+  logo_url?: string;
 }
 
 export interface PublishCandidateResponse {
@@ -76,8 +77,9 @@ export interface CandidateApiResponse {
   education_level?: string;
   experience_years?: number;
   country_of_experience?: string;
-  languages?: string[];
+  languages?: Array<{ language: string; proficiency?: string }>;
   skills?: string[];
+  remark?: string;
   status: Candidate["status"];
   created_by?: string | { id: string };
   cv_pdf_url?: string;
@@ -118,8 +120,9 @@ export function normalizeCandidate(candidate: CandidateApiResponse): Candidate {
     education_level: candidate.education_level,
     experience_years: candidate.experience_years,
     country_of_experience: candidate.country_of_experience,
-    languages: candidate.languages || [],
+    languages: Array.isArray(candidate.languages) ? candidate.languages.map((item) => typeof item === "string" ? { language: item, proficiency: "Intermediate" } : item) : [],
     skills: candidate.skills || [],
+    remark: candidate.remark,
     status: candidate.status,
     created_by: createdBy,
     cv_pdf_url: candidate.cv_pdf_url,
@@ -164,14 +167,16 @@ export function useCandidates(filters: CandidateFilters = {}) {
     },
     enabled:
       !!user && (!requiresWorkspace || (isPairingReady && !!activePairingId)),
-    staleTime: 30000,
+    staleTime: 120_000,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
       const status = (error as AxiosError)?.response?.status;
       if (status === 401 || status === 403) {
         return false;
       }
-
+      if (!(error as AxiosError)?.response) {
+        return failureCount < 3;
+      }
       return failureCount < 2;
     },
   });
@@ -195,7 +200,7 @@ export function useCandidate(id?: string) {
       !!id &&
       !!user &&
       (!requiresWorkspace || (isPairingReady && !!activePairingId)),
-    staleTime: 30_000,
+    staleTime: 120_000,
     refetchOnMount: true,
     refetchOnWindowFocus: false,
     retry: (failureCount, error) => {
@@ -203,7 +208,9 @@ export function useCandidate(id?: string) {
       if (status === 401 || status === 403 || status === 404) {
         return false;
       }
-
+      if (!(error as AxiosError)?.response) {
+        return failureCount < 3;
+      }
       return failureCount < 2;
     },
   });
@@ -527,11 +534,21 @@ export function useBatchDeleteCandidates() {
       const results = await Promise.allSettled(
         ids.map((id) => api.delete(`/candidates/${id}`))
       );
-      const errors = results.filter((r) => r.status === "rejected") as PromiseRejectedResult[];
+      const errors = results.filter((r) => {
+        if (r.status === "rejected") {
+          const err = r.reason as { response?: { status?: number } }
+          return err?.response?.status !== 404
+        }
+        return false
+      }) as PromiseRejectedResult[];
+      const deleted = results.filter((r) => r.status === "fulfilled").length +
+        results.filter((r) => r.status === "rejected" && (r.reason as { response?: { status?: number } })?.response?.status === 404).length;
       if (errors.length > 0) {
-        throw new Error(`${errors.length} of ${ids.length} candidates failed to delete`);
+        throw new Error(
+          `${errors.length} of ${ids.length} candidates failed to delete (${deleted} deleted)`
+        );
       }
-      return { deleted: ids.length };
+      return { deleted };
     },
     onSuccess: (result) => {
       queryClient.invalidateQueries({ queryKey: ["candidates"] });
@@ -611,7 +628,7 @@ export function useBatchRegenerateCV() {
 export function useBatchSetPairOverride() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async (req: { candidate_ids: string[]; pairing_id: string; country_applied?: string; salary_offered?: string }) => {
+    mutationFn: async (req: { candidate_ids: string[]; pairing_id: string; country_applied?: string; salary_offered?: string; logo_url?: string }) => {
       const response = await api.post('/candidates/batch-set-pair-override', req);
       return response.data.result;
     },
@@ -643,5 +660,100 @@ export function useBulkPublish() {
       }
     },
     onError: () => { toast.error('Failed to publish candidates'); },
+  });
+}
+
+export function useLockCandidate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (candidateId: string) => {
+      const response = await api.post(`/candidates/${candidateId}/lock`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      toast.success('Candidate locked successfully');
+    },
+    onError: (error) => {
+      const response = (error as AxiosError<{ error?: string }>).response;
+      toast.error(response?.data?.error || 'Failed to lock candidate');
+    },
+  });
+}
+
+export function useUnlockCandidate() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (candidateId: string) => {
+      const response = await api.post(`/candidates/${candidateId}/unlock`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      toast.success('Candidate unlocked successfully');
+    },
+    onError: (error) => {
+      const response = (error as AxiosError<{ error?: string }>).response;
+      toast.error(response?.data?.error || 'Failed to unlock candidate');
+    },
+  });
+}
+
+export function useBatchLockCandidates() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (candidateIds: string[]) => {
+      const response = await api.post('/candidates/batch-lock', { candidate_ids: candidateIds });
+      return response.data as { locked: number; total: number };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      toast.success(`Locked ${result.locked} of ${result.total} candidates`);
+    },
+    onError: () => {
+      toast.error('Failed to lock candidates');
+    },
+  });
+}
+
+export function useBatchUnlockCandidates() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (candidateIds: string[]) => {
+      const response = await api.post('/candidates/batch-unlock', { candidate_ids: candidateIds });
+      return response.data as { unlocked: number; total: number };
+    },
+    onSuccess: (result) => {
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      toast.success(`Unlocked ${result.unlocked} of ${result.total} candidates`);
+    },
+    onError: () => {
+      toast.error('Failed to unlock candidates');
+    },
+  });
+}
+
+export function useUpdateCandidateStatus(candidateId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (status: string) => {
+      const response = await api.patch(`/candidates/${candidateId}/status`, { status });
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['candidate', candidateId] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      queryClient.invalidateQueries({ queryKey: ['my-selections'] });
+      toast.success('Candidate status updated');
+    },
+    onError: (error) => {
+      const response = (error as AxiosError<{ error?: string }>).response;
+      toast.error(response?.data?.error || 'Failed to update candidate status');
+    },
   });
 }

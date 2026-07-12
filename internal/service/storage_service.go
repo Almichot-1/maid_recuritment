@@ -26,6 +26,7 @@ var ErrStorageUnavailable = errors.New("storage service is unavailable")
 type StorageService interface {
 	Upload(file io.Reader, fileName, contentType string) (url string, err error)
 	Delete(url string) error
+	Open(fileURL string) (io.ReadCloser, string, error)
 }
 
 type DisabledStorageService struct {
@@ -194,6 +195,13 @@ func (s *S3StorageService) SignedURL(fileURL string, options ReadURLOptions) (st
 			dispositionType = "inline"
 		}
 		input.ResponseContentDisposition = aws.String(fmt.Sprintf(`%s; filename="%s"`, dispositionType, fileName))
+	}
+
+	// If publicBaseURL is set, skip presigning and return the public URL directly.
+	// Presigned URLs use the internal S3 endpoint (e.g., minio:9000) which the
+	// browser cannot resolve from the host machine.
+	if strings.TrimSpace(s.publicBaseURL) != "" {
+		return s.publicURL(key), nil
 	}
 
 	result, err := s.presignClient.PresignGetObject(context.Background(), input, func(opts *s3.PresignOptions) {

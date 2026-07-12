@@ -4,6 +4,7 @@ import (
 	"image"
 	stddraw "image/draw"
 	"image/png"
+	"fmt"
 	"math"
 	"os"
 
@@ -21,7 +22,102 @@ const (
 	mrzMinTargetWidth        = 1200
 	mrzMaxTargetWidth        = 1600
 	visualZoneMaxTargetWidth = 1400
+
+	blurThreshold     = 60.0
+	sauvolaWindowSize = 31
+	sauvolaK          = 0.34
+	sauvolaR          = 128.0
+	claheClipLimit    = 3.0
+	claheTileSize     = 8
+	medianKernelSize  = 3
+	unsharpSigma      = 1.5
+	unsharpAmount     = 0.8
 )
+
+// QualityReport contains the result of image quality assessment.
+type QualityReport struct {
+	Pass      bool
+	BlurScore float64
+	Message   string
+}
+
+// BlurScore computes the variance of the Laplacian — a standard
+// blur/sharpness metric. Higher values = sharper images.
+// Typical threshold for passport images: ~100.
+func BlurScore(src *image.Gray) float64 {
+	if src == nil {
+		return 0
+	}
+	bounds := src.Bounds()
+	width := bounds.Dx()
+	height := bounds.Dy()
+	if width < 3 || height < 3 {
+		return 0
+	}
+
+	// Apply Laplacian kernel: [[0, -1, 0], [-1, 4, -1], [0, -1, 0]]
+	pixels := src.Pix
+	stride := src.Stride
+	var sum float64
+	var sumSquared float64
+	var count int
+
+	for y := 1; y < height-1; y++ {
+		for x := 1; x < width-1; x++ {
+			idx := y*stride + x
+			val := float64(pixels[idx])*4 -
+				float64(pixels[(y-1)*stride+x]) -
+				float64(pixels[(y+1)*stride+x]) -
+				float64(pixels[y*stride+(x-1)]) -
+				float64(pixels[y*stride+(x+1)])
+			sum += val
+			sumSquared += val * val
+			count++
+		}
+	}
+
+	if count == 0 {
+		return 0
+	}
+
+	mean := sum / float64(count)
+	variance := sumSquared/float64(count) - mean*mean
+	if variance < 0 {
+		return 0
+	}
+	return variance
+}
+
+// AssessQuality evaluates image quality for OCR suitability.
+// In Phase 1, returns Pass=true always (logging only) to maintain
+// backward compatibility. The score is available for monitoring.
+func AssessQuality(src *image.Gray) *QualityReport {
+	report := &QualityReport{Pass: true}
+
+	if src == nil {
+		report.Pass = false
+		report.Message = "image is nil"
+		return report
+	}
+
+	score := BlurScore(src)
+	report.BlurScore = score
+
+	if score < 0.01 {
+		report.Pass = false
+		report.Message = "image is empty or blank"
+		return report
+	}
+
+	if score < blurThreshold {
+		report.Pass = false
+		report.Message = fmt.Sprintf("image too blurry (score: %.1f, threshold: %.1f)", score, blurThreshold)
+		return report
+	}
+
+	report.Message = fmt.Sprintf("blur score: %.1f", score)
+	return report
+}
 
 func prepareMRZImage(imagePath string) (string, func(), error) {
 	img, bounds, err := decodeImageFile(imagePath)
@@ -45,7 +141,7 @@ func prepareMRZImage(imagePath string) (string, func(), error) {
 	gray := toGray(cropped)
 	targetWidth := clamp(width, mrzMinTargetWidth, mrzMaxTargetWidth)
 	gray = resizeGray(gray, targetWidth)
-	gray = binarizeGray(gray)
+	gray = preprocessPipeline(gray, true)
 
 	return writeTempPNG(gray, "passport-mrz-*.png")
 }
@@ -73,6 +169,8 @@ func prepareVisualZoneImage(imagePath string) (string, func(), error) {
 	if gray.Bounds().Dx() > visualZoneMaxTargetWidth {
 		gray = resizeGray(gray, visualZoneMaxTargetWidth)
 	}
+
+	gray = preprocessPipeline(gray, true)
 
 	return writeTempPNG(gray, "passport-visual-*.png")
 }
@@ -228,3 +326,5 @@ func clamp(value, minimum, maximum int) int {
 	}
 	return value
 }
+
+

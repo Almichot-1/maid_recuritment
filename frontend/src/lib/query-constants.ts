@@ -1,0 +1,25 @@
+export const STALE_TIMES = {
+  VERY_SHORT: 15_000,
+  SHORT: 30_000,
+  MEDIUM: 120_000,
+  LONG: 300_000,
+  VERY_LONG: 600_000,
+} as const
+
+export const REFETCH_INTERVALS = {
+  CHAT: 30_000,
+  NOTIFICATIONS: 120_000,
+  DASHBOARD_BACKGROUND: 300_000,
+  NONE: false as const,
+} as const
+
+export const GC_TIMES = {
+  DEFAULT: 30 * 60_000,
+} as const
+
+export const RETRY_STRATEGY = {
+  MAX_NETWORK_RETRIES: 3,
+  MAX_SERVER_RETRIES: 2,
+  NETWORK_BACKOFF_MS: 1000,
+  MAX_BACKOFF_MS: 30_000,
+} as const

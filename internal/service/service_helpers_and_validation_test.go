@@ -11,7 +11,6 @@ import (
 
 	"maid-recruitment-tracking/internal/config"
 	"maid-recruitment-tracking/internal/domain"
-	"maid-recruitment-tracking/internal/repository"
 )
 
 func TestAuthHelperFunctions(t *testing.T) {
@@ -55,9 +54,9 @@ func TestCandidateHelpersAndUpdateSuccess(t *testing.T) {
 		updated = true
 		return nil
 	}
-	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
+	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
-	require.NoError(t, svc.UpdateCandidate("id", "owner", CandidateInput{FullName: "Updated", Languages: []string{"en"}, Skills: []string{"cook"}}))
+	require.NoError(t, svc.UpdateCandidate("id", "owner", CandidateInput{FullName: "Updated", Languages: []domain.LanguageEntry{{Language: "en", Proficiency: "Basic"}}, Skills: []string{"cook"}}))
 	assert.True(t, updated)
 }
 
@@ -98,25 +97,6 @@ func TestNotificationConstructorsAndEdges(t *testing.T) {
 	assert.True(t, len(repo.created) >= 4)
 }
 
-func TestStatusStepUpdate_ErrorMapping(t *testing.T) {
-	service := &StatusStepService{
-		statusStepRepository: &statusStepRepoBehaviorMock{
-			getByCandidateIDFn: func(candidateID string) ([]*domain.StatusStep, error) {
-				return []*domain.StatusStep{{ID: "s1", CandidateID: candidateID, StepName: domain.MedicalTest, StepStatus: domain.Pending}}, nil
-			},
-			updateFn: func(step *domain.StatusStep) error { return repository.ErrStatusStepNotFound },
-		},
-		candidateRepository: &statusStepCandidateRepoMock{getByIDFn: func(id string) (*domain.Candidate, error) {
-			return &domain.Candidate{ID: id, CreatedBy: "owner"}, nil
-		}},
-		selectionRepository: &statusStepSelectionRepoMock{},
-		notificationService: &notificationSenderMock{foreignByID: map[string]bool{}},
-	}
-
-	err := service.UpdateStep("cand", domain.MedicalTest, "owner", domain.InProgress, "")
-	require.ErrorIs(t, err, ErrStepNotFound)
-}
-
 func TestSMTPEmailService_SendSMTPError(t *testing.T) {
 	service, err := NewSMTPEmailService(&config.Config{SMTPHost: "127.0.0.1", SMTPPort: "1", SMTPUser: "mailer@example.com", SMTPPass: "p"})
 	require.NoError(t, err)
@@ -136,13 +116,11 @@ func TestSelectionService_ConstructorValidationMore(t *testing.T) {
 }
 
 func TestApprovalService_ConstructorValidationMore(t *testing.T) {
-	_, err := NewApprovalService(&approvalRepositoryMock{}, nil, &candidateRepositoryMock{}, &StatusStepService{}, &notificationSenderMock{foreignByID: map[string]bool{}})
+	_, err := NewApprovalService(&approvalRepositoryMock{}, nil, &candidateRepositoryMock{}, &notificationSenderMock{foreignByID: map[string]bool{}})
 	require.Error(t, err)
-	_, err = NewApprovalService(&approvalRepositoryMock{}, &selectionRepositoryMock{}, nil, &StatusStepService{}, &notificationSenderMock{foreignByID: map[string]bool{}})
+	_, err = NewApprovalService(&approvalRepositoryMock{}, &selectionRepositoryMock{}, nil, &notificationSenderMock{foreignByID: map[string]bool{}})
 	require.Error(t, err)
-	_, err = NewApprovalService(&approvalRepositoryMock{}, &selectionRepositoryMock{}, &candidateRepositoryMock{}, nil, &notificationSenderMock{foreignByID: map[string]bool{}})
-	require.Error(t, err)
-	_, err = NewApprovalService(&approvalRepositoryMock{}, &selectionRepositoryMock{}, &candidateRepositoryMock{}, &StatusStepService{}, nil)
+	_, err = NewApprovalService(&approvalRepositoryMock{}, &selectionRepositoryMock{}, &candidateRepositoryMock{}, nil)
 	require.Error(t, err)
 }
 

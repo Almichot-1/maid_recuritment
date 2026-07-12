@@ -79,17 +79,16 @@ export function PreferencesSettings() {
   }
 
   return (
-    <div className="space-y-6">
-      <Card className="overflow-hidden border-border/70 shadow-sm">
-        <CardHeader>
-          <CardTitle>Appearance</CardTitle>
-          <CardDescription>
-            Switch between light, dark, and system themes and keep the interface comfortable on mobile or desktop.
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+    <Form {...form}>
+      <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <Card className="overflow-hidden border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>Appearance</CardTitle>
+            <CardDescription>
+              Switch between light, dark, and system themes and keep the interface comfortable on mobile or desktop.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
               <FormField
                 control={form.control}
                 name="theme"
@@ -196,21 +195,17 @@ export function PreferencesSettings() {
                   {mounted ? ((theme as string) || "system") : "system"}
                 </span>
               </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card className="overflow-hidden border-border/70 shadow-sm">
-        <CardHeader>
-          <CardTitle>Notifications</CardTitle>
-          <CardDescription>
-            Configure how you want to receive notifications.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Form {...form}>
-            <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-6">
+        <Card className="overflow-hidden border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>Notifications</CardTitle>
+            <CardDescription>
+              Configure how you want to receive notifications.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
               <div className="space-y-4">
                 {/* Email Notifications */}
                 <FormField
@@ -300,19 +295,17 @@ export function PreferencesSettings() {
                   )}
                 />
               </div>
-            </form>
-          </Form>
-        </CardContent>
-      </Card>
+          </CardContent>
+        </Card>
 
-      <Card className="overflow-hidden border-border/70 shadow-sm">
-        <CardHeader>
-          <CardTitle>Language</CardTitle>
-          <CardDescription>
-            Select your preferred language for the application.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
+        <Card className="overflow-hidden border-border/70 shadow-sm">
+          <CardHeader>
+            <CardTitle>Language</CardTitle>
+            <CardDescription>
+              Select your preferred language for the application.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
           <div className="space-y-4">
             <div className="space-y-2">
               <Label>Application Language</Label>
@@ -334,13 +327,14 @@ export function PreferencesSettings() {
         </CardContent>
       </Card>
 
-      {/* Save Button */}
-      <div className="flex justify-end">
-        <Button onClick={form.handleSubmit(onSubmit)} disabled={isPending} className="min-w-[180px]">
-          {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
-          Save Preferences
-        </Button>
-      </div>
-    </div>
+        {/* Save Button */}
+        <div className="flex justify-end">
+          <Button type="submit" disabled={isPending} className="min-w-[180px]">
+            {isPending && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+            Save Preferences
+          </Button>
+        </div>
+      </form>
+    </Form>
   )
 }

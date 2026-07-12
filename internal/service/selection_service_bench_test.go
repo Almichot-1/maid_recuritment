@@ -33,6 +33,7 @@ func (m *selectionBenchCandidateRepo) Lock(candidateID, lockedBy string, expires
 	return nil
 }
 func (m *selectionBenchCandidateRepo) Unlock(candidateID string) error { return nil }
+func (m *selectionBenchCandidateRepo) UpdateStatus(id string, status domain.CandidateStatus) error { return nil }
 
 type selectionBenchRepo struct {
 	db *gorm.DB

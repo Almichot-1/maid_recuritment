@@ -122,15 +122,7 @@ func (h *ApprovalHandler) buildApprovalStatusResponse(selectionID, role, userID,
 	if err != nil {
 		return nil, 0, err
 	}
-	if h.pairingService != nil {
-		pairing, err := h.pairingService.ResolveActivePairing(userID, role, pairingID)
-		if err != nil {
-			return nil, 0, err
-		}
-		if strings.TrimSpace(selection.PairingID) != strings.TrimSpace(pairing.ID) {
-			return nil, 0, service.ErrNotAuthorized
-		}
-	}
+
 
 	candidate, err := h.candidateRepo.GetByID(selection.CandidateID)
 	if err != nil {
@@ -200,8 +192,6 @@ func (h *ApprovalHandler) writeApprovalError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrNotAuthorized):
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-	case errors.Is(err, service.ErrSelectionSupportingDocumentsRequired):
-		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 	case errors.Is(err, service.ErrPairingRequired):
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "select a partner workspace to continue"})
 	case errors.Is(err, service.ErrNoActivePairings), errors.Is(err, service.ErrPairingAccessDenied):

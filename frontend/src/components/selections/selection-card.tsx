@@ -9,8 +9,8 @@ import Image from "next/image"
 import { Selection, SelectionStatus } from "@/types"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useApproveSelection, useRejectSelection } from "@/hooks/use-selections"
-import { LockCountdown } from "./lock-countdown"
 import { ApprovalDialog } from "./approval-dialog"
+import { ProgressBadges } from "./progress-badges"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent } from "@/components/ui/card"
@@ -30,23 +30,18 @@ export function SelectionCard({ selection }: SelectionCardProps) {
 
   const candidate = selection.candidate
 
-  if (!candidate) {
+  // This should not happen as SelectionList filters out invalid candidates
+  // But keep as safety check
+  if (!candidate || !candidate.id || !candidate.full_name) {
     return null
   }
 
   const photoUrl = candidate.photo_url
 
-  // Determine user's approval status
-  const userHasApproved = isEthiopianAgent 
-    ? selection.ethiopian_approved 
-    : selection.foreign_approved
-
   const isPending = selection.status === SelectionStatus.PENDING
   const isApproved = selection.status === SelectionStatus.APPROVED
   const isRejected = selection.status === SelectionStatus.REJECTED
   const isExpired = selection.status === SelectionStatus.EXPIRED
-  const hasRequiredEmployerDocuments = !!selection.employer_contract?.file_url
-  const approvalBlockedByEmployerPackage = isEthiopianAgent && isPending && !hasRequiredEmployerDocuments
 
   const getStatusBadge = () => {
     switch (selection.status) {
@@ -72,6 +67,12 @@ export function SelectionCard({ selection }: SelectionCardProps) {
         return (
           <Badge className="bg-gray-500 hover:bg-gray-600 text-white">
             Expired
+          </Badge>
+        )
+      case SelectionStatus.RELEASED:
+        return (
+          <Badge className="bg-orange-500 hover:bg-orange-600 text-white">
+            Released
           </Badge>
         )
       default:
@@ -151,12 +152,11 @@ export function SelectionCard({ selection }: SelectionCardProps) {
               <p className="text-xs text-muted-foreground">
                 Selected {format(new Date(selection.created_at), "MMM dd, yyyy")}
               </p>
-              {isPending && (
-                <LockCountdown 
-                  expiresAt={selection.expires_at}
-                  className="text-xs"
-                  showIcon={true}
-                />
+              {/* Show progress badges for approved selections */}
+              {isApproved && selection.progress && (
+                <div className="mt-2">
+                  <ProgressBadges progress={selection.progress} />
+                </div>
               )}
             </div>
 
@@ -164,40 +164,23 @@ export function SelectionCard({ selection }: SelectionCardProps) {
 
             {/* Right: Approval Status & Actions */}
             <div className="flex flex-col gap-3 lg:min-w-[250px]">
-              {/* Approval Indicators */}
-              <div className="flex items-center gap-4">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">Ethiopian:</span>
-                  {selection.ethiopian_approved ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  ) : (
-                    <Clock className="h-5 w-5 text-gray-400" />
-                  )}
+              {/* Approval Status */}
+              {isPending && (
+                <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                  <Clock className="h-4 w-4" />
+                  <span>Waiting for Ethiopian agency approval</span>
                 </div>
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-medium text-muted-foreground">Foreign:</span>
-                  {selection.foreign_approved ? (
-                    <CheckCircle2 className="h-5 w-5 text-green-600" />
-                  ) : (
-                    <Clock className="h-5 w-5 text-gray-400" />
-                  )}
-                </div>
-              </div>
+              )}
 
               {/* Action Buttons */}
               <div className="flex flex-wrap gap-2">
-                {isPending && !userHasApproved && (
+                {isPending && isEthiopianAgent && !selection.ethiopian_approved && (
                   <>
-                    {approvalBlockedByEmployerPackage && (
-                      <div className="w-full rounded-md border border-amber-300/50 bg-amber-50/80 px-3 py-2 text-center text-xs text-amber-900 dark:border-amber-900/40 dark:bg-amber-950/30 dark:text-amber-100">
-                        Waiting for the foreign agency to upload the contract package.
-                      </div>
-                    )}
                     <Button
                       size="sm"
                       onClick={() => setApproveDialogOpen(true)}
                       className="bg-green-600 hover:bg-green-700 flex-1"
-                      disabled={isApproving || isRejecting || approvalBlockedByEmployerPackage}
+                      disabled={isApproving || isRejecting}
                     >
                       {isApproving && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
                       Approve
@@ -206,19 +189,25 @@ export function SelectionCard({ selection }: SelectionCardProps) {
                       size="sm"
                       variant="outline"
                       onClick={() => setRejectDialogOpen(true)}
-                      className="text-red-600 border-red-600 hover:bg-red-50 dark:hover:bg-red-950/20 flex-1"
+                      className="text-orange-600 border-orange-600 hover:bg-orange-50 dark:hover:bg-orange-950/20 flex-1"
                       disabled={isApproving || isRejecting}
                     >
-                      {isRejecting && <Loader2 className="mr-2 h-3 w-3 animate-spin" />}
-                      Reject
+                      Unlock
                     </Button>
                   </>
                 )}
 
-                {isPending && userHasApproved && (
+                {isPending && isEthiopianAgent && selection.ethiopian_approved && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground p-2 bg-muted/50 rounded-md w-full justify-center">
+                    <CheckCircle2 className="h-4 w-4 text-green-600" />
+                    <span>Approved</span>
+                  </div>
+                )}
+
+                {isPending && !isEthiopianAgent && (
                   <div className="flex items-center gap-2 text-sm text-muted-foreground p-2 bg-muted/50 rounded-md w-full justify-center">
                     <Clock className="h-4 w-4" />
-                    <span>Waiting for other party...</span>
+                    <span>Waiting for Ethiopian agency...</span>
                   </div>
                 )}
 
@@ -233,7 +222,7 @@ export function SelectionCard({ selection }: SelectionCardProps) {
                   </Button>
                 )}
 
-                {(isRejected || isExpired) && (
+                {(isRejected || isExpired || selection.status === 'released') && (
                   <Button
                     size="sm"
                     variant="outline"

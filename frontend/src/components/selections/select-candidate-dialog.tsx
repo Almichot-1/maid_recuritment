@@ -3,7 +3,7 @@
 import * as React from "react"
 import axios from "axios"
 import { useRouter } from "next/navigation"
-import { AlertCircle, CheckCircle2, Loader2, User } from "lucide-react"
+import { CheckCircle2, Loader2, User } from "lucide-react"
 import { toast } from "sonner"
 
 import Image from "next/image"
@@ -11,7 +11,6 @@ import { Candidate } from "@/types"
 import { useSelectCandidate } from "@/hooks/use-selections"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -20,7 +19,6 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
-import { Separator } from "@/components/ui/separator"
 
 interface SelectCandidateSuccessResponse {
   selection?: {
@@ -41,22 +39,14 @@ interface SelectCandidateDialogProps {
 
 export function SelectCandidateDialog({ candidate, open, onOpenChange }: SelectCandidateDialogProps) {
   const router = useRouter()
-  const [agreed, setAgreed] = React.useState(false)
   const { mutate: selectCandidate, isPending } = useSelectCandidate(candidate.id)
-
-  // Reset checkbox when dialog opens/closes
-  React.useEffect(() => {
-    if (!open) {
-      setAgreed(false)
-    }
-  }, [open])
 
   const handleConfirm = () => {
     selectCandidate(undefined, {
         onSuccess: (data: SelectCandidateSuccessResponse) => {
         onOpenChange(false)
         toast.success("Candidate selected successfully!", {
-          description: "Upload the employer contract and employer ID next so the agency can review and approve within 24 hours.",
+          description: "The Ethiopian agency will review your selection.",
         })
         // Redirect to selection detail page if we have the selection ID
         if (data?.selection?.id) {
@@ -138,9 +128,9 @@ export function SelectCandidateDialog({ candidate, open, onOpenChange }: SelectC
               {candidate.languages && candidate.languages.length > 0 && (
                 <div className="flex flex-wrap gap-1.5 pt-1">
                   <span className="text-xs font-medium text-muted-foreground mr-1">Languages:</span>
-                  {candidate.languages.map((lang, index) => (
+                  {(candidate.languages as Array<{ language: string; proficiency?: string }>).map((lang, index: number) => (
                     <Badge key={index} variant="outline" className="text-xs">
-                      {lang}
+                      {typeof lang === "string" ? lang : `${lang.language}${lang.proficiency ? ` - ${lang.proficiency}` : ""}`}
                     </Badge>
                   ))}
                 </div>
@@ -162,58 +152,8 @@ export function SelectCandidateDialog({ candidate, open, onOpenChange }: SelectC
                   )}
                 </div>
               )}
-            </div>
           </div>
-
-          <Separator />
-
-          {/* Important Notice */}
-          <div className="space-y-3 p-4 bg-amber-50 dark:bg-amber-950/20 border-2 border-amber-200 dark:border-amber-800 rounded-lg">
-            <div className="flex items-start gap-3">
-              <AlertCircle className="h-5 w-5 text-amber-600 dark:text-amber-400 shrink-0 mt-0.5" />
-              <div className="space-y-2 flex-1">
-                <h4 className="font-semibold text-amber-900 dark:text-amber-100">
-                  Important Information
-                </h4>
-                <ul className="space-y-1.5 text-sm text-amber-800 dark:text-amber-200">
-                  <li className="flex items-start gap-2">
-                    <span className="text-amber-600 dark:text-amber-400 mt-0.5">-</span>
-                    <span>This candidate will be locked for 24 hours exclusively for your agency</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-amber-600 dark:text-amber-400 mt-0.5">-</span>
-                    <span>Both parties (you and the Ethiopian agent) must approve within the time window</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-amber-600 dark:text-amber-400 mt-0.5">-</span>
-                    <span>If not approved by both parties, the candidate will be automatically released</span>
-                  </li>
-                  <li className="flex items-start gap-2">
-                    <span className="text-amber-600 dark:text-amber-400 mt-0.5">-</span>
-                    <span>You will be notified once the Ethiopian agent responds to your selection</span>
-                  </li>
-                </ul>
-              </div>
-            </div>
-          </div>
-
-          {/* Agreement Checkbox */}
-          <div className="flex items-start gap-3 p-4 bg-muted/30 rounded-lg border">
-            <Checkbox
-              id="agree"
-              checked={agreed}
-              onCheckedChange={(checked) => setAgreed(checked === true)}
-              disabled={isPending}
-              className="mt-1"
-            />
-            <label
-              htmlFor="agree"
-              className="text-sm font-medium leading-relaxed cursor-pointer select-none"
-            >
-              I understand the selection terms and want to proceed with selecting{" "}
-              <span className="font-semibold">{candidate.full_name}</span> for my agency.
-            </label>
-          </div>
+        </div>
         </div>
 
         <DialogFooter className="gap-2">
@@ -226,7 +166,7 @@ export function SelectCandidateDialog({ candidate, open, onOpenChange }: SelectC
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={!agreed || isPending}
+            disabled={isPending}
             className="bg-green-600 hover:bg-green-700 text-white min-w-[140px]"
           >
             {isPending ? (

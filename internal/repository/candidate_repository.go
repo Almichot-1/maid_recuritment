@@ -194,6 +194,20 @@ func (r *GormCandidateRepository) Update(candidate *domain.Candidate) error {
 	return nil
 }
 
+func (r *GormCandidateRepository) UpdateStatus(id string, status domain.CandidateStatus) error {
+	if strings.TrimSpace(id) == "" {
+		return fmt.Errorf("update status: id is required")
+	}
+	result := r.db.Model(&domain.Candidate{}).Where("id = ?", id).Update("status", status)
+	if result.Error != nil {
+		return fmt.Errorf("update status: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return ErrCandidateNotFound
+	}
+	return nil
+}
+
 func (r *GormCandidateRepository) Delete(id string) error {
 	var candidate domain.Candidate
 	if err := r.db.Where("id = ?", id).First(&candidate).Error; err != nil {
@@ -369,6 +383,13 @@ func applyCandidateFilters(query *gorm.DB, filters domain.CandidateFilters) (*go
 
 	if len(filters.Statuses) > 0 {
 		query = query.Where("status IN ?", filters.Statuses)
+	}
+	if strings.TrimSpace(filters.CurrentUserID) != "" {
+		query = query.Where(
+			`NOT (status = ? AND (locked_by IS NOT NULL AND locked_by != ?))`,
+			domain.CandidateStatusLocked,
+			strings.TrimSpace(filters.CurrentUserID),
+		)
 	}
 	if filters.MinAge != nil {
 		query = query.Where("age >= ?", *filters.MinAge)

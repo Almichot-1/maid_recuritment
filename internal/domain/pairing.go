@@ -74,16 +74,17 @@ type CandidatePairShareRepository interface {
 	UpdateCVURL(shareID, cvURL string) error
 }
 
-// CandidatePairOverride stores per-pairing overrides for country_applied and
-// salary_offered. When generating a CV for a specific agency pairing the
-// service resolves these values first, falling back to the candidate's global
-// defaults when no override exists.
+// CandidatePairOverride stores per-pairing overrides for country_applied,
+// salary_offered, and logo_url. When generating a CV for a specific agency
+// pairing the service resolves these values first, falling back to the
+// candidate's global defaults when no override exists.
 type CandidatePairOverride struct {
 	ID             string    `gorm:"type:uuid;primaryKey;default:gen_random_uuid()"`
 	PairingID      string    `gorm:"type:uuid;not null;index"`
 	CandidateID    string    `gorm:"type:uuid;not null"`
 	CountryApplied string
 	SalaryOffered  string
+	LogoURL        string
 	CreatedAt      time.Time `gorm:"not null;default:now()"`
 	UpdatedAt      time.Time `gorm:"not null;default:now()"`
 }

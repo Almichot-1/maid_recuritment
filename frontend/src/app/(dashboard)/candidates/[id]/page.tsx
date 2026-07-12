@@ -11,8 +11,11 @@ import {
   Eye, 
   FileText, 
   Loader2, 
+  Lock,
   PencilLine,
+  Share2,
   Trash2, 
+  Unlock,
   Upload,
   UserCheck,
   XCircle,
@@ -25,18 +28,19 @@ import {
 import Link from "next/link"
 import Image from "next/image"
 
-import { downloadCandidateCVFile, useBulkPublish, useCandidate, useDeleteCandidate, useDeleteCandidateDocument, useGenerateCV, usePublishCandidate, useUploadDocument } from "@/hooks/use-candidates"
+import { downloadCandidateCVFile, useBulkPublish, useCandidate, useDeleteCandidate, useGenerateCV, useLockCandidate, usePublishCandidate, useUnlockCandidate, useUploadDocument } from "@/hooks/use-candidates"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { useCandidateShares, usePairingContext, useUnshareCandidateFromWorkspace } from "@/hooks/use-pairings"
-import { useCandidateProgress, useUpdateStatusStep } from "@/hooks/use-status-steps"
+import { useAgencyBranding } from "@/hooks/use-agency-branding"
+
 import { CandidatePartnerOverrides } from "@/components/candidates/candidate-partner-overrides"
 import { CandidateShareDialog } from "@/components/candidates/candidate-share-dialog"
 import { CandidateDetailSkeleton } from "@/components/candidates/candidate-detail-skeleton"
 import { DocumentUpload } from "@/components/candidates/document-upload"
-import { StatusTimeline } from "@/components/candidates/status-timeline"
+
 import { PublishButton } from "@/components/candidates/publish-button"
 import { SelectCandidateDialog } from "@/components/selections/select-candidate-dialog"
-import { LockCountdown } from "@/components/selections/lock-countdown"
+
 import { Badge, BadgeProps } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -52,6 +56,7 @@ import {
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CandidateStatus } from "@/types"
 import { cn } from "@/lib/utils"
+import { buildCandidateMessage, shareOnWhatsApp } from "@/lib/whatsapp"
 
 export default function CandidateDetailPage() {
   const params = useParams()
@@ -64,20 +69,19 @@ export default function CandidateDetailPage() {
   const showProgress = candidate?.status === CandidateStatus.IN_PROGRESS || candidate?.status === CandidateStatus.COMPLETED
   const isOwner = isEthiopianAgent && candidate?.created_by === user?.id
   const { data: candidateShares = [] } = useCandidateShares(candidateId, Boolean(isOwner))
-  const { data: progressData } = useCandidateProgress(candidateId, Boolean(showProgress))
-  
   const { mutate: deleteCandidate, isPending: isDeleting } = useDeleteCandidate(candidateId)
   const { mutateAsync: publishCandidate, isPending: isPublishing } = usePublishCandidate(candidateId)
   const { mutateAsync: uploadDocument, isPending: isUploadingDocument } = useUploadDocument(candidateId)
-  const { mutateAsync: removeDocument, isPending: isRemovingDocument } = useDeleteCandidateDocument(candidateId)
-  const { mutate: updateStep, isPending: isUpdatingStep } = useUpdateStatusStep(candidateId)
   const { mutate: unshareFromWorkspace, isPending: isRemovingFromWorkspace } = useUnshareCandidateFromWorkspace()
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const { mutateAsync: bulkPublish, isPending: isBulkPublishing } = useBulkPublish()
+  const { logoDataURL } = useAgencyBranding()
 
 
   const [deleteDialogOpen, setDeleteDialogOpen] = React.useState(false)
   const [selectDialogOpen, setSelectDialogOpen] = React.useState(false)
+  const { mutate: lockCandidate, isPending: isLocking } = useLockCandidate()
+  const { mutate: unlockCandidate, isPending: isUnlocking } = useUnlockCandidate()
 
   const [publishPartnerDialogOpen, setPublishPartnerDialogOpen] = React.useState(false)
   const [publishPairingId, setPublishPairingId] = React.useState("")
@@ -167,11 +171,10 @@ export default function CandidateDetailPage() {
     return <Badge className={cn("text-sm px-3 py-1", config.className)}>{config.label}</Badge>
   }
 
-  const getProficiencyBadge = (language: string) => {
-    // For now, showing basic badges. In future, store proficiency data
+  const getProficiencyBadge = (lang: { language: string; proficiency?: string }) => {
     return (
       <Badge variant="outline" className="bg-blue-50 dark:bg-blue-950/20 text-blue-700 dark:text-blue-300 border-blue-200">
-        {language}
+        {lang.language}{lang.proficiency ? ` - ${lang.proficiency}` : ""}
       </Badge>
     )
   }
@@ -179,7 +182,6 @@ export default function CandidateDetailPage() {
   const getDocument = (type: string) => {
     return candidate.documents?.find(doc => doc.document_type === type)
   }
-  const medicalDocument = getDocument("medical")
 
   const handleDelete = () => {
     deleteCandidate()
@@ -221,18 +223,7 @@ export default function CandidateDetailPage() {
   }
 
   const handleRegenerate = () => {
-    generateCV(undefined)
-  }
-
-  const handleUpdateStep = (stepName: string, status: string, notes?: string, cocStatus?: string, arrivalCity?: string) => {
-    updateStep({ step_name: stepName, status, notes, coc_status: cocStatus, arrival_city: arrivalCity })
-  }
-
-  const handleRemoveMedicalDocument = async () => {
-    if (!medicalDocument?.id) {
-      return
-    }
-    await removeDocument({ documentId: medicalDocument.id })
+    generateCV({ branding_logo_data_url: logoDataURL || undefined })
   }
 
   const missingRequiredDocuments = ["passport", "photo"].filter((documentType) => !getDocument(documentType))
@@ -312,12 +303,6 @@ export default function CandidateDetailPage() {
                           Reserved by a foreign agency
                         </span>
                       </div>
-                      {candidate.lock_expires_at && (
-                        <LockCountdown 
-                          expiresAt={candidate.lock_expires_at}
-                          className="text-xs"
-                        />
-                      )}
                     </div>
                   )}
                 </div>
@@ -352,6 +337,44 @@ export default function CandidateDetailPage() {
                   <p className="text-sm font-medium text-muted-foreground">Place of birth</p>
                   <p className="text-base font-semibold">{candidate.place_of_birth || "N/A"}</p>
                 </div>
+                {candidate.passport_number && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground">Passport number</p>
+                    <p className="text-base font-semibold">{candidate.passport_number}</p>
+                  </div>
+                )}
+                {candidate.gender && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground">Gender</p>
+                    <p className="text-base font-semibold">{candidate.gender}</p>
+                  </div>
+                )}
+                {candidate.issue_date && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground">Passport issue date</p>
+                    <p className="text-base font-semibold">{candidate.issue_date}</p>
+                  </div>
+                )}
+                {candidate.expiry_date && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground">Passport expiry date</p>
+                    <p className="text-base font-semibold">{candidate.expiry_date}</p>
+                  </div>
+                )}
+                {candidate.experience_abroad && candidate.experience_abroad.length > 0 && (
+                  <div className="space-y-1">
+                    <p className="text-sm font-medium text-muted-foreground">Experience abroad</p>
+                    {Array.isArray(candidate.experience_abroad) ? (
+                      candidate.experience_abroad.map((entry, i) => (
+                        <p key={i} className="text-base font-semibold">
+                          {entry.country}{entry.years > 0 ? ` (${entry.years} yr${entry.years > 1 ? "s" : ""})` : ""}
+                        </p>
+                      ))
+                    ) : (
+                      <p className="text-base font-semibold">{candidate.experience_abroad}</p>
+                    )}
+                  </div>
+                )}
                 <div className="space-y-1">
                   <p className="text-sm font-medium text-muted-foreground">Religion</p>
                   <p className="text-base font-semibold">{candidate.religion || "N/A"}</p>
@@ -400,7 +423,7 @@ export default function CandidateDetailPage() {
                 <div className="flex flex-wrap gap-2">
                   {candidate.languages.map((lang, index) => (
                     <React.Fragment key={index}>
-                      {getProficiencyBadge(lang)}
+                      {getProficiencyBadge(lang as { language: string; proficiency?: string })}
                     </React.Fragment>
                   ))}
                 </div>
@@ -652,7 +675,7 @@ export default function CandidateDetailPage() {
                       ) : null}
                       <Button
                         variant="outline"
-                        onClick={() => generateCV({})}
+                        onClick={() => generateCV({ branding_logo_data_url: logoDataURL || undefined })}
                         disabled={isGeneratingCV}
                       >
                         {isGeneratingCV ? (
@@ -674,37 +697,19 @@ export default function CandidateDetailPage() {
             </CardContent>
           </Card>
 
-          {/* Recruitment Progress */}
-          {showProgress && progressData && progressData.steps.length > 0 && (
+          {showProgress && (
             <Card>
-              <CardHeader>
-                <div className="flex items-center justify-between">
-                  <CardTitle>Recruitment Progress</CardTitle>
-                  <span className="text-sm font-semibold text-muted-foreground">
-                    {Math.round(progressData.progress_percentage)}% Complete
-                  </span>
-                </div>
-                <div className="w-full h-2 bg-muted rounded-full overflow-hidden mt-2">
-                  <div
-                    className="h-full bg-gradient-to-r from-blue-500 to-green-500 transition-all duration-500"
-                    style={{ width: `${progressData.progress_percentage}%` }}
-                  />
-                </div>
-              </CardHeader>
-              <CardContent>
-              <StatusTimeline
-                steps={progressData.steps}
-                canUpdate={isOwner}
-                onUpdateStep={handleUpdateStep}
-                isUpdating={isUpdatingStep}
-                onUploadMedicalDocument={(file) => uploadDocument({ file, type: "medical" })}
-                isUploadingMedicalDocument={isUploadingDocument}
-                onRemoveMedicalDocument={isOwner ? handleRemoveMedicalDocument : undefined}
-                isRemovingMedicalDocument={isRemovingDocument}
-              />
-            </CardContent>
-          </Card>
-        )}
+              <CardContent className="py-8 text-center">
+                <p className="text-sm text-muted-foreground">
+                  Track recruitment progress in the{" "}
+                  <Link href={trackingPageHref} className="font-semibold text-primary hover:underline">
+                    Process Tracking
+                  </Link>{" "}
+                  page.
+                </p>
+              </CardContent>
+            </Card>
+          )}
         </div>
 
         {/* Right Column - Actions & Info */}
@@ -849,23 +854,59 @@ export default function CandidateDetailPage() {
                 </>
               )}
 
+              {/* Placement Details for Foreign Agent */}
+              {isForeignAgent && activeWorkspace && (
+                <Card className="border border-border/70 shadow-sm">
+                  <CardHeader className="pb-3">
+                    <CardTitle className="text-sm font-semibold">Placement Details</CardTitle>
+                  </CardHeader>
+                  <CardContent className="space-y-2 text-sm">
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Country</span>
+                      <span className="font-medium">{activeWorkspace.default_country || "Not configured"}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span className="text-muted-foreground">Salary</span>
+                      <span className="font-medium">
+                        {activeWorkspace.default_salary
+                          ? `${activeWorkspace.default_salary} ${activeWorkspace.default_currency || ""}`
+                          : "Not configured"}
+                      </span>
+                    </div>
+                    {activeWorkspace.partner_logo_url && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Logo</span>
+                        <span className="font-medium text-xs text-green-600">Uploaded</span>
+                      </div>
+                    )}
+                  </CardContent>
+                </Card>
+              )}
+
               {/* Foreign Agent Actions */}
               {isForeignAgent && (
                 <>
-                    {candidate.cv_pdf_url ? (
-                      <div className="grid gap-3 sm:grid-cols-2">
-                        <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" variant="outline" onClick={handleDownloadCV} disabled={isDownloadingCV}>
-                            <Download className="h-4 w-4 mr-2" />
-                           {isDownloadingCV ? "Downloading..." : "Download CV"}
-                        </Button>
-                        <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" variant="secondary" asChild>
-                          <Link href={cvPageHref}>
-                            <Eye className="h-4 w-4 mr-2" />
-                            Preview CV
-                          </Link>
-                        </Button>
-                      </div>
-                    ) : null}
+                  {candidate.cv_pdf_url && (
+                    <div className="grid gap-3 sm:grid-cols-2">
+                      <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" variant="outline" onClick={handleDownloadCV} disabled={isDownloadingCV}>
+                        <Download className="h-4 w-4 mr-2" />
+                        {isDownloadingCV ? "Downloading..." : "Download CV"}
+                      </Button>
+                      <Button className="min-h-12 w-full justify-center gap-2 rounded-2xl px-4 py-3 text-sm font-semibold" variant="secondary" onClick={() => shareOnWhatsApp(buildCandidateMessage(candidate))}>
+                        <Share2 className="h-4 w-4 mr-2" />
+                        Share via WhatsApp
+                      </Button>
+                    </div>
+                  )}
+
+                  {candidate.cv_pdf_url ? (
+                    <Button className="w-full" variant="secondary" asChild>
+                      <Link href={cvPageHref}>
+                        <Eye className="h-4 w-4 mr-2" />
+                        Preview CV
+                      </Link>
+                    </Button>
+                  ) : null}
 
                   {showProgress ? (
                     <Button className="w-full" variant="outline" asChild>
@@ -877,42 +918,66 @@ export default function CandidateDetailPage() {
                   ) : null}
 
                   {canSelect ? (
-                    <Button 
-                      className="w-full bg-green-600 hover:bg-green-700 text-white" 
-                      size="lg"
-                      onClick={() => setSelectDialogOpen(true)}
-                    >
-                      <UserCheck className="h-4 w-4 mr-2" />
-                      Select Candidate
-                    </Button>
-                  ) : candidate.status === CandidateStatus.LOCKED ? (
                     <div className="space-y-3">
-                      {candidate.locked_by === user?.id ? (
-                        <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                          <div className="flex items-center gap-2 mb-3">
-                            <CheckCircle2 className="h-5 w-5 text-purple-600" />
-                            <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
-                              Selected by You
-                            </p>
-                          </div>
-                          {candidate.lock_expires_at && (
-                            <LockCountdown 
-                              expiresAt={candidate.lock_expires_at}
-                              className="text-sm"
-                            />
-                          )}
-                        </div>
-                      ) : (
-                        <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800 text-center">
-                          <AlertCircle className="h-8 w-8 text-purple-600 mx-auto mb-2" />
-                          <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
-                            Currently Unavailable
-                          </p>
-                          <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
-                            Selected by another agency
-                          </p>
-                        </div>
-                      )}
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          className="w-full border-amber-300 text-amber-700 hover:bg-amber-50 dark:border-amber-700 dark:text-amber-400 dark:hover:bg-amber-950/30"
+                          variant="outline"
+                          size="lg"
+                          onClick={() => lockCandidate(candidate.id)}
+                          disabled={isLocking}
+                        >
+                          {isLocking ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Lock className="h-4 w-4 mr-2" />}
+                          Hold
+                        </Button>
+                        <Button
+                          className="w-full bg-green-600 hover:bg-green-700 text-white"
+                          size="lg"
+                          onClick={() => setSelectDialogOpen(true)}
+                        >
+                          <UserCheck className="h-4 w-4 mr-2" />
+                          Select
+                        </Button>
+                      </div>
+                    </div>
+                  ) : candidate.status === CandidateStatus.LOCKED && candidate.locked_by === user?.id ? (
+                    <div className="space-y-3">
+                      <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800 text-center">
+                        <CheckCircle2 className="h-5 w-5 text-purple-600 mx-auto mb-2" />
+                        <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
+                          On hold — select or release
+                        </p>
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <Button
+                          className="w-full bg-green-600 hover:bg-green-700 text-white"
+                          size="lg"
+                          onClick={() => setSelectDialogOpen(true)}
+                        >
+                          <UserCheck className="h-4 w-4 mr-2" />
+                          Select
+                        </Button>
+                        <Button
+                          className="w-full"
+                          variant="outline"
+                          size="lg"
+                          onClick={() => unlockCandidate(candidate.id)}
+                          disabled={isUnlocking}
+                        >
+                          {isUnlocking ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : <Unlock className="h-4 w-4 mr-2" />}
+                          Release
+                        </Button>
+                      </div>
+                    </div>
+                  ) : candidate.status === CandidateStatus.LOCKED ? (
+                    <div className="p-4 bg-purple-50 dark:bg-purple-950/20 rounded-lg border border-purple-200 dark:border-purple-800 text-center">
+                      <AlertCircle className="h-8 w-8 text-purple-600 mx-auto mb-2" />
+                      <p className="text-sm font-medium text-purple-800 dark:text-purple-300">
+                        Currently Unavailable
+                      </p>
+                      <p className="text-xs text-purple-600 dark:text-purple-400 mt-1">
+                        Selected by another agency
+                      </p>
                     </div>
                   ) : (
                     <div className="p-4 bg-muted rounded-lg text-center">

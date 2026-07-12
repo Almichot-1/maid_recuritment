@@ -62,14 +62,9 @@ export function ApprovalDialog({
           <div className="py-4">
             <div className="flex items-start gap-3 rounded-lg border border-green-200 bg-green-50 p-3 dark:border-green-800 dark:bg-green-950/20">
               <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600" />
-              <div className="text-sm text-green-800 dark:text-green-200">
-                <p className="mb-1 font-medium">This will:</p>
-                <ul className="space-y-1 text-xs">
-                  <li>- Confirm your approval of this selection</li>
-                  <li>- Notify the other party</li>
-                  <li>- Move to recruitment process if both parties approve</li>
-                </ul>
-              </div>
+              <p className="text-sm text-green-800 dark:text-green-200">
+                This will approve the selection and start the recruitment tracking process.
+              </p>
             </div>
           </div>
 
@@ -113,12 +108,7 @@ export function ApprovalDialog({
           <div className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 p-3 dark:border-red-800 dark:bg-red-950/20">
             <AlertCircle className="mt-0.5 h-5 w-5 shrink-0 text-red-600" />
             <div className="text-sm text-red-800 dark:text-red-200">
-              <p className="mb-1 font-medium">Warning:</p>
-              <ul className="space-y-1 text-xs">
-                <li>- This will reject the selection for both parties</li>
-                <li>- The candidate will be released and become available again</li>
-                <li>- This action cannot be undone</li>
-              </ul>
+              <p>This will reject the selection and release the candidate.</p>
             </div>
           </div>
 
@@ -126,7 +116,7 @@ export function ApprovalDialog({
             <Label htmlFor="reason">Reason (Optional)</Label>
             <Textarea
               id="reason"
-              placeholder="Provide a reason for rejection..."
+              placeholder="Provide a reason..."
               value={reason}
               onChange={(e) => setReason(e.target.value)}
               className="min-h-[100px] resize-none"

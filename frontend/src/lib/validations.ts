@@ -55,25 +55,35 @@ export const registerSchema = z.object({
 export const candidateSchema = z.object({
   full_name: z.string().min(2, 'Full name is required.'),
   nationality: optionalTrimmedString,
-  date_of_birth: optionalTrimmedString.refine((value) => {
-    if (!value) {
-      return true;
-    }
+  date_of_birth: z.string().min(1, 'Date of birth is required.').refine((value) => {
     return !Number.isNaN(new Date(value).getTime());
   }, 'Please enter a valid date of birth.'),
-  age: z.coerce.number().min(18, 'Candidate must be at least 18 years old.').max(65, 'Candidate must be at most 65 years old.'),
+  age: z.preprocess(
+    (val) => (val === '' || val === null || val === undefined ? undefined : val),
+    z.number({ message: 'Age is required (fill in date of birth).' }).refine((value) => value >= 18 && value <= 65, 'Candidate must be between 18 and 65 years old.'),
+  ),
   place_of_birth: optionalTrimmedString,
+  passport_number: optionalTrimmedString,
+  gender: optionalTrimmedString,
+  issue_date: z.string().min(1, 'Passport issue date is required.'),
+  expiry_date: optionalTrimmedString,
+  issuing_authority: optionalTrimmedString,
+  experience_abroad: z.array(z.object({
+    country: z.string().optional().default(""),
+    years: z.number().optional().default(0),
+  })).optional().default([]),
   religion: optionalTrimmedString,
-  marital_status: optionalTrimmedString,
+  marital_status: z.string().min(1, 'Marital status is required.'),
   children_count: optionalNumber.refine((value) => value === undefined || value >= 0, 'Children count cannot be negative.'),
   education_level: optionalTrimmedString,
-  experience_years: z.coerce.number().min(0).max(30),
+  experience_years: optionalNumber.refine((value) => value === undefined || (value >= 0 && value <= 30), 'Experience years must be between 0 and 30.'),
   country_of_experience: optionalTrimmedString.optional(),
   skills: z.array(z.string()).optional().default([]),
   languages: z.array(z.object({
     language: z.string(),
     proficiency: z.string()
   })).optional().default([]),
+  remark: optionalTrimmedString,
 });
 
 export type LoginInput = z.infer<typeof loginSchema>;

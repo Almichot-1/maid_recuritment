@@ -76,6 +76,7 @@ func (r *GormSelectionRepository) GetByID(id string) (*domain.Selection, error) 
 	if err := r.db.
 		Preload("Candidate").
 		Preload("Candidate.Documents").
+		Preload("Progress").
 		Where("id = ?", id).
 		First(&selection).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -328,10 +329,10 @@ func (r *GormSelectionRepository) baseQuery(filters domain.SelectionFilters) *go
 	query := r.db.Model(&domain.Selection{})
 
 	if strings.TrimSpace(filters.SelectedBy) != "" {
-		query = query.Where("selected_by = ?", strings.TrimSpace(filters.SelectedBy))
+		query = query.Where("selections.selected_by = ?", strings.TrimSpace(filters.SelectedBy))
 	}
 	if strings.TrimSpace(filters.PairingID) != "" {
-		query = query.Where("pairing_id = ?", strings.TrimSpace(filters.PairingID))
+		query = query.Where("selections.pairing_id = ?", strings.TrimSpace(filters.PairingID))
 	}
 	if strings.TrimSpace(filters.CandidateOwner) != "" {
 		query = query.
@@ -339,7 +340,7 @@ func (r *GormSelectionRepository) baseQuery(filters domain.SelectionFilters) *go
 			Where("candidates.created_by = ?", strings.TrimSpace(filters.CandidateOwner))
 	}
 	if len(filters.Statuses) > 0 {
-		query = query.Where("status IN ?", filters.Statuses)
+		query = query.Where("selections.status IN ?", filters.Statuses)
 	}
 
 	return query
@@ -364,7 +365,9 @@ func (r *GormSelectionRepository) List(filters domain.SelectionFilters) ([]*doma
 	sortBy := filters.SortBy
 	sortOrder := filters.SortOrder
 	if sortBy == "" {
-		sortBy = "created_at"
+		sortBy = "selections.created_at"
+	} else if !strings.Contains(sortBy, ".") {
+		sortBy = "selections." + sortBy
 	}
 	if sortOrder == "" {
 		sortOrder = "DESC"
@@ -373,6 +376,8 @@ func (r *GormSelectionRepository) List(filters domain.SelectionFilters) ([]*doma
 	selections := make([]*domain.Selection, 0)
 	if err := query.
 		Preload("Candidate").
+		Preload("Candidate.Documents").
+		Preload("Progress").
 		Order(sortBy + " " + sortOrder).
 		Offset(offset).
 		Limit(pageSize).

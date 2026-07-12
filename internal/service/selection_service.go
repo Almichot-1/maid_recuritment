@@ -22,11 +22,16 @@ var (
 	ErrNotForeignAgent                      = errors.New("only foreign agent can select candidate")
 	ErrInvalidSelectionDocumentType         = errors.New("invalid selection document type")
 	ErrSelectionSupportingDocumentsRequired = errors.New("employer contract and employer id are required before approval")
+	ErrCandidateNotLockedByYou              = errors.New("candidate is not locked by you")
 )
 
 type NotificationSender interface {
 	IsForeignAgent(userID string) (bool, error)
 	Send(userID, title, message, notificationType, relatedEntityType, relatedEntityID string) error
+}
+
+type SelectionUpdateSender interface {
+	PushSelectionUpdate(selectionID, status, action, pairingID string)
 }
 
 type dbProvider interface {
@@ -48,6 +53,7 @@ type SelectionService struct {
 	platformSettings    PlatformSettingsReader
 	storageService      StorageService
 	pairingService      *PairingService
+	selectionUpdates    SelectionUpdateSender
 	db                  *gorm.DB
 }
 
@@ -94,6 +100,10 @@ func (s *SelectionService) SetPairingService(pairingService *PairingService) {
 	s.pairingService = pairingService
 }
 
+func (s *SelectionService) SetSelectionUpdateSender(sender SelectionUpdateSender) {
+	s.selectionUpdates = sender
+}
+
 type UploadSelectionDocumentInput struct {
 	DocumentType string
 	File         io.Reader
@@ -132,14 +142,7 @@ func (s *SelectionService) SelectCandidateInPairing(candidateID, selectedBy, pai
 	}
 
 	selection := &domain.Selection{}
-	lockDurationHours := 24
-	if s.platformSettings != nil {
-		settings, err := s.platformSettings.Get()
-		if err == nil && settings != nil && settings.SelectionLockDurationHours > 0 {
-			lockDurationHours = settings.SelectionLockDurationHours
-		}
-	}
-	expiresAt := time.Now().UTC().Add(time.Duration(lockDurationHours) * time.Hour)
+	expiresAt := time.Now().UTC().Add(30 * 24 * time.Hour)
 
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		var candidate domain.Candidate
@@ -150,7 +153,11 @@ func (s *SelectionService) SelectCandidateInPairing(candidateID, selectedBy, pai
 			return fmt.Errorf("load candidate: %w", err)
 		}
 
-		if candidate.Status != domain.CandidateStatusAvailable {
+		canSelect := candidate.Status == domain.CandidateStatusAvailable
+		isLockedByMe := candidate.Status == domain.CandidateStatusLocked &&
+			candidate.LockedBy != nil &&
+			strings.TrimSpace(*candidate.LockedBy) == strings.TrimSpace(selectedBy)
+		if !canSelect && !isLockedByMe {
 			return ErrCandidateNotAvailable
 		}
 		if pairing != nil {
@@ -197,19 +204,22 @@ func (s *SelectionService) SelectCandidateInPairing(candidateID, selectedBy, pai
 			return fmt.Errorf("create selection: %w", err)
 		}
 
-		now := time.Now().UTC()
-		lockedBy := selectedBy
-		result := tx.Model(&domain.Candidate{}).Where("id = ?", candidateID).Updates(map[string]any{
-			"status":          domain.CandidateStatusLocked,
-			"locked_by":       lockedBy,
-			"locked_at":       now,
-			"lock_expires_at": expiresAt,
-		})
-		if result.Error != nil {
-			return fmt.Errorf("lock candidate: %w", result.Error)
-		}
-		if result.RowsAffected == 0 {
-			return ErrCandidateNotAvailable
+		// Only need to lock if not already locked by current user
+		if canSelect {
+			now := time.Now().UTC()
+			lockExpiry := now.Add(30 * 24 * time.Hour)
+			result := tx.Model(&domain.Candidate{}).Where("id = ?", candidateID).Updates(map[string]any{
+				"status":          domain.CandidateStatusLocked,
+				"locked_by":       selectedBy,
+				"locked_at":       now,
+				"lock_expires_at": lockExpiry,
+			})
+			if result.Error != nil {
+				return fmt.Errorf("lock candidate: %w", result.Error)
+			}
+			if result.RowsAffected == 0 {
+				return ErrCandidateNotAvailable
+			}
 		}
 
 		if err := s.notificationService.Send(
@@ -226,7 +236,7 @@ func (s *SelectionService) SelectCandidateInPairing(candidateID, selectedBy, pai
 		if err := s.notificationService.Send(
 			selectedBy,
 			"Selection confirmed",
-			fmt.Sprintf("You have successfully selected this candidate for %d hours. Upload the contract package and continue from the selection page.", lockDurationHours),
+			"You have successfully selected this candidate. The Ethiopian agency will review your selection.",
 			"selection",
 			"selection",
 			selection.ID,
@@ -249,7 +259,415 @@ func (s *SelectionService) SelectCandidateInPairing(candidateID, selectedBy, pai
 		}
 	}
 
+	if s.selectionUpdates != nil && selection != nil {
+		s.selectionUpdates.PushSelectionUpdate(selection.ID, string(selection.Status), "select", selection.PairingID)
+	}
+
 	return selection, nil
+}
+
+func (s *SelectionService) LockCandidate(candidateID, userID, pairingID string) error {
+	candidateID = strings.TrimSpace(candidateID)
+	userID = strings.TrimSpace(userID)
+
+	if candidateID == "" {
+		return fmt.Errorf("candidate id is required")
+	}
+	if userID == "" {
+		return fmt.Errorf("user id is required")
+	}
+
+	isForeign, err := s.notificationService.IsForeignAgent(userID)
+	if err != nil {
+		return fmt.Errorf("validate foreign agent role: %w", err)
+	}
+	if !isForeign {
+		return ErrNotForeignAgent
+	}
+
+	var pairing *domain.AgencyPairing
+	if s.pairingService != nil {
+		pairing, err = s.pairingService.ResolveActivePairing(userID, string(domain.ForeignAgent), pairingID)
+		if err != nil {
+			return err
+		}
+	}
+
+	var ownerID string
+	err = s.db.Transaction(func(tx *gorm.DB) error {
+		var candidate domain.Candidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", candidateID).First(&candidate).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return repository.ErrCandidateNotFound
+			}
+			return fmt.Errorf("load candidate: %w", err)
+		}
+
+		if candidate.Status != domain.CandidateStatusAvailable {
+			return ErrCandidateNotAvailable
+		}
+
+		if pairing != nil {
+			if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(pairing.EthiopianUserID) {
+				return ErrForbidden
+			}
+			isShared, err := s.pairingService.IsCandidateSharedWithPairing(candidate.ID, pairing.ID)
+			if err != nil {
+				return err
+			}
+			if !isShared {
+				return ErrForbidden
+			}
+		}
+
+		now := time.Now().UTC()
+		lockExpiry := now.Add(30 * 24 * time.Hour)
+		result := tx.Model(&domain.Candidate{}).Where("id = ?", candidateID).Updates(map[string]any{
+			"status":          domain.CandidateStatusLocked,
+			"locked_by":       userID,
+			"locked_at":       now,
+			"lock_expires_at": lockExpiry,
+		})
+		if result.Error != nil {
+			return fmt.Errorf("lock candidate: %w", result.Error)
+		}
+		if result.RowsAffected == 0 {
+			return ErrCandidateNotAvailable
+		}
+
+		ownerID = candidate.CreatedBy
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Send notifications after successful commit — failures here don't roll back the lock
+	_ = s.notificationService.Send(
+		ownerID,
+		"Candidate locked",
+		"A foreign agent has placed a hold on one of your candidates. The candidate is reserved and cannot be selected by others.",
+		"lock",
+		"candidate",
+		candidateID,
+	)
+	_ = s.notificationService.Send(
+		userID,
+		"Candidate locked",
+		"You have placed a hold on this candidate. They are now reserved for your agency.",
+		"lock",
+		"candidate",
+		candidateID,
+	)
+
+	return nil
+}
+
+func (s *SelectionService) UnlockCandidate(candidateID, userID string) error {
+	candidateID = strings.TrimSpace(candidateID)
+	userID = strings.TrimSpace(userID)
+
+	if candidateID == "" {
+		return fmt.Errorf("candidate id is required")
+	}
+	if userID == "" {
+		return fmt.Errorf("user id is required")
+	}
+
+	var recipientID string
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var candidate domain.Candidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", candidateID).First(&candidate).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return repository.ErrCandidateNotFound
+			}
+			return fmt.Errorf("load candidate: %w", err)
+		}
+
+		if candidate.Status != domain.CandidateStatusLocked {
+			return ErrCandidateNotAvailable
+		}
+
+		// Allow unlock by: the locker (foreign agent), or the candidate owner (Ethiopian agent)
+		if candidate.LockedBy == nil || strings.TrimSpace(*candidate.LockedBy) == "" {
+			return ErrCandidateNotLockedByYou
+		}
+		isLocker := strings.TrimSpace(*candidate.LockedBy) == strings.TrimSpace(userID)
+		isOwner := strings.TrimSpace(candidate.CreatedBy) == strings.TrimSpace(userID)
+		if !isLocker && !isOwner {
+			return ErrNotAuthorized
+		}
+
+		if err := tx.Model(&domain.Candidate{}).Where("id = ?", candidateID).Updates(map[string]any{
+			"status":          domain.CandidateStatusAvailable,
+			"locked_by":       nil,
+			"locked_at":       nil,
+			"lock_expires_at": nil,
+		}).Error; err != nil {
+			return fmt.Errorf("unlock candidate: %w", err)
+		}
+
+		recipientID = candidate.CreatedBy
+		if isOwner {
+			recipientID = *candidate.LockedBy
+		}
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	// Send notifications after successful commit — failures here don't roll back the unlock
+	if recipientID != "" && recipientID != userID {
+		_ = s.notificationService.Send(
+			recipientID,
+			"Candidate released",
+			"The hold on this candidate has been released. They are now available for selection.",
+			"lock",
+			"candidate",
+			candidateID,
+		)
+	}
+	_ = s.notificationService.Send(
+		userID,
+		"Candidate released",
+		"You have released the hold on this candidate.",
+		"lock",
+		"candidate",
+		candidateID,
+	)
+
+	return nil
+}
+
+func (s *SelectionService) BatchLockCandidates(candidateIDs []string, userID, pairingID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, fmt.Errorf("user id is required")
+	}
+
+	isForeign, err := s.notificationService.IsForeignAgent(userID)
+	if err != nil {
+		return 0, fmt.Errorf("validate foreign agent role: %w", err)
+	}
+	if !isForeign {
+		return 0, ErrNotForeignAgent
+	}
+
+	var pairing *domain.AgencyPairing
+	if s.pairingService != nil {
+		pairing, err = s.pairingService.ResolveActivePairing(userID, string(domain.ForeignAgent), pairingID)
+		if err != nil {
+			return 0, err
+		}
+	}
+
+	locked := 0
+	for _, candidateID := range candidateIDs {
+		candidateID = strings.TrimSpace(candidateID)
+		if candidateID == "" {
+			continue
+		}
+
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			var candidate domain.Candidate
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", candidateID).First(&candidate).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return fmt.Errorf("load candidate: %w", err)
+			}
+
+			if candidate.Status != domain.CandidateStatusAvailable {
+				return nil
+			}
+
+			if pairing != nil {
+				if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(pairing.EthiopianUserID) {
+					return nil
+				}
+				isShared, err := s.pairingService.IsCandidateSharedWithPairing(candidate.ID, pairing.ID)
+				if err != nil {
+					return err
+				}
+				if !isShared {
+					return nil
+				}
+			}
+
+			now := time.Now().UTC()
+			lockExpiry := now.Add(30 * 24 * time.Hour)
+			result := tx.Model(&domain.Candidate{}).Where("id = ?", candidateID).Updates(map[string]any{
+				"status":          domain.CandidateStatusLocked,
+				"locked_by":       userID,
+				"locked_at":       now,
+				"lock_expires_at": lockExpiry,
+			})
+			if result.Error != nil || result.RowsAffected == 0 {
+				return nil
+			}
+
+			if err := s.notificationService.Send(
+				candidate.CreatedBy,
+				"Candidate locked",
+				"A foreign agent has placed a hold on one of your candidates.",
+				"lock",
+				"candidate",
+				candidateID,
+			); err != nil {
+				return fmt.Errorf("notify candidate owner: %w", err)
+			}
+
+			return nil
+		})
+		if err == nil {
+			locked++
+		}
+	}
+
+	return locked, nil
+}
+
+func (s *SelectionService) BatchUnlockCandidates(candidateIDs []string, userID string) (int, error) {
+	userID = strings.TrimSpace(userID)
+	if userID == "" {
+		return 0, fmt.Errorf("user id is required")
+	}
+
+	unlocked := 0
+	for _, candidateID := range candidateIDs {
+		candidateID = strings.TrimSpace(candidateID)
+		if candidateID == "" {
+			continue
+		}
+
+		err := s.db.Transaction(func(tx *gorm.DB) error {
+			var candidate domain.Candidate
+			if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", candidateID).First(&candidate).Error; err != nil {
+				if errors.Is(err, gorm.ErrRecordNotFound) {
+					return nil
+				}
+				return fmt.Errorf("load candidate: %w", err)
+			}
+
+			if candidate.Status != domain.CandidateStatusLocked {
+				return nil
+			}
+
+			if candidate.LockedBy == nil || strings.TrimSpace(*candidate.LockedBy) == "" {
+				return nil
+			}
+			isLocker := strings.TrimSpace(*candidate.LockedBy) == strings.TrimSpace(userID)
+			isOwner := strings.TrimSpace(candidate.CreatedBy) == strings.TrimSpace(userID)
+			if !isLocker && !isOwner {
+				return nil
+			}
+
+			if err := tx.Model(&domain.Candidate{}).Where("id = ?", candidateID).Updates(map[string]any{
+				"status":          domain.CandidateStatusAvailable,
+				"locked_by":       nil,
+				"locked_at":       nil,
+				"lock_expires_at": nil,
+			}).Error; err != nil {
+				return fmt.Errorf("unlock candidate: %w", err)
+			}
+
+			return nil
+		})
+		if err == nil {
+			unlocked++
+		}
+	}
+
+	return unlocked, nil
+}
+
+func (s *SelectionService) UnlockSelection(selectionID, userID string) error {
+	selectionID = strings.TrimSpace(selectionID)
+	userID = strings.TrimSpace(userID)
+
+	if selectionID == "" {
+		return fmt.Errorf("selection id is required")
+	}
+	if userID == "" {
+		return fmt.Errorf("user id is required")
+	}
+
+	var pairingID string
+
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		var selection domain.Selection
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", selectionID).First(&selection).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return repository.ErrSelectionNotFound
+			}
+			return fmt.Errorf("load selection: %w", err)
+		}
+
+		if selection.Status != domain.SelectionPending {
+			return ErrSelectionNotPending
+		}
+
+		pairingID = selection.PairingID
+
+		var candidate domain.Candidate
+		if err := tx.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", selection.CandidateID).First(&candidate).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return repository.ErrCandidateNotFound
+			}
+			return fmt.Errorf("load candidate: %w", err)
+		}
+
+		if strings.TrimSpace(candidate.CreatedBy) != strings.TrimSpace(userID) {
+			return ErrNotAuthorized
+		}
+
+		if err := tx.Model(&domain.Selection{}).Where("id = ?", selectionID).Update("status", domain.SelectionReleased).Error; err != nil {
+			return fmt.Errorf("update selection released: %w", err)
+		}
+
+		if err := tx.Model(&domain.Candidate{}).Where("id = ?", selection.CandidateID).Updates(map[string]any{
+			"status":          domain.CandidateStatusAvailable,
+			"locked_by":       nil,
+			"locked_at":       nil,
+			"lock_expires_at": nil,
+		}).Error; err != nil {
+			return fmt.Errorf("unlock candidate: %w", err)
+		}
+
+		if err := s.notificationService.Send(
+			candidate.CreatedBy,
+			"Candidate unlocked",
+			"You have released this candidate. They are now available for other selections.",
+			"selection",
+			"selection",
+			selectionID,
+		); err != nil {
+			return fmt.Errorf("notify owner: %w", err)
+		}
+
+		if err := s.notificationService.Send(
+			selection.SelectedBy,
+			"Selection released",
+			"The Ethiopian agency has released this candidate. The candidate is no longer selected by your agency.",
+			"selection",
+			"selection",
+			selectionID,
+		); err != nil {
+			return fmt.Errorf("notify foreign agent: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if s.selectionUpdates != nil {
+		s.selectionUpdates.PushSelectionUpdate(selectionID, string(domain.SelectionReleased), "release", pairingID)
+	}
+
+	return nil
 }
 
 func (s *SelectionService) GetSelection(id string) (*domain.Selection, error) {
@@ -504,6 +922,10 @@ func (s *SelectionService) ProcessExpiredSelections() error {
 				selectionID,
 			); err != nil {
 				return fmt.Errorf("notify foreign agent on expiry: %w", err)
+			}
+
+			if s.selectionUpdates != nil {
+				s.selectionUpdates.PushSelectionUpdate(selectionID, string(domain.SelectionExpired), "expire", selection.PairingID)
 			}
 
 			return nil

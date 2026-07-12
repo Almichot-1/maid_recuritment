@@ -1,9 +1,10 @@
 package service
 
 import (
+	"bytes"
 	"encoding/base64"
-	"net/http"
-	"net/http/httptest"
+	"fmt"
+	"io"
 	"testing"
 
 	"github.com/jung-kurt/gofpdf"
@@ -13,8 +14,28 @@ import (
 	"maid-recruitment-tracking/internal/domain"
 )
 
+type pdfTestStorageMock struct{}
+
+func (m *pdfTestStorageMock) Upload(file io.Reader, fileName, contentType string) (string, error) {
+	return "https://files/test.pdf", nil
+}
+func (m *pdfTestStorageMock) Delete(url string) error {
+	return nil
+}
+func (m *pdfTestStorageMock) Open(fileURL string) (io.ReadCloser, string, error) {
+	switch fileURL {
+	case "s3://bad-status":
+		return nil, "", fmt.Errorf("not found")
+	case "s3://bad-type":
+		return io.NopCloser(bytes.NewReader([]byte("x"))), "text/plain", nil
+	default:
+		imgBytes, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WnR4x4AAAAASUVORK5CYII=")
+		return io.NopCloser(bytes.NewReader(imgBytes)), "image/png", nil
+	}
+}
+
 func TestPDFService_NewAndGenerateValidation(t *testing.T) {
-	svc := NewPDFService()
+	svc := NewPDFService(&pdfTestStorageMock{})
 	require.NotNil(t, svc)
 
 	_, err := svc.GenerateCandidateCV(nil, nil, CandidateCVBranding{}, nil)
@@ -46,29 +67,18 @@ func TestPDFHelpers_DocumentPickingAndJSON(t *testing.T) {
 func TestPDFHelpers_FetchImageAndAddImage(t *testing.T) {
 	imgBytes, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAusB9WnR4x4AAAAASUVORK5CYII=")
 
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		switch r.URL.Path {
-		case "/ok":
-			w.Header().Set("Content-Type", "image/png")
-			_, _ = w.Write(imgBytes)
-		case "/bad-status":
-			w.WriteHeader(http.StatusBadGateway)
-		case "/bad-type":
-			w.Header().Set("Content-Type", "text/plain")
-			_, _ = w.Write([]byte("x"))
-		}
-	}))
-	defer server.Close()
+	mock := &pdfTestStorageMock{}
+	svc := NewPDFService(mock)
 
-	body, contentType, err := fetchImage(server.URL + "/ok")
+	body, contentType, err := svc.fetchImage("s3://ok")
 	require.NoError(t, err)
 	assert.Equal(t, "image/png", contentType)
 	assert.NotEmpty(t, body)
 
-	_, _, err = fetchImage(server.URL + "/bad-status")
+	_, _, err = svc.fetchImage("s3://bad-status")
 	require.Error(t, err)
 
-	_, _, err = fetchImage(server.URL + "/bad-type")
+	_, _, err = svc.fetchImage("s3://bad-type")
 	require.ErrorIs(t, err, ErrMissingRequiredDocuments)
 
 	pdf := gofpdf.New("P", "mm", "A4", "")
@@ -77,7 +87,7 @@ func TestPDFHelpers_FetchImageAndAddImage(t *testing.T) {
 }
 
 func TestPDFService_DrawHelpers(t *testing.T) {
-	svc := NewPDFService()
+	svc := NewPDFService(&pdfTestStorageMock{})
 	pdf := gofpdf.New("P", "mm", "A4", "")
 	pdf.AddPage()
 	svc.drawBrandingHeader(pdf, CandidateCVBranding{CompanyName: "Agency"})

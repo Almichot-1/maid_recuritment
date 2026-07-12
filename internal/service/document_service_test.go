@@ -47,6 +47,9 @@ func (m *documentStorageMock) Delete(url string) error {
 	}
 	return nil
 }
+func (m *documentStorageMock) Open(fileURL string) (io.ReadCloser, string, error) {
+	return io.NopCloser(bytes.NewReader(nil)), "", nil
+}
 
 func TestDocumentService_UploadDocument_Success(t *testing.T) {
 	storage := &documentStorageMock{uploadFn: func(fileName, contentType string) (string, error) {

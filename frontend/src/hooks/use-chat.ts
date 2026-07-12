@@ -11,7 +11,8 @@ import {
 import { toast } from "sonner";
 
 import api from "@/lib/api";
-import { getApiBaseUrl } from "@/lib/api-base-url";
+import { buildWebSocketUrl } from "@/lib/api-base-url";
+import { useAuthStore } from "@/stores/auth-store";
 import { useCurrentUser } from "@/hooks/use-auth";
 import { usePairingStore } from "@/stores/pairing-store";
 import {
@@ -387,17 +388,10 @@ function replaceOptimisticMessage(
 }
 
 function buildChatWebSocketUrl(pairingId: string) {
-  const apiUrl = new URL(getApiBaseUrl());
-  apiUrl.protocol = apiUrl.protocol === "https:" ? "wss:" : "ws:";
-
-  const trimmedPath = apiUrl.pathname.replace(/\/+$/, "");
-  const withoutApiVersion = trimmedPath.replace(/\/api\/v\d+$/i, "");
-
-  apiUrl.pathname = `${withoutApiVersion}/ws/chat`;
-  apiUrl.search = "";
-  apiUrl.searchParams.set("pairing_id", pairingId);
-
-  return apiUrl.toString();
+  const authToken = useAuthStore.getState().authToken
+  const params: Record<string, string> = { pairing_id: pairingId }
+  if (authToken) params.auth_token = authToken
+  return buildWebSocketUrl("/ws/chat", params);
 }
 
 function parseSocketEvent(rawPayload: unknown, currentUserId?: string): ChatSocketEvent {

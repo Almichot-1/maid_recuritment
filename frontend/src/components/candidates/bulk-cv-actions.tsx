@@ -22,6 +22,8 @@ import {
 } from "@/components/ui/select";
 import { useBatchRegenerateCV, useBulkDownloadCVZip } from "@/hooks/use-candidates";
 import type { WorkspaceSummary } from "@/types";
+import axios from "axios";
+import { toast } from "sonner";
 
 type Action = "regenerate" | "download";
 
@@ -48,28 +50,43 @@ export function BulkCvActionsDialog({
   const isPending = batchRegen.isPending || bulkZip.isPending;
 
   const handleConfirm = async () => {
-    if (action === "regenerate") {
-      await batchRegen.mutateAsync({
-        candidateIds,
-        pairingId: selectedPartner || undefined,
-      });
-    } else {
-      const blob = await bulkZip.mutateAsync({
-        candidateIds,
-        pairingId: selectedPartner || undefined,
-        filenamePattern: filenamePattern || "{name}",
-      });
-      const url = window.URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `candidates-${Date.now()}.zip`;
-      document.body.appendChild(a);
-      a.click();
-      document.body.removeChild(a);
-      window.URL.revokeObjectURL(url);
+    try {
+      if (action === "regenerate") {
+        await batchRegen.mutateAsync({
+          candidateIds,
+          pairingId: selectedPartner || undefined,
+        });
+      } else {
+        const blob = await bulkZip.mutateAsync({
+          candidateIds,
+          pairingId: selectedPartner || undefined,
+          filenamePattern: filenamePattern || "{name}",
+        });
+        const url = window.URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = `candidates-${Date.now()}.zip`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        window.URL.revokeObjectURL(url);
+      }
+      onOpenChange(false);
+      setSelectedPartner("");
+    } catch (error: unknown) {
+      if (axios.isAxiosError(error) && error.response?.data instanceof Blob) {
+        try {
+          const text = await error.response.data.text();
+          const parsed = JSON.parse(text);
+          const msg = parsed.error || parsed.detail || parsed.message || "Download failed";
+          toast.error(msg);
+          return;
+        } catch {
+          // ignore parse failure
+        }
+      }
+      toast.error("Failed to download CVs");
     }
-    onOpenChange(false);
-    setSelectedPartner("");
   };
 
   React.useEffect(() => {

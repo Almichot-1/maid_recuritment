@@ -2,7 +2,8 @@
 
 import * as React from "react"
 import Link from "next/link"
-import { Eye, PencilLine, Share2, Sparkles } from "lucide-react"
+import { Eye, PencilLine, Share2, Sparkles, Download, Lock, Unlock } from "lucide-react"
+import { toast } from "sonner"
 
 import { useCurrentUser } from "@/hooks/use-auth"
 import { Candidate, CandidateStatus } from "@/types"
@@ -19,6 +20,8 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { useLockCandidate, useUnlockCandidate, downloadCandidateCVFile } from "@/hooks/use-candidates"
+import { buildCandidateMessage, shareOnWhatsApp } from "@/lib/whatsapp"
 
 interface CandidateTableProps {
   candidates: Candidate[]
@@ -28,6 +31,21 @@ export function CandidateTable({ candidates }: CandidateTableProps) {
   const { user, isEthiopianAgent, isForeignAgent } = useCurrentUser()
   const [candidateToSelect, setCandidateToSelect] = React.useState<Candidate | null>(null)
   const [candidateToShare, setCandidateToShare] = React.useState<Candidate | null>(null)
+  const [downloadingId, setDownloadingId] = React.useState<string | null>(null)
+  const { mutate: lockCandidate, isPending: isLocking } = useLockCandidate()
+  const { mutate: unlockCandidate, isPending: isUnlocking } = useUnlockCandidate()
+
+  const handleDownloadCV = async (candidate: Candidate) => {
+    if (!candidate.cv_pdf_url) return
+    try {
+      setDownloadingId(candidate.id)
+      await downloadCandidateCVFile(candidate.id, candidate.full_name)
+    } catch {
+      toast.error("Failed to download CV")
+    } finally {
+      setDownloadingId(null)
+    }
+  }
 
   return (
     <>
@@ -49,6 +67,7 @@ export function CandidateTable({ candidates }: CandidateTableProps) {
                 const isOwner = isEthiopianAgent && candidate.created_by === user?.id
                 const canEdit = isOwner && (candidate.status === CandidateStatus.DRAFT || candidate.status === CandidateStatus.AVAILABLE)
                 const canSelect = isForeignAgent && candidate.status === CandidateStatus.AVAILABLE
+                const isLockedByMe = isForeignAgent && candidate.status === CandidateStatus.LOCKED && candidate.locked_by === user?.id
 
                 return (
                   <TableRow key={candidate.id}>
@@ -69,11 +88,43 @@ export function CandidateTable({ candidates }: CandidateTableProps) {
                     <TableCell className="text-right">
                       <div className="flex justify-end gap-1 sm:gap-2 flex-wrap">
                         {canSelect ? (
-                          <Button size="sm" onClick={() => setCandidateToSelect(candidate)} className="bg-green-600 hover:bg-green-700">
-                            <Sparkles className="sm:mr-2 h-4 w-4" />
-                            <span className="hidden sm:inline">Select</span>
-                          </Button>
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => lockCandidate(candidate.id)} disabled={isLocking} className="border-amber-300 text-amber-700 hover:bg-amber-50">
+                              <Lock className="sm:mr-2 h-4 w-4" />
+                              <span className="hidden sm:inline">Hold</span>
+                            </Button>
+                            <Button size="sm" onClick={() => setCandidateToSelect(candidate)} className="bg-green-600 hover:bg-green-700">
+                              <Sparkles className="sm:mr-2 h-4 w-4" />
+                              <span className="hidden sm:inline">Select</span>
+                            </Button>
+                          </>
                         ) : null}
+
+                        {isLockedByMe ? (
+                          <>
+                            <Button size="sm" variant="outline" onClick={() => unlockCandidate(candidate.id)} disabled={isUnlocking}>
+                              <Unlock className="sm:mr-2 h-4 w-4" />
+                              <span className="hidden sm:inline">Release</span>
+                            </Button>
+                            <Button size="sm" onClick={() => setCandidateToSelect(candidate)} className="bg-green-600 hover:bg-green-700">
+                              <Sparkles className="sm:mr-2 h-4 w-4" />
+                              <span className="hidden sm:inline">Select</span>
+                            </Button>
+                          </>
+                        ) : null}
+
+                        {isForeignAgent && candidate.cv_pdf_url && (
+                          <>
+                            <Button size="sm" variant="ghost" onClick={() => handleDownloadCV(candidate)} disabled={downloadingId === candidate.id}>
+                              <Download className="sm:mr-2 h-4 w-4" />
+                              <span className="hidden sm:inline">CV</span>
+                            </Button>
+                            <Button size="sm" variant="ghost" onClick={() => shareOnWhatsApp(buildCandidateMessage(candidate))}>
+                              <Share2 className="sm:mr-2 h-4 w-4" />
+                              <span className="hidden sm:inline">WhatsApp</span>
+                            </Button>
+                          </>
+                        )}
 
                         {canEdit ? (
                           <Button size="sm" variant="outline" asChild>

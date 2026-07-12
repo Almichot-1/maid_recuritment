@@ -61,8 +61,8 @@ function useDashboardBaseQuery<T>(key: string, select?: (data: DashboardHomeResp
     },
     select,
     enabled: Boolean(user) && (!requiresWorkspace || (isPairingReady && Boolean(activePairingId))),
-    staleTime: 60_000,
-    refetchInterval: 120_000,
+    staleTime: 120_000,
+    refetchInterval: 300_000,
     refetchOnWindowFocus: false,
   });
 }
@@ -105,7 +105,7 @@ export function useSmartAlerts() {
       return response.data;
     },
     enabled: canQuery,
-    staleTime: 60_000,
+    staleTime: 120_000,
     refetchInterval: 300_000,
     refetchOnWindowFocus: false,
   });

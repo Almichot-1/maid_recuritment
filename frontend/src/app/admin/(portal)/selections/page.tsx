@@ -23,12 +23,11 @@ export default function AdminSelectionsPage() {
     page,
     pageSize
   )
-  const selections = selectionsData?.selections ?? []
   const meta = selectionsData?.meta
 
   const filtered = React.useMemo(
     () =>
-      selections.filter((selection) => {
+      (selectionsData?.selections ?? []).filter((selection) => {
         if (!search) {
           return true
         }
@@ -39,7 +38,7 @@ export default function AdminSelectionsPage() {
           selection.foreign_agency.toLowerCase().includes(needle)
         )
       }),
-    [search, selections]
+    [search, selectionsData]
   )
 
   React.useEffect(() => {

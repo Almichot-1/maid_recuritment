@@ -40,10 +40,11 @@ func (m *candidateRepoBenchMock) Lock(candidateID, lockedBy string, expiresAt ti
 	return nil
 }
 func (m *candidateRepoBenchMock) Unlock(candidateID string) error { return nil }
+func (m *candidateRepoBenchMock) UpdateStatus(id string, status domain.CandidateStatus) error { return nil }
 
 func newCandidateServiceForBenchmark(b *testing.B, repo *candidateRepoBenchMock) *CandidateService {
 	b.Helper()
-	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
+	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil)
 	require.NoError(b, err)
 	return svc
 }

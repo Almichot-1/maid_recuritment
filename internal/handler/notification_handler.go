@@ -2,6 +2,7 @@ package handler
 
 import (
 	"errors"
+	"log"
 	"net/http"
 	"strconv"
 	"strings"
@@ -79,10 +80,17 @@ func NewNotificationHandler(notificationRepository domain.NotificationRepository
 		upgrader: websocket.Upgrader{
 			CheckOrigin: func(r *http.Request) bool {
 				origin := strings.TrimSpace(r.Header.Get("Origin"))
+				authToken := strings.TrimSpace(r.URL.Query().Get("auth_token"))
+				log.Printf("[CheckOrigin] notifications Origin=%q Host=%q auth_token_present=%v", origin, r.Host, authToken != "")
 				if origin == "" {
-					return false
+					log.Printf("[CheckOrigin] WARN notifications: empty origin — allowing connection")
+					return true
 				}
-				return isAllowedOrigin(origin, normalizedOrigins)
+				allowed := isAllowedOrigin(origin, normalizedOrigins)
+				if !allowed {
+					log.Printf("[CheckOrigin] REJECTED notifications: origin=%q not in allowed list", origin)
+				}
+				return allowed
 			},
 		},
 		connections: make(map[string]map[*wsConn]struct{}),

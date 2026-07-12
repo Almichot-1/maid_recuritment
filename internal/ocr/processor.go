@@ -1,7 +1,6 @@
 package ocr
 
 import (
-	"fmt"
 	"os"
 	"slices"
 	"strings"
@@ -70,74 +69,34 @@ func (p *OCRProcessor) ExtractMRZ(imagePath string) (string, string, float64, er
 		return "", "", 0, err
 	}
 
-	mrzImagePath := imagePath
-	mrzCleanup := func() {}
-	if processedPath, cleanup, err := prepareMRZImage(imagePath); err == nil {
-		mrzImagePath = processedPath
-		mrzCleanup = cleanup
-	}
-	defer mrzCleanup()
-
-	mrzArgs := []string{
-		"--oem", "1",
-		"--psm", "6",
-		"-c", "load_system_dawg=0",
-		"-c", "load_freq_dawg=0",
-		"-c", "user_defined_dpi=300",
-		"-c", "tessedit_char_whitelist=ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789<",
-	}
-	// ocrb is purpose-built for MRZ fonts — try it first for faster success on clean passports.
-	// Then fall back to eng and the configured language.
+	// Each pass handles its own preprocessing internally;
+	// we pass the original raw path so each pass can try both
+	// raw and preprocessed and keep the better result.
 	languages := uniqueOCRLanguages("ocrb", "eng", p.lang)
-	attemptErrors := make([]string, 0, len(languages))
-	bestLine1, bestLine2 := "", ""
-	bestValidationErrors := 1 << 30
+	configs := defaultMRZPassConfigs()
+	timeout := 20 * time.Second
 
-	for _, language := range languages {
-		// Use a shorter per-attempt timeout: on free-tier CPU this keeps total
-		// latency bounded even if one language stalls.
-		text, err := p.runTesseractTextWithTimeout(mrzImagePath, language, mrzArgs, 7*time.Second)
-		if err != nil {
-			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", language, err))
-			continue
-		}
+	results := runAllMRZPasses(p, imagePath, languages, configs, timeout)
 
-		line1, line2 := extractMRZLinesFromText(text)
-		if line1 == "" || line2 == "" {
-			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: invalid MRZ output", language))
-			continue
+	for _, r := range results {
+		if r.Err == nil && r.Parsed != nil && r.Parsed.IsValid && r.Confidence >= 0.5 {
+			return r.Line1, r.Line2, r.Confidence, nil
 		}
-
-		parsed, parseErr := p.parser.ParseMRZ(line1, line2)
-		if parseErr == nil && parsed != nil && parsed.IsValid {
-			// Perfect result — return immediately without trying remaining languages.
-			return line1, line2, 0, nil
-		}
-
-		validationErrors := bestValidationErrors
-		if parsed != nil && len(parsed.ValidationErrors) > 0 {
-			validationErrors = len(parsed.ValidationErrors)
-		}
-		if validationErrors < bestValidationErrors {
-			bestValidationErrors = validationErrors
-			bestLine1, bestLine2 = line1, line2
-		}
-		if parseErr != nil {
-			attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", language, parseErr))
-			continue
-		}
-		attemptErrors = append(attemptErrors, fmt.Sprintf("%s: invalid MRZ output (%s)", language, strings.Join(parsed.ValidationErrors, ", ")))
 	}
 
-	if bestLine1 != "" && bestLine2 != "" {
-		return bestLine1, bestLine2, 0, nil
+	fused := fuseMRZResults(results)
+
+	fused = rerunLowConfidenceFields(p, imagePath, fused)
+
+	if fused != nil && fused.SuccessfulPasses > 0 && fused.Confidence > 0.3 {
+		return fused.Line1, fused.Line2, fused.Confidence, nil
 	}
 
-	if len(attemptErrors) == 0 {
-		return "", "", 0, ErrInvalidMRZOutput
+	if best := bestSinglePassResult(results); best != nil {
+		return best.Line1, best.Line2, best.Confidence, nil
 	}
 
-	return "", "", 0, fmt.Errorf("%w: %s", ErrInvalidMRZOutput, strings.Join(attemptErrors, "; "))
+	return "", "", 0, ErrInvalidMRZOutput
 }
 
 func (p *OCRProcessor) ExtractVisualZone(imagePath string) (*VisualZoneData, error) {
@@ -164,7 +123,7 @@ func (p *OCRProcessor) ExtractVisualZone(imagePath string) (*VisualZoneData, err
 		"-c", "user_defined_dpi=300",
 	}
 
-	text, err := p.runTesseractTextWithTimeout(visualImagePath, p.lang, common, 6*time.Second)
+	text, err := p.runTesseractTextWithTimeout(visualImagePath, p.lang, common, 10*time.Second)
 	if err != nil {
 		return nil, err
 	}
@@ -255,7 +214,11 @@ func (p *OCRProcessor) ExtractPassportPreviewData(imagePath string) (*PassportDa
 
 func (p *OCRProcessor) extractPassportData(imagePath string, includeVisualZone bool) (*PassportData, error) {
 	if !includeVisualZone {
-		return p.extractPassportCore(imagePath)
+		data, err := p.extractPassportCore(imagePath)
+		if err != nil {
+			return nil, err
+		}
+		return postCorrectPassportData(data), nil
 	}
 
 	visualZoneResult := p.startVisualZoneExtraction(imagePath)
@@ -271,7 +234,7 @@ func (p *OCRProcessor) extractPassportData(imagePath string, includeVisualZone b
 
 	data.CountryCode = strings.ToUpper(strings.TrimSpace(data.CountryCode))
 	data.Nationality = strings.ToUpper(strings.TrimSpace(data.Nationality))
-	return data, nil
+	return postCorrectPassportData(data), nil
 }
 
 func (p *OCRProcessor) extractPassportCore(imagePath string) (*PassportData, error) {
@@ -306,6 +269,15 @@ func (p *OCRProcessor) extractPassportCore(imagePath string) (*PassportData, err
 
 	data.CountryCode = strings.ToUpper(strings.TrimSpace(data.CountryCode))
 	data.Nationality = strings.ToUpper(strings.TrimSpace(data.Nationality))
+
+	if strings.TrimSpace(data.PlaceOfBirth) == "" {
+		if rawText, err := p.ExtractText(imagePath); err == nil && strings.TrimSpace(rawText) != "" {
+			if pb := extractPlaceOfBirthFromRawText(rawText, data.DateOfBirth); pb != "" {
+				data.PlaceOfBirth = pb
+			}
+		}
+	}
+
 	return data, nil
 }
 
@@ -326,13 +298,13 @@ func applyVisualZoneData(data *PassportData, vz *VisualZoneData) {
 		return
 	}
 
-	if strings.TrimSpace(data.PlaceOfBirth) == "" && strings.TrimSpace(vz.PlaceOfBirth) != "" {
-		data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
-	}
 	if strings.TrimSpace(data.PlaceOfBirth) == "" && !data.DateOfBirth.IsZero() && strings.TrimSpace(vz.RawText) != "" {
 		if fallbackPlace := findPlaceOfBirthNearBirthDate(vz.RawText, data.DateOfBirth); fallbackPlace != "" {
 			data.PlaceOfBirth = fallbackPlace
 		}
+	}
+	if strings.TrimSpace(data.PlaceOfBirth) == "" && strings.TrimSpace(vz.PlaceOfBirth) != "" {
+		data.PlaceOfBirth = strings.TrimSpace(vz.PlaceOfBirth)
 	}
 	if data.DateOfIssue.IsZero() && !vz.DateOfIssue.IsZero() {
 		data.DateOfIssue = vz.DateOfIssue.UTC()

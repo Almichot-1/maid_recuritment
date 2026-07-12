@@ -21,6 +21,7 @@ interface BulkPublishDialogProps {
   onOpenChange: (open: boolean) => void;
   candidateIds: string[];
   workspaces: WorkspaceSummary[];
+  onSuccess?: () => void;
 }
 
 export function BulkPublishDialog({
@@ -28,6 +29,7 @@ export function BulkPublishDialog({
   onOpenChange,
   candidateIds,
   workspaces,
+  onSuccess,
 }: BulkPublishDialogProps) {
   const [selectedIds, setSelectedIds] = React.useState<string[]>([]);
   const bulkPublish = useBulkPublish();
@@ -50,6 +52,7 @@ export function BulkPublishDialog({
       pairing_ids: selectedIds.length > 0 ? selectedIds : undefined,
     });
     onOpenChange(false);
+    onSuccess?.();
   };
 
   return (

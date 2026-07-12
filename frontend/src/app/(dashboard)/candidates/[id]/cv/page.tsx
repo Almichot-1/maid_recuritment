@@ -31,7 +31,7 @@ export default function CandidateCVPage() {
   const { isEthiopianAgent } = useCurrentUser()
   const { isLoaded: isBrandingLoaded, logoDataURL } = useAgencyBranding()
   const { data: candidate, isLoading, error } = useCandidate(candidateId)
-  const { activePairingId } = usePairingContext()
+  const { activePairingId, activeWorkspace } = usePairingContext()
   const { mutate: generateCV, isPending: isGeneratingCV } = useGenerateCV(candidateId)
   const [hasStartedPreparation, setHasStartedPreparation] = React.useState(false)
   const [isDownloading, setIsDownloading] = React.useState(false)
@@ -45,7 +45,14 @@ export default function CandidateCVPage() {
     return ["passport", "photo"].filter((documentType) => !documentTypes.has(documentType))
   }, [candidate])
 
-  const canPrepareCV = isEthiopianAgent && missingRequiredDocuments.length === 0 && isBrandingLoaded
+  const hasCountrySalaryData = React.useMemo(() => {
+    if (!candidate || !activePairingId) return false
+    const hasOverride = candidate.pair_overrides?.some((o) => o.pairing_id === activePairingId)
+    const hasDefaults = !!(activeWorkspace?.default_country && activeWorkspace?.default_currency && activeWorkspace?.default_salary)
+    return !!(hasOverride || hasDefaults)
+  }, [candidate, activePairingId, activeWorkspace])
+
+  const canPrepareCV = isEthiopianAgent && missingRequiredDocuments.length === 0 && isBrandingLoaded && hasCountrySalaryData
   
   const triggerCVBuild = React.useCallback(() => {
     setHasStartedPreparation(true)
@@ -273,6 +280,23 @@ export default function CandidateCVPage() {
               <Link href={`/candidates/${candidate.id}`}>
                 <FileText className="mr-2 h-4 w-4" />
                 Go back to candidate files
+              </Link>
+            </Button>
+          </CardContent>
+        </Card>
+      ) : !hasCountrySalaryData && isEthiopianAgent ? (
+        <Card className="shadow-sm">
+          <CardHeader>
+            <CardTitle>Country and salary not configured</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-900">
+              Set a destination country and salary for this partner first. You can configure these in the partner defaults or set them per-candidate in the job details section.
+            </div>
+            <Button asChild>
+              <Link href={`/candidates/${candidate.id}`}>
+                <FileText className="mr-2 h-4 w-4" />
+                Go to candidate details
               </Link>
             </Button>
           </CardContent>

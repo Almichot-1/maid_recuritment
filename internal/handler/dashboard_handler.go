@@ -92,7 +92,7 @@ type DashboardHandler struct {
 	pairingService         *service.PairingService
 	passportRepository     *repository.GormPassportDataRepository
 	medicalRepository      *repository.GormMedicalDataRepository
-	statusStepRepository   domain.StatusStepRepository
+	selectionProgressRepo  domain.SelectionProgressRepository
 }
 
 type dashboardStatsRow struct {
@@ -104,7 +104,7 @@ type dashboardStatsRow struct {
 	ActiveSelections    int64 `gorm:"column:active_selections"`
 }
 
-func NewDashboardHandler(candidateRepository *repository.GormCandidateRepository, selectionRepository *repository.GormSelectionRepository, notificationRepository *repository.GormNotificationRepository, pairingService *service.PairingService, passportRepository *repository.GormPassportDataRepository, medicalRepository *repository.GormMedicalDataRepository, statusStepRepository domain.StatusStepRepository) *DashboardHandler {
+func NewDashboardHandler(candidateRepository *repository.GormCandidateRepository, selectionRepository *repository.GormSelectionRepository, notificationRepository *repository.GormNotificationRepository, pairingService *service.PairingService, passportRepository *repository.GormPassportDataRepository, medicalRepository *repository.GormMedicalDataRepository, selectionProgressRepo domain.SelectionProgressRepository) *DashboardHandler {
 	return &DashboardHandler{
 		candidateRepository:    candidateRepository,
 		selectionRepository:    selectionRepository,
@@ -112,7 +112,7 @@ func NewDashboardHandler(candidateRepository *repository.GormCandidateRepository
 		pairingService:         pairingService,
 		passportRepository:     passportRepository,
 		medicalRepository:      medicalRepository,
-		statusStepRepository:   statusStepRepository,
+		selectionProgressRepo:  selectionProgressRepo,
 	}
 }
 
@@ -550,41 +550,46 @@ func (h *DashboardHandler) loadSmartAlerts(userID, pairingID string) (*Dashboard
 		}
 	}
 
-	candidates, err := h.candidateRepository.List(domain.CandidateFilters{
-		CreatedBy:  userID,
-		PairingID:  pairingID,
-		SharedOnly: true,
-		Statuses:   []domain.CandidateStatus{domain.CandidateStatusInProgress, domain.CandidateStatusCompleted},
-		Page:       1,
-		PageSize:   12,
-	})
+	selections, err := h.selectionRepository.GetByCandidateOwnerAndPairing(userID, pairingID)
 	if err != nil {
-		return nil, err
+		selections = []*domain.Selection{}
 	}
 
-	for _, candidate := range candidates {
-		if candidate == nil || h.statusStepRepository == nil {
+	for _, sel := range selections {
+		if sel == nil || sel.Status != domain.SelectionApproved {
 			continue
 		}
-		steps, err := h.statusStepRepository.GetByCandidateID(candidate.ID)
+		progress, err := h.selectionProgressRepo.GetBySelectionID(sel.ID)
 		if err != nil {
-			return nil, err
-		}
-		stage, updatedAt, arrived := deriveFlightStage(steps)
-		if stage == "" {
 			continue
 		}
-		record := SmartAlertFlightResponse{
-			CandidateID:   candidate.ID,
-			CandidateName: candidate.FullName,
-			Stage:         stage,
-			UpdatedAt:     updatedAt.UTC().Format(time.RFC3339),
-			Status:        string(candidate.Status),
+
+		if progress.TicketStatus == string(domain.TicketStatusConfirmed) {
+			candidate, err := h.candidateRepository.GetByID(sel.CandidateID)
+			if err != nil {
+				continue
+			}
+			response.FlightUpdates = append(response.FlightUpdates, SmartAlertFlightResponse{
+				CandidateID:   candidate.ID,
+				CandidateName: candidate.FullName,
+				Stage:         "Flight Booked",
+				UpdatedAt:     progress.UpdatedAt.UTC().Format(time.RFC3339),
+				Status:        strings.ToUpper(string(progress.TicketStatus)),
+			})
 		}
-		if arrived {
-			response.RecentlyArrived = append(response.RecentlyArrived, record)
-		} else {
-			response.FlightUpdates = append(response.FlightUpdates, record)
+
+		if progress.ArrivalStatus == string(domain.ArrivalStatusArrived) {
+			candidate, err := h.candidateRepository.GetByID(sel.CandidateID)
+			if err != nil {
+				continue
+			}
+			response.RecentlyArrived = append(response.RecentlyArrived, SmartAlertFlightResponse{
+				CandidateID:   candidate.ID,
+				CandidateName: candidate.FullName,
+				Stage:         "Arrived",
+				UpdatedAt:     progress.UpdatedAt.UTC().Format(time.RFC3339),
+				Status:        "ARRIVED",
+			})
 		}
 	}
 
@@ -627,18 +632,4 @@ func medicalWarningLabel(expiryDate time.Time) string {
 	}
 }
 
-func deriveFlightStage(steps []*domain.StatusStep) (string, time.Time, bool) {
-	order := []string{domain.TicketPending, domain.TicketBooked, domain.TicketConfirmed, domain.Arrived}
-	for index := len(order) - 1; index >= 0; index-- {
-		name := order[index]
-		for _, step := range steps {
-			if step == nil || strings.TrimSpace(step.StepName) != name {
-				continue
-			}
-			if step.StepStatus == domain.Completed || step.StepStatus == domain.InProgress {
-				return name, step.UpdatedAt, name == domain.Arrived
-			}
-		}
-	}
-	return "", time.Time{}, false
-}
+

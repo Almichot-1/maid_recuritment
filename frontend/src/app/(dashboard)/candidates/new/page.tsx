@@ -9,7 +9,7 @@ import Link from "next/link"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { isPublishPairingSelectionError, publishCandidateById, publishCandidateWithPairingById, uploadCandidateDocumentFile, useCreateCandidate } from "@/hooks/use-candidates"
 import { usePairingContext } from "@/hooks/use-pairings"
-import { CandidateForm, CandidateFormValues, PartnerOverrideEntry } from "@/components/candidates/candidate-form"
+import { CandidateForm, type CandidateFormValues, type PartnerOverrideEntry } from "@/components/candidates/candidate-form"
 import { SubmissionProgressOverlay } from "@/components/candidates/submission-progress-overlay"
 import { CandidateInput } from "@/lib/validations"
 import api from "@/lib/api"
@@ -221,7 +221,7 @@ export default function NewCandidatePage() {
     const candidateData = {
       ...data,
       date_of_birth: data.date_of_birth || undefined,
-      languages: data.languages.map((language) => language.language),
+      languages: data.languages,
     }
     const queuedDocuments = (Object.entries(pendingDocuments).filter(([, file]) => !!file) as Array<[keyof PendingDocuments, File]>)
 
@@ -276,21 +276,19 @@ export default function NewCandidatePage() {
         toast.info("Candidate created without documents")
       }
 
-      if (submitter === "create_another") {
-        setSubmissionStage("publishing")
-        try {
-          await publishCandidateById(candidateID)
-        } catch (error) {
-          if (isPublishPairingSelectionError(error)) {
-            setSubmissionStage("idle")
-            setPendingPublishCandidateId(candidateID)
-            setPublishPairingId(activePairingId || context?.workspaces?.[0]?.id || "")
-            setPublishChooserOpen(true)
-            toast.info("Choose which foreign partner should receive this published candidate.")
-            return
-          }
-          throw error
+      // Publish after saving
+      setSubmissionStage("publishing")
+      try {
+        await publishCandidateById(candidateID)
+      } catch (error) {
+        if (isPublishPairingSelectionError(error)) {
+          setSubmissionStage("idle")
+          setPendingPublishCandidateId(candidateID)
+          setPublishPairingId(activePairingId || context?.workspaces?.[0]?.id || "")
+          setPublishChooserOpen(true)
+          return
         }
+        throw error
       }
 
       await clearCandidateDraft()

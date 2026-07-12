@@ -33,8 +33,8 @@ const COUNTRIES = [
 ]
 
 const overrideSchema = z.object({
-  country_applied: z.string().max(100),
-  salary_offered: z.string().max(100),
+  country_applied: z.string().min(1, "Country is required").max(100),
+  salary_offered: z.string().min(1, "Salary is required").max(100),
 })
 
 type OverrideFormValues = z.infer<typeof overrideSchema>
@@ -97,6 +97,8 @@ function PartnerOverrideRow({
 }: PartnerOverrideRowProps) {
   const { mutateAsync: setOverride, isPending } = useSetPairOverride(candidateId)
 
+  const [logoUrl, setLogoUrl] = React.useState(override?.logo_url || "")
+
   const form = useForm<OverrideFormValues>({
     resolver: zodResolver(overrideSchema),
     defaultValues: {
@@ -110,6 +112,7 @@ function PartnerOverrideRow({
       country_applied: override?.country_applied || "",
       salary_offered: override?.salary_offered || "",
     })
+    setLogoUrl(override?.logo_url || "")
   }, [override, form])
 
   const onSubmit = async (values: OverrideFormValues) => {
@@ -117,6 +120,7 @@ function PartnerOverrideRow({
       pairing_id: pairingId,
       country_applied: values.country_applied,
       salary_offered: values.salary_offered,
+      logo_url: logoUrl || undefined,
     })
     onSaved()
   }
@@ -133,32 +137,50 @@ function PartnerOverrideRow({
         )}
       </div>
       <form onSubmit={form.handleSubmit(onSubmit)} className="space-y-3">
-        <div className="grid gap-3 sm:grid-cols-2">
-          <div className="space-y-1.5">
-            <Label htmlFor={`country-${pairingId}`}>Country Applied</Label>
-            <Select
-              value={form.watch("country_applied")}
-              onValueChange={(val) => form.setValue("country_applied", val)}
-            >
-              <SelectTrigger id={`country-${pairingId}`}>
-                <SelectValue placeholder="Select country..." />
-              </SelectTrigger>
-              <SelectContent>
-                {COUNTRIES.map((c) => (
-                  <SelectItem key={c} value={c}>{c}</SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
+          <div className="grid gap-3 sm:grid-cols-2">
+            <div className="space-y-1.5">
+              <Label htmlFor={`country-${pairingId}`}>Country Applied</Label>
+              <Select
+                value={form.watch("country_applied")}
+                onValueChange={(val) => form.setValue("country_applied", val)}
+              >
+                <SelectTrigger id={`country-${pairingId}`}>
+                  <SelectValue placeholder="Select country..." />
+                </SelectTrigger>
+                <SelectContent>
+                  {COUNTRIES.map((c) => (
+                    <SelectItem key={c} value={c}>{c}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {form.formState.errors.country_applied && (
+                <p className="text-xs text-destructive">{form.formState.errors.country_applied.message}</p>
+              )}
+            </div>
+            <div className="space-y-1.5">
+              <Label htmlFor={`salary-${pairingId}`}>Salary Offered</Label>
+              <Input
+                id={`salary-${pairingId}`}
+                placeholder="e.g., 1000 SR, 400 USD"
+                {...form.register("salary_offered")}
+              />
+              {form.formState.errors.salary_offered && (
+                <p className="text-xs text-destructive">{form.formState.errors.salary_offered.message}</p>
+              )}
+            </div>
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor={`salary-${pairingId}`}>Salary Offered</Label>
+            <Label htmlFor={`logo-${pairingId}`}>Partner Logo URL (optional)</Label>
             <Input
-              id={`salary-${pairingId}`}
-              placeholder="e.g., 1000 SR, 400 USD"
-              {...form.register("salary_offered")}
+              id={`logo-${pairingId}`}
+              placeholder="https://example.com/logo.png"
+              value={logoUrl}
+              onChange={(e) => setLogoUrl(e.target.value)}
             />
+            <p className="text-xs text-muted-foreground">
+              Overrides the workspace default logo for this candidate&apos;s CV.
+            </p>
           </div>
-        </div>
         <div className="flex justify-end">
           <Button type="submit" size="sm" disabled={isPending}>
             {isPending ? (

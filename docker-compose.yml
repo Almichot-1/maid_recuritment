@@ -57,17 +57,18 @@ services:
     build: .
     container_name: maid-recruitment-api
     ports:
-      - "10000:10000"
+      - "8080:8080"
     environment:
       DATABASE_URL: "postgres://postgres:postgres@postgres:5432/maid_recruitment?sslmode=disable"
       JWT_SECRET: "local-dev-jwt-secret-change-in-production"
-      APP_BASE_URL: "http://localhost:10000"
+      APP_BASE_URL: "http://localhost:8080"
       CORS_ALLOWED_ORIGINS: "http://localhost:3000"
       AWS_ACCESS_KEY: "minioadmin"
       AWS_SECRET_KEY: "minioadmin"
       AWS_REGION: "us-east-1"
       S3_BUCKET: "maid-recruitment"
       S3_PUBLIC_BASE_URL: "http://localhost:9000/maid-recruitment"
+      S3_ENDPOINT: "http://minio:9000"
       SMTP_HOST: "localhost"
       SMTP_PORT: "1025"
       SMTP_USER: ""

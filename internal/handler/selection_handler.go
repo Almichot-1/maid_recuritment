@@ -34,6 +34,7 @@ type SelectionResponse struct {
 	ID                string                    `json:"id"`
 	CandidateID       string                    `json:"candidate_id"`
 	SelectedBy        string                    `json:"selected_by"`
+	SelectedByName    string                    `json:"selected_by_name"`
 	Status            string                    `json:"status"`
 	ExpiresAt         string                    `json:"expires_at"`
 	TimeRemaining     string                    `json:"time_remaining"`
@@ -42,8 +43,17 @@ type SelectionResponse struct {
 	ForeignApproved   bool                      `json:"foreign_approved"`
 	EmployerContract  *SelectionDocumentSummary `json:"employer_contract,omitempty"`
 	EmployerID        *SelectionDocumentSummary `json:"employer_id,omitempty"`
+	Progress          *SelectionProgressSummary `json:"progress,omitempty"`
 	CreatedAt         string                    `json:"created_at"`
 	UpdatedAt         string                    `json:"updated_at"`
+}
+
+type SelectionProgressSummary struct {
+	COCStatus     string `json:"coc_status"`
+	MedicalStatus string `json:"medical_status"`
+	VisaStatus    string `json:"visa_status"`
+	TicketStatus  string `json:"ticket_status"`
+	ArrivalStatus string `json:"arrival_status"`
 }
 
 type SelectionDocumentSummary struct {
@@ -57,12 +67,13 @@ type SelectionHandler struct {
 	candidateRepo           domain.CandidateRepository
 	approvalRepo            domain.ApprovalRepository
 	pairingService          *service.PairingService
+	userRepo                domain.UserRepository
 	documentStorage         secureDocumentStorage
 	selectionUpdatesHandler *SelectionUpdatesHandler
 }
 
-func NewSelectionHandler(selectionService *service.SelectionService, candidateRepo domain.CandidateRepository, approvalRepo domain.ApprovalRepository, pairingService *service.PairingService) *SelectionHandler {
-	return &SelectionHandler{selectionService: selectionService, candidateRepo: candidateRepo, approvalRepo: approvalRepo, pairingService: pairingService}
+func NewSelectionHandler(selectionService *service.SelectionService, candidateRepo domain.CandidateRepository, approvalRepo domain.ApprovalRepository, pairingService *service.PairingService, userRepo domain.UserRepository) *SelectionHandler {
+	return &SelectionHandler{selectionService: selectionService, candidateRepo: candidateRepo, approvalRepo: approvalRepo, pairingService: pairingService, userRepo: userRepo}
 }
 
 func (h *SelectionHandler) SetDocumentStorage(storage secureDocumentStorage) {
@@ -109,6 +120,106 @@ func (h *SelectionHandler) SelectCandidate(w http.ResponseWriter, r *http.Reques
 	})
 }
 
+func (h *SelectionHandler) LockCandidate(w http.ResponseWriter, r *http.Request) {
+	candidateID := chi.URLParam(r, "id")
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	pairingID, _ := middleware.PairingIDFromContext(r.Context())
+
+	err := h.selectionService.LockCandidate(candidateID, userID, pairingID)
+	if err != nil {
+		if h.tryWritePairingError(w, err) {
+			return
+		}
+		h.writeSelectionError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"status": "locked"})
+}
+
+func (h *SelectionHandler) UnlockCandidateHandler(w http.ResponseWriter, r *http.Request) {
+	candidateID := chi.URLParam(r, "id")
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	err := h.selectionService.UnlockCandidate(candidateID, userID)
+	if err != nil {
+		h.writeSelectionError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"status": "unlocked"})
+}
+
+func (h *SelectionHandler) BatchLockCandidates(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+	pairingID, _ := middleware.PairingIDFromContext(r.Context())
+
+	var req struct {
+		CandidateIDs []string `json:"candidate_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+
+	locked, err := h.selectionService.BatchLockCandidates(req.CandidateIDs, userID, pairingID)
+	if err != nil {
+		if h.tryWritePairingError(w, err) {
+			return
+		}
+		h.writeSelectionError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"locked": locked, "total": len(req.CandidateIDs)})
+}
+
+func (h *SelectionHandler) BatchUnlockCandidates(w http.ResponseWriter, r *http.Request) {
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req struct {
+		CandidateIDs []string `json:"candidate_ids"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if len(req.CandidateIDs) == 0 {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate_ids is required"})
+		return
+	}
+
+	unlocked, err := h.selectionService.BatchUnlockCandidates(req.CandidateIDs, userID)
+	if err != nil {
+		h.writeSelectionError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]any{"unlocked": unlocked, "total": len(req.CandidateIDs)})
+}
+
 func (h *SelectionHandler) GetSelection(w http.ResponseWriter, r *http.Request) {
 	selectionID := chi.URLParam(r, "id")
 	userID, ok := middleware.UserIDFromContext(r.Context())
@@ -122,27 +233,13 @@ func (h *SelectionHandler) GetSelection(w http.ResponseWriter, r *http.Request) 
 		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 		return
 	}
-	pairingID, _ := middleware.PairingIDFromContext(r.Context())
 
 	selection, err := h.selectionService.GetSelection(selectionID)
 	if err != nil {
 		h.writeSelectionError(w, err)
 		return
 	}
-	if h.pairingService != nil {
-		pairing, err := h.pairingService.ResolveActivePairing(userID, role, pairingID)
-		if err != nil {
-			if h.tryWritePairingError(w, err) {
-				return
-			}
-			h.writeSelectionError(w, err)
-			return
-		}
-		if strings.TrimSpace(selection.PairingID) != strings.TrimSpace(pairing.ID) {
-			_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
-			return
-		}
-	}
+
 
 	// Candidate data is already preloaded by the repository
 	if !isInvolvedParty(role, userID, selection, selection.Candidate) {
@@ -198,7 +295,6 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 	}
 
 	filters := domain.SelectionFilters{
-		PairingID: pairingID,
 		Page:      page,
 		PageSize:  pageSize,
 		SortBy:    sortBy,
@@ -207,8 +303,11 @@ func (h *SelectionHandler) GetMySelections(w http.ResponseWriter, r *http.Reques
 	switch strings.TrimSpace(role) {
 	case string(domain.ForeignAgent):
 		filters.SelectedBy = userID
+		filters.PairingID = pairingID // Foreign agents filter by pairing
 	case string(domain.EthiopianAgent):
 		filters.CandidateOwner = userID
+		// Ethiopian agents see all their selections across all pairings
+		// Don't set PairingID filter
 	default:
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 		return
@@ -311,6 +410,23 @@ func (h *SelectionHandler) UploadSelectionDocument(w http.ResponseWriter, r *htt
 	})
 }
 
+func (h *SelectionHandler) UnlockSelection(w http.ResponseWriter, r *http.Request) {
+	selectionID := chi.URLParam(r, "id")
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	err := h.selectionService.UnlockSelection(selectionID, userID)
+	if err != nil {
+		h.writeSelectionError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"status": "unlocked"})
+}
+
 func (h *SelectionHandler) writeSelectionError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, service.ErrAlreadySelected):
@@ -319,8 +435,10 @@ func (h *SelectionHandler) writeSelectionError(w http.ResponseWriter, err error)
 		_ = utils.WriteJSON(w, http.StatusConflict, map[string]string{"error": "candidate not available"})
 	case errors.Is(err, service.ErrNotForeignAgent):
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "only foreign agents can select candidates"})
-	case errors.Is(err, service.ErrNotAuthorized):
+	case errors.Is(err, service.ErrNotAuthorized), errors.Is(err, service.ErrForbidden):
 		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+	case errors.Is(err, service.ErrCandidateNotLockedByYou):
+		_ = utils.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "candidate is not locked by you"})
 	case errors.Is(err, service.ErrSelectionNotPending):
 		_ = utils.WriteJSON(w, http.StatusConflict, map[string]string{"error": "selection is not pending"})
 	case errors.Is(err, service.ErrInvalidSelectionDocumentType), errors.Is(err, service.ErrFileTooLarge), errors.Is(err, service.ErrInvalidFileType):
@@ -404,7 +522,7 @@ func (h *SelectionHandler) mapSelectionResponse(selection *domain.Selection, can
 		if approval == nil || approval.Decision != domain.ApprovalApproved {
 			continue
 		}
-		if strings.TrimSpace(approval.UserID) == strings.TrimSpace(candidate.CreatedBy) {
+		if candidate != nil && strings.TrimSpace(approval.UserID) == strings.TrimSpace(candidate.CreatedBy) {
 			ethiopianApproved = true
 		}
 		if strings.TrimSpace(approval.UserID) == strings.TrimSpace(selection.SelectedBy) {
@@ -413,21 +531,18 @@ func (h *SelectionHandler) mapSelectionResponse(selection *domain.Selection, can
 	}
 
 	photoURL := ""
-	for _, document := range candidate.Documents {
-		if document.DocumentType == string(domain.Photo) {
-			photoURL = buildSignedDocumentURL(h.documentStorage, document.FileURL, document.FileName, contentTypeFromFileName(document.FileName), true)
-			break
+	if candidate != nil {
+		for _, document := range candidate.Documents {
+			if document.DocumentType == string(domain.Photo) {
+				photoURL = buildSignedDocumentURL(h.documentStorage, document.FileURL, document.FileName, contentTypeFromFileName(document.FileName), true)
+				break
+			}
 		}
 	}
 
-	return SelectionResponse{
-		ID:            selection.ID,
-		CandidateID:   selection.CandidateID,
-		SelectedBy:    selection.SelectedBy,
-		Status:        string(selection.Status),
-		ExpiresAt:     selection.ExpiresAt.UTC().Format(time.RFC3339),
-		TimeRemaining: remaining.Truncate(time.Second).String(),
-		Candidate: SelectionCandidateSummary{
+	candidateSummary := SelectionCandidateSummary{}
+	if candidate != nil {
+		candidateSummary = SelectionCandidateSummary{
 			ID:              candidate.ID,
 			FullName:        candidate.FullName,
 			Status:          string(candidate.Status),
@@ -435,11 +550,30 @@ func (h *SelectionHandler) mapSelectionResponse(selection *domain.Selection, can
 			Age:             candidate.Age,
 			ExperienceYears: candidate.ExperienceYears,
 			PhotoURL:        photoURL,
-		},
+		}
+	}
+
+	selectedByName := ""
+	if h.userRepo != nil && strings.TrimSpace(selection.SelectedBy) != "" {
+		if user, err := h.userRepo.GetByID(selection.SelectedBy); err == nil && user != nil {
+			selectedByName = user.FullName
+		}
+	}
+
+	return SelectionResponse{
+		ID:            selection.ID,
+		CandidateID:   selection.CandidateID,
+		SelectedBy:    selection.SelectedBy,
+		SelectedByName: selectedByName,
+		Status:        string(selection.Status),
+		ExpiresAt:     selection.ExpiresAt.UTC().Format(time.RFC3339),
+		TimeRemaining: remaining.Truncate(time.Second).String(),
+		Candidate:     candidateSummary,
 		EthiopianApproved: ethiopianApproved,
 		ForeignApproved:   foreignApproved,
 		EmployerContract:  h.mapSelectionDocumentSummary(selection.EmployerContractURL, selection.EmployerContractFileName, selection.EmployerContractUploadedAt),
 		EmployerID:        h.mapSelectionDocumentSummary(selection.EmployerIDURL, selection.EmployerIDFileName, selection.EmployerIDUploadedAt),
+		Progress:          h.mapProgressSummary(selection.Progress),
 		CreatedAt:         selection.CreatedAt.UTC().Format(time.RFC3339),
 		UpdatedAt:         selection.UpdatedAt.UTC().Format(time.RFC3339),
 	}, nil
@@ -458,6 +592,20 @@ func (h *SelectionHandler) mapSelectionDocumentSummary(fileURL, fileName string,
 		summary.UploadedAt = uploadedAt.UTC().Format(time.RFC3339)
 	}
 	return summary
+}
+
+func (h *SelectionHandler) mapProgressSummary(progress *domain.SelectionProgress) *SelectionProgressSummary {
+	if progress == nil {
+		return nil
+	}
+
+	return &SelectionProgressSummary{
+		COCStatus:     progress.COCStatus,
+		MedicalStatus: progress.MedicalStatus,
+		VisaStatus:    progress.VisaStatus,
+		TicketStatus:  progress.TicketStatus,
+		ArrivalStatus: progress.ArrivalStatus,
+	}
 }
 
 // calculateETag computes an ETag hash for response caching

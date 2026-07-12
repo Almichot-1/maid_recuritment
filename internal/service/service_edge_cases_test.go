@@ -2,10 +2,12 @@ package service
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"image"
 	"image/color"
 	"image/png"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -80,7 +82,7 @@ func TestCandidateService_UpdateAndGenerateCV_ErrorBranches(t *testing.T) {
 	repo := &candidateRepoBehaviorMock{}
 	docRepo := &candidateDocRepoBehaviorMock{}
 	storage := &candidateStorageBehaviorMock{}
-	svc, err := NewCandidateService(repo, docRepo, storage, NewPDFService(), &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
+	svc, err := NewCandidateService(repo, docRepo, storage, NewPDFService(storage), &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	err = svc.UpdateCandidate("", "owner", CandidateInput{FullName: "A"})
@@ -117,14 +119,16 @@ func TestCandidateService_UpdateAndGenerateCV_ErrorBranches(t *testing.T) {
 	err = svc.GenerateCV("id", "owner-1", "", CandidateCVBranding{})
 	require.Error(t, err)
 
-	server := newValidImageServer(t)
-	defer server.Close()
+	imgBytes, _ := base64.StdEncoding.DecodeString("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==")
+	storage.openFn = func(fileURL string) (io.ReadCloser, string, error) {
+		return io.NopCloser(bytes.NewReader(imgBytes)), "image/png", nil
+	}
 
 	docRepo.getByCandidateFn = func(candidateID string) ([]*domain.Document, error) {
 		return []*domain.Document{
-			{DocumentType: domain.Photo, FileURL: server.URL},
-			{DocumentType: domain.Passport, FileURL: server.URL},
-			{DocumentType: domain.Video, FileURL: "https://example.com/video.mp4"},
+			{DocumentType: domain.Photo, FileURL: "s3://err-photo"},
+			{DocumentType: domain.Passport, FileURL: "s3://err-passport"},
+			{DocumentType: domain.Video, FileURL: "s3://err-video"},
 		}, nil
 	}
 

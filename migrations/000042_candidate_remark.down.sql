@@ -1,0 +1,1 @@
+ALTER TABLE candidates DROP COLUMN IF EXISTS remark;

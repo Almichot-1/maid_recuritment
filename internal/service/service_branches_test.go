@@ -4,8 +4,7 @@ import (
 	"bytes"
 	"encoding/base64"
 	"errors"
-	"net/http"
-	"net/http/httptest"
+	"io"
 	"testing"
 	"time"
 
@@ -136,7 +135,7 @@ func TestCandidateService_RemainingBranches(t *testing.T) {
 	repo := &candidateRepoBehaviorMock{}
 	docRepo := &documentRepositoryMock{}
 	storage := &storageServiceMock{}
-	svc, err := NewCandidateService(repo, docRepo, storage, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
+	svc, err := NewCandidateService(repo, docRepo, storage, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 
 	_, _, err = svc.GetCandidate("x")
@@ -186,32 +185,21 @@ func TestNotificationService_RemainingBranches(t *testing.T) {
 	assert.True(t, len(notifRepo.created) >= 5)
 }
 
-func TestStatusStepService_Branches(t *testing.T) {
-	svc := &StatusStepService{statusStepRepository: &statusStepRepoBehaviorMock{getByCandidateIDFn: func(candidateID string) ([]*domain.StatusStep, error) {
-		return []*domain.StatusStep{}, nil
-	}}}
-	_, err := svc.GetCandidateProgress("")
-	require.Error(t, err)
-
-	_, err = svc.GetCandidateProgress("cand-1")
-	require.NoError(t, err)
-}
-
 func TestPDFService_GenerateCV_ImageDecodeFailure(t *testing.T) {
 	img, _ := base64.StdEncoding.DecodeString("/9j/4AAQSkZJRgABAQAAAQABAAD/2wCEAAkGBxISEhUTEhMWFhUXGBgYFxgXFxgYGBgYGBgXGBgYGBgYHSggGBolGxgYITEhJSkrLi4uGB8zODMsNygtLisBCgoKDg0OGxAQGy0lICYtLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLS0tLf/AABEIAAEAAQMBIgACEQEDEQH/xAAbAAADAQADAQAAAAAAAAAAAAAEBQYDAgABB//EADUQAAEDAgMFBQYEBwAAAAAAAAEAAgMEEQUSITFBUQYTImFxgZGhFCMyQrHB0fAjYnLxFf/EABkBAQADAQEAAAAAAAAAAAAAAAABAgMEBf/EACQRAQACAgICAgMBAAAAAAAAAAABAgMREiExBEETIlFhFDKB/9oADAMBAAIRAxEAPwD3iIiAiIgIiICIiAiIgIiICIiAiIgL//2Q==")
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "image/jpeg")
-		_, _ = w.Write(img)
-	}))
-	defer server.Close()
 
 	age := 21
 	exp := 2
-	svc := NewPDFService()
+	storage := &candidateStorageBehaviorMock{
+		openFn: func(fileURL string) (io.ReadCloser, string, error) {
+			return io.NopCloser(bytes.NewReader(img)), "image/jpeg", nil
+		},
+	}
+	svc := NewPDFService(storage)
 	_, err := svc.GenerateCandidateCV(&domain.Candidate{FullName: "C", Age: &age, ExperienceYears: &exp, Languages: []byte(`["en"]`), Skills: []byte(`["s1"]`)}, []*domain.Document{
-		{DocumentType: domain.Photo, FileURL: server.URL},
-		{DocumentType: domain.Passport, FileURL: server.URL},
-		{DocumentType: domain.Video, FileURL: "https://example.com/video.mp4"},
+		{DocumentType: domain.Photo, FileURL: "s3://photo"},
+		{DocumentType: domain.Passport, FileURL: "s3://passport"},
+		{DocumentType: domain.Video, FileURL: "s3://video"},
 	}, CandidateCVBranding{}, nil)
 	require.Error(t, err)
 }

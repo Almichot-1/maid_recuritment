@@ -8,7 +8,8 @@ import { ChevronRight, Eye, FileText, Home, ImagePlus, Loader2, PencilLine, Vide
 import { toast } from "sonner"
 import { AxiosError } from "axios"
 
-import { CandidateForm } from "@/components/candidates/candidate-form"
+import api from "@/lib/api"
+import { CandidateForm, PartnerOverrideEntry } from "@/components/candidates/candidate-form"
 import { PageHeader } from "@/components/layout/page-header"
 import { useCurrentUser } from "@/hooks/use-auth"
 import { uploadCandidateDocumentFile, useCandidate, useUpdateCandidate } from "@/hooks/use-candidates"
@@ -106,19 +107,33 @@ export default function EditCandidatePage() {
     date_of_birth: candidate.date_of_birth || "",
     age: candidate.age,
     place_of_birth: candidate.place_of_birth || "",
+    passport_number: candidate.passport_number || "",
+    gender: candidate.gender || "",
+    issue_date: candidate.issue_date || "",
+    expiry_date: candidate.expiry_date || "",
+    experience_abroad: Array.isArray(candidate.experience_abroad)
+      ? candidate.experience_abroad.map((item: { country?: string; years?: number } | string) =>
+          typeof item === "string"
+            ? { country: item, years: 0 }
+            : { country: item.country || "", years: item.years || 0 }
+        )
+      : [],
     religion: candidate.religion || "",
     marital_status: candidate.marital_status || "",
     children_count: candidate.children_count,
     education_level: candidate.education_level || "",
-    experience_years: candidate.experience_years,
-    country_of_experience: candidate.country_of_experience,
     skills: candidate.skills,
-    languages: candidate.languages.length
-      ? candidate.languages.map((language) => ({ language, proficiency: "Intermediate" }))
+    languages: Array.isArray(candidate.languages)
+      ? (candidate.languages as Array<{ language: string; proficiency?: string }>).map((item) => {
+          if (typeof item === "string") return { language: item, proficiency: "Intermediate" };
+          return { language: item.language, proficiency: item.proficiency || "Basic" };
+        })
       : [{ language: "English", proficiency: "Basic" }],
+    remark: candidate.remark || "",
+    pair_overrides: candidate.pair_overrides,
   }
 
-  const handleSubmit = async (data: CandidateInput) => {
+  const handleSubmit = async (data: CandidateInput, context?: { submitter?: string; partnerOverrides?: PartnerOverrideEntry[] }) => {
     try {
       await updateCandidate({
         full_name: data.full_name,
@@ -126,19 +141,38 @@ export default function EditCandidatePage() {
         date_of_birth: data.date_of_birth || undefined,
         age: data.age,
         place_of_birth: data.place_of_birth,
+        passport_number: data.passport_number,
+        issue_date: data.issue_date,
+        expiry_date: data.expiry_date,
+        gender: data.gender,
+        experience_abroad: data.experience_abroad,
         religion: data.religion,
         marital_status: data.marital_status,
         children_count: data.children_count,
         education_level: data.education_level,
-        experience_years: data.experience_years,
-        country_of_experience: data.country_of_experience,
         skills: data.skills,
-        languages: data.languages.map((item) => item.language),
+        languages: data.languages,
+        remark: data.remark,
       })
 
       const queuedDocuments = Object.entries(pendingDocuments).filter(([, file]) => !!file) as Array<
         [keyof PendingDocuments, File]
       >
+
+      if (context?.partnerOverrides?.length) {
+        for (const ov of context.partnerOverrides) {
+          try {
+            await api.put(`/candidates/${candidateID}/pair-override`, {
+              pairing_id: ov.pairing_id,
+              country_applied: ov.country_applied,
+              salary_offered: ov.salary_offered,
+              logo_url: ov.logo_url,
+            })
+          } catch {
+            toast.error(`Failed to save override for ${ov.pairing_id}`)
+          }
+        }
+      }
 
       if (queuedDocuments.length > 0) {
         setIsUploadingDocuments(true)

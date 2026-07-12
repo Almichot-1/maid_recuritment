@@ -9,7 +9,7 @@ import {
   Loader2,
 } from "lucide-react";
 
-import { StatusStep } from "@/types";
+import { StepItem } from "@/types";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -25,7 +25,7 @@ import { DocumentUpload } from "@/components/candidates/document-upload";
 import { cn } from "@/lib/utils";
 
 interface StatusTimelineProps {
-  steps: StatusStep[];
+  steps: StepItem[];
   canUpdate?: boolean;
   onUpdateStep?: (
     stepName: string,
@@ -61,14 +61,14 @@ export function StatusTimeline({
     Record<string, string>
   >({});
 
-  const getNote = (step: StatusStep) =>
+  const getNote = (step: StepItem) =>
     noteDrafts[step.id] ?? step.notes ?? "";
-  const getCoC = (step: StatusStep) =>
+  const getCoC = (step: StepItem) =>
     cocStatuses[step.id] ?? step.coc_status ?? "";
-  const getCity = (step: StatusStep) =>
+  const getCity = (step: StepItem) =>
     arrivalCities[step.id] ?? step.arrival_city ?? "";
 
-  const handleStatusChange = (step: StatusStep, newStatus: string) => {
+  const handleStatusChange = (step: StepItem, newStatus: string) => {
     if (!onUpdateStep || isUpdating) return;
     if (newStatus === step.step_status) return;
 
@@ -89,7 +89,7 @@ export function StatusTimeline({
     );
   };
 
-  const handleSaveExtras = (step: StatusStep) => {
+  const handleSaveExtras = (step: StepItem) => {
     if (!onUpdateStep || isUpdating) return;
     onUpdateStep(
       step.step_name,
@@ -311,11 +311,10 @@ export function StatusTimeline({
               </div>
             ) : null}
 
-            {/* File upload per step */}
-            {canUpdate && (
+            {/* File upload — only for the medical step */}
+            {canUpdate && isMedical && (
               <div className="mt-2 pl-11">
                 <FileUploadSlot
-                  isMedical={isMedical}
                   medicalDocumentUrl={step.medical_document_url}
                   onUploadMedicalDocument={onUploadMedicalDocument}
                   onRemoveMedicalDocument={onRemoveMedicalDocument}
@@ -340,21 +339,19 @@ export function StatusTimeline({
 }
 
 function FileUploadSlot({
-  isMedical,
   medicalDocumentUrl,
   onUploadMedicalDocument,
   onRemoveMedicalDocument,
   isUploading,
   isRemoving,
 }: {
-  isMedical: boolean;
   medicalDocumentUrl?: string;
   onUploadMedicalDocument?: (file: File) => void | Promise<unknown>;
   onRemoveMedicalDocument?: () => void | Promise<unknown>;
   isUploading: boolean;
   isRemoving: boolean;
 }) {
-  if (isMedical && medicalDocumentUrl) {
+  if (medicalDocumentUrl) {
     return (
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" className="h-7 text-xs" asChild>
@@ -382,7 +379,7 @@ function FileUploadSlot({
     );
   }
 
-  if (isMedical && onUploadMedicalDocument) {
+  if (onUploadMedicalDocument) {
     return (
       <DocumentUpload
         documentType="medical"
@@ -405,7 +402,7 @@ function FileUploadSlot({
   return null;
 }
 
-function StatusBadge({ status }: { status: StatusStep["step_status"] }) {
+function StatusBadge({ status }: { status: StepItem["step_status"] }) {
   switch (status) {
     case "completed":
       return (
@@ -438,14 +435,14 @@ function StatusBadge({ status }: { status: StatusStep["step_status"] }) {
   }
 }
 
-function isMedicalStep(step: StatusStep) {
+function isMedicalStep(step: StepItem) {
   return step.step_name.trim().toLowerCase() === "medical";
 }
 
-function isCoCStep(step: StatusStep) {
+function isCoCStep(step: StepItem) {
   return step.step_name.trim().toLowerCase() === "coc";
 }
 
-function isArrivalCityStep(step: StatusStep) {
+function isArrivalCityStep(step: StepItem) {
   return step.step_name.trim().toLowerCase() === "arrival city";
 }

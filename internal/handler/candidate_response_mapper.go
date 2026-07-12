@@ -2,6 +2,7 @@ package handler
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"maid-recruitment-tracking/internal/domain"
@@ -54,14 +55,20 @@ func mapCandidateResponse(candidate *domain.Candidate, documents []*domain.Docum
 		Nationality:     candidate.Nationality,
 		DateOfBirth:     formatOptionalDate(candidate.DateOfBirth),
 		Age:             candidate.Age,
-		PlaceOfBirth:    candidate.PlaceOfBirth,
-		Religion:        candidate.Religion,
+		PlaceOfBirth:        candidate.PlaceOfBirth,
+		PassportNumber:      candidate.PassportNumber,
+		IssueDate:           formatOptionalDate(candidate.IssueDate),
+		ExpiryDate:          formatOptionalDate(candidate.ExpiryDate),
+		Gender:              candidate.Gender,
+		IssuingAuthority:    candidate.IssuingAuthority,
+		ExperienceAbroad:    decodeExperienceAbroad(candidate.ExperienceAbroad),
+		Religion:            candidate.Religion,
 		MaritalStatus:   candidate.MaritalStatus,
 		ChildrenCount:       candidate.ChildrenCount,
 		EducationLevel:      candidate.EducationLevel,
 		ExperienceYears:     candidate.ExperienceYears,
 		CountryOfExperience: candidate.CountryOfExperience,
-		Languages:           decodeStringSlice(candidate.Languages),
+		Languages:           decodeLanguages(candidate.Languages),
 		Skills:          decodeStringSlice(candidate.Skills),
 		Status:          string(candidate.Status),
 		LockedBy:        candidate.LockedBy,
@@ -72,6 +79,71 @@ func mapCandidateResponse(candidate *domain.Candidate, documents []*domain.Docum
 		CreatedAt:       createdAt,
 		UpdatedAt:       updatedAt,
 	}
+}
+
+func decodeLanguages(value json.RawMessage) json.RawMessage {
+	if len(value) == 0 || string(value) == "null" {
+		entries := []domain.LanguageEntry{}
+		result, _ := json.Marshal(entries)
+		return result
+	}
+
+	var entries []domain.LanguageEntry
+	if err := json.Unmarshal(value, &entries); err == nil {
+		result, _ := json.Marshal(entries)
+		return result
+	}
+
+	var legacy []string
+	if err := json.Unmarshal(value, &legacy); err != nil {
+		return json.RawMessage("[]")
+	}
+	entries = make([]domain.LanguageEntry, 0, len(legacy))
+	for _, s := range legacy {
+		lang := strings.TrimSpace(s)
+		if lang == "" {
+			continue
+		}
+		entries = append(entries, domain.LanguageEntry{Language: lang, Proficiency: "Basic"})
+	}
+	result, _ := json.Marshal(entries)
+	return result
+}
+
+func decodeExperienceAbroad(value json.RawMessage) json.RawMessage {
+	if len(value) == 0 || string(value) == "null" {
+		return json.RawMessage("[]")
+	}
+
+	var entries []domain.ExperienceEntry
+	if err := json.Unmarshal(value, &entries); err == nil {
+		normalized := make([]domain.ExperienceEntry, 0, len(entries))
+		for _, e := range entries {
+			country := strings.TrimSpace(e.Country)
+			if country == "" {
+				continue
+			}
+			years := e.Years
+			if years < 0 {
+				years = 0
+			}
+			normalized = append(normalized, domain.ExperienceEntry{Country: country, Years: years})
+		}
+		data, _ := json.Marshal(normalized)
+		return data
+	}
+
+	var legacy string
+	if err := json.Unmarshal(value, &legacy); err != nil {
+		return json.RawMessage("[]")
+	}
+	legacy = strings.TrimSpace(legacy)
+	if legacy == "" {
+		return json.RawMessage("[]")
+	}
+	entries = []domain.ExperienceEntry{{Country: legacy, Years: 0}}
+	data, _ := json.Marshal(entries)
+	return data
 }
 
 func decodeStringSlice(value json.RawMessage) []string {

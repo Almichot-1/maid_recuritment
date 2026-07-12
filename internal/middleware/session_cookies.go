@@ -14,6 +14,8 @@ const (
 	AdminSessionMaxAgeSeconds = 60 * 60
 )
 
+const TokenQueryParam = "auth_token"
+
 func ResolveBearerToken(r *http.Request, cookieName string) string {
 	if r == nil {
 		return ""
@@ -31,11 +33,19 @@ func ResolveBearerToken(r *http.Request, cookieName string) string {
 	}
 
 	cookie, err := r.Cookie(cookieName)
-	if err != nil {
-		return ""
+	if err == nil {
+		token := strings.TrimSpace(cookie.Value)
+		if token != "" {
+			return token
+		}
 	}
 
-	return strings.TrimSpace(cookie.Value)
+	token := strings.TrimSpace(r.URL.Query().Get(TokenQueryParam))
+	if token != "" {
+		return token
+	}
+
+	return ""
 }
 
 func SetSessionCookie(w http.ResponseWriter, r *http.Request, cookieName, token string, maxAgeSeconds int) {

@@ -42,7 +42,6 @@ export default function AdminAuditLogsPage() {
   )
 
   const { data: logsData, isLoading: logsLoading } = useAdminAuditLogs(filters, page, pageSize)
-  const logs = logsData?.logs ?? []
   const meta = logsData?.meta
 
   const { data: agencyLoginData, isLoading: loginsLoading } = useAdminAgencyLogins({
@@ -52,7 +51,7 @@ export default function AdminAuditLogsPage() {
 
   const filteredLogs = React.useMemo(
     () =>
-      logs.filter((log) => {
+      (logsData?.logs ?? []).filter((log) => {
         if (!adminSearch.trim()) {
           return true
         }
@@ -63,7 +62,7 @@ export default function AdminAuditLogsPage() {
           log.target_type.toLowerCase().includes(needle)
         )
       }),
-    [adminSearch, logs]
+    [adminSearch, logsData]
   )
 
   React.useEffect(() => {

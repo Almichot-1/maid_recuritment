@@ -1,0 +1,7 @@
+ALTER TABLE candidates
+	ADD COLUMN IF NOT EXISTS passport_number TEXT,
+	ADD COLUMN IF NOT EXISTS issue_date DATE,
+	ADD COLUMN IF NOT EXISTS expiry_date DATE,
+	ADD COLUMN IF NOT EXISTS gender TEXT,
+	ADD COLUMN IF NOT EXISTS issuing_authority TEXT,
+	ADD COLUMN IF NOT EXISTS experience_abroad TEXT;

@@ -1,5 +1,7 @@
 import { useEffect, useRef, useCallback, useState } from 'react'
 import { useQueryClient } from '@tanstack/react-query'
+import { buildWebSocketUrl } from '@/lib/api-base-url'
+import { useAuthStore } from '@/stores/auth-store'
 
 interface SelectionUpdateMessage {
   selection_id: string
@@ -7,6 +9,13 @@ interface SelectionUpdateMessage {
   updated_at: string
   action: string
   pairing_id: string
+}
+
+interface ProgressUpdateMessage {
+  selection_id: string
+  step_name: string
+  status: string
+  updated_at: string
 }
 
 /**
@@ -24,25 +33,34 @@ export function useSelectionUpdates(pairingId?: string) {
   const [isConnected, setIsConnected] = useState(false)
   const retryDelayRef = useRef(1000)
 
+  const MAX_RETRIES = 5
+  const retryCountRef = useRef(0)
+
   const connect = useCallback(() => {
     // Don't reconnect if already connecting/connected
     if (isConnectingRef.current || wsRef.current?.readyState === WebSocket.OPEN) {
       return
     }
 
+    if (retryCountRef.current >= MAX_RETRIES) {
+      return
+    }
+
     isConnectingRef.current = true
+    retryCountRef.current += 1
 
     try {
-      // Determine WebSocket URL based on environment
-      const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-      const host = window.location.host
-      const wsUrl = `${protocol}//${host}/api/selections/updates`
+      const authToken = useAuthStore.getState().authToken
+      const params: Record<string, string> = {}
+      if (pairingId) params.pairing_id = pairingId
+      if (authToken) params.auth_token = authToken
+      const wsUrl = buildWebSocketUrl("/selections/updates", params)
 
       const ws = new WebSocket(wsUrl)
 
       ws.onopen = () => {
-        console.log('[SelectionUpdates] WebSocket connected')
         isConnectingRef.current = false
+        retryCountRef.current = 0
         setIsConnected(true)
         retryDelayRef.current = 1000
         // Clear any pending reconnect attempts
@@ -54,17 +72,32 @@ export function useSelectionUpdates(pairingId?: string) {
 
       ws.onmessage = (event) => {
         try {
-          const update: SelectionUpdateMessage = JSON.parse(event.data)
+          const data = JSON.parse(event.data)
+
+          // Detect if this is a progress update (has step_name) or a selection update (has action)
+          if (data.step_name) {
+            const update: ProgressUpdateMessage = data;
+
+            // Invalidate the progress query for this selection
+            queryClient.invalidateQueries({
+              queryKey: ['selection-progress', update.selection_id],
+              exact: false,
+            });
+            queryClient.invalidateQueries({
+              queryKey: ['my-selections'],
+              exact: false,
+            });
+            return;
+          }
+
+          const update: SelectionUpdateMessage = data
 
           // If pairing filter is set, only process updates for that pairing
           if (pairingId && update.pairing_id !== pairingId) {
             return
           }
 
-          console.log('[SelectionUpdates] Received update:', update)
-
           // Update React Query cache instead of refetching
-          // This updates the selection in cache without making a network request
           queryClient.setQueryData(
             ['selection', update.selection_id],
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -78,52 +111,43 @@ export function useSelectionUpdates(pairingId?: string) {
             }
           )
 
-          // Also invalidate the selections list to reflect status changes
-          // The invalidation is silent (no refetch) if the data is still fresh
+          // Also invalidate the selections list
           queryClient.invalidateQueries({
             queryKey: ['my-selections'],
             exact: false,
           })
-        } catch (error) {
-          console.error('[SelectionUpdates] Failed to parse message:', error)
+        } catch {
+          // ignore parse errors
         }
       }
 
-      ws.onerror = (error) => {
-        console.error('[SelectionUpdates] WebSocket error:', error)
+      ws.onerror = () => {
         isConnectingRef.current = false
       }
 
       ws.onclose = () => {
-        console.log('[SelectionUpdates] WebSocket disconnected')
         isConnectingRef.current = false
         setIsConnected(false)
 
-        const reconnectWithBackoff = () => {
+        if (retryCountRef.current < MAX_RETRIES) {
           reconnectTimeoutRef.current = setTimeout(() => {
-            console.log('[SelectionUpdates] Attempting to reconnect...')
             retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000)
             connect()
           }, retryDelayRef.current)
         }
-        reconnectWithBackoff()
       }
 
       wsRef.current = ws
-    } catch (error) {
-      console.error('[SelectionUpdates] Failed to create WebSocket:', error)
+    } catch {
       isConnectingRef.current = false
-
-      const reconnectWithBackoff = () => {
+      if (retryCountRef.current < MAX_RETRIES) {
         reconnectTimeoutRef.current = setTimeout(() => {
-          console.log('[SelectionUpdates] Attempting to reconnect...')
           retryDelayRef.current = Math.min(retryDelayRef.current * 2, 30000)
           connect()
         }, retryDelayRef.current)
       }
-      reconnectWithBackoff()
     }
-  }, [queryClient, pairingId])
+  }, [pairingId, queryClient])
 
   const disconnect = useCallback(() => {
     if (reconnectTimeoutRef.current) {
@@ -131,7 +155,7 @@ export function useSelectionUpdates(pairingId?: string) {
       reconnectTimeoutRef.current = null
     }
 
-    if (wsRef.current) {
+    if (wsRef.current && wsRef.current.readyState !== WebSocket.CLOSED && wsRef.current.readyState !== WebSocket.CLOSING) {
       wsRef.current.close()
       wsRef.current = null
     }

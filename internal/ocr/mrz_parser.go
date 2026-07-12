@@ -14,6 +14,8 @@ func NewMRZParser() *MRZParser {
 }
 
 type MRZData struct {
+	CorrectionCount int      // number of check digit corrections applied
+	Confidence      float64  // 0.0-1.0 based on validation ratio
 	DocumentType     string
 	IssuingCountry   string
 	Surname          string
@@ -48,6 +50,7 @@ func (p *MRZParser) ParseMRZ(line1, line2 string) (*MRZData, error) {
 	}
 
 	data := &MRZData{RawLine1: l1, RawLine2: l2, IsValid: true}
+	data.CorrectionCount = 0
 	data.DocumentType = l1[0:1]
 	data.IssuingCountry = l1[2:5]
 	data.Surname, data.GivenNames = ParseName(l1[5:44])
@@ -83,27 +86,60 @@ func (p *MRZParser) ParseMRZ(line1, line2 string) (*MRZData, error) {
 	}
 
 	if !ValidateCheckDigit(passportNumber, passportCD) {
-		data.IsValid = false
-		data.ValidationErrors = append(data.ValidationErrors, "passport number check digit failed")
+		if corrected, count, err := CorrectCheckDigitField(passportNumber, passportCD); err == nil {
+			passportNumber = corrected
+			data.PassportNumber = corrected
+			data.CorrectionCount += count
+			data.ValidationErrors = append(data.ValidationErrors, "passport number check digit corrected")
+		} else {
+			data.IsValid = false
+			data.ValidationErrors = append(data.ValidationErrors, "passport number check digit failed")
+		}
 	}
 	if !ValidateCheckDigit(dobStr, dobCD) {
-		data.IsValid = false
-		data.ValidationErrors = append(data.ValidationErrors, "date of birth check digit failed")
+		if corrected, count, err := CorrectCheckDigitField(dobStr, dobCD); err == nil {
+			dobStr = corrected
+			data.CorrectionCount += count
+			data.ValidationErrors = append(data.ValidationErrors, "date of birth check digit corrected")
+		} else {
+			data.IsValid = false
+			data.ValidationErrors = append(data.ValidationErrors, "date of birth check digit failed")
+		}
 	}
 	if !ValidateCheckDigit(expStr, expCD) {
-		data.IsValid = false
-		data.ValidationErrors = append(data.ValidationErrors, "date of expiry check digit failed")
+		if corrected, count, err := CorrectCheckDigitField(expStr, expCD); err == nil {
+			expStr = corrected
+			data.CorrectionCount += count
+			data.ValidationErrors = append(data.ValidationErrors, "date of expiry check digit corrected")
+		} else {
+			data.IsValid = false
+			data.ValidationErrors = append(data.ValidationErrors, "date of expiry check digit failed")
+		}
 	}
 	if !ValidateCheckDigit(optional, optionalCD) {
-		data.IsValid = false
-		data.ValidationErrors = append(data.ValidationErrors, "optional data check digit failed")
+		if corrected, count, err := CorrectCheckDigitField(optional, optionalCD); err == nil {
+			optional = corrected
+			data.OptionalData = corrected
+			data.CorrectionCount += count
+			data.ValidationErrors = append(data.ValidationErrors, "optional data check digit corrected")
+		} else {
+			data.IsValid = false
+			data.ValidationErrors = append(data.ValidationErrors, "optional data check digit failed")
+		}
 	}
 
 	composite := passportNumber + string(passportCD) + dobStr + string(dobCD) + expStr + string(expCD) + optional + string(optionalCD)
 	if !ValidateCheckDigit(composite, compositeCD) {
-		data.IsValid = false
-		data.ValidationErrors = append(data.ValidationErrors, "composite check digit failed")
+		if _, count, err := CorrectCheckDigitField(composite, compositeCD); err == nil {
+			data.CorrectionCount += count
+			data.ValidationErrors = append(data.ValidationErrors, "composite check digit corrected")
+		} else {
+			data.IsValid = false
+			data.ValidationErrors = append(data.ValidationErrors, "composite check digit failed")
+		}
 	}
+
+	data.Confidence = ComputeConfidence(data)
 
 	return data, nil
 }
@@ -123,6 +159,28 @@ func ValidateCheckDigit(data string, checkDigit byte) bool {
 		return false
 	}
 	return int(checkDigit-'0') == CalculateCheckDigit(data)
+}
+
+// CorrectCheckDigitField tries single-character substitutions using
+// confusion pairs (O→0, I→1, S→5, B→8, G→6, Z→2) to find a correction
+// that passes the check digit. Returns the corrected field or an error
+// if the field is already valid or cannot be corrected.
+func CorrectCheckDigitField(field string, expectedCheckDigit byte) (string, int, error) {
+	if ValidateCheckDigit(field, expectedCheckDigit) {
+		return "", 0, fmt.Errorf("field already valid for check digit %c", expectedCheckDigit)
+	}
+	for i := 0; i < len(field); i++ {
+		original := field[i]
+		if alternatives, ok := confusionPairs[original]; ok {
+			for _, alt := range alternatives {
+				corrected := field[:i] + string(alt) + field[i+1:]
+				if ValidateCheckDigit(corrected, expectedCheckDigit) {
+					return corrected, 1, nil
+				}
+			}
+		}
+	}
+	return "", 0, fmt.Errorf("unable to correct check digit")
 }
 
 func ParseName(nameField string) (surname string, givenNames []string) {
@@ -302,7 +360,7 @@ func CleanMRZLine(line string) (string, error) {
 	for i := 0; i < len(bytes); i++ {
 		prevIsDigit := i > 0 && bytes[i-1] >= '0' && bytes[i-1] <= '9'
 		nextIsDigit := i+1 < len(bytes) && bytes[i+1] >= '0' && bytes[i+1] <= '9'
-		if prevIsDigit || nextIsDigit {
+		if (prevIsDigit && nextIsDigit) && (bytes[i] == 'O' || bytes[i] == 'I') {
 			bytes[i] = normalizeDigit(bytes[i])
 		}
 	}
@@ -342,4 +400,42 @@ func normalizeDigit(c byte) byte {
 	default:
 		return c
 	}
+}
+
+// ValidMRZChars contains all characters allowed in MRZ lines per ICAO 9303.
+const ValidMRZChars = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ<"
+
+// confusionPairs maps characters commonly misread by OCR to their
+// likely correct alternatives in the MRZ context.
+// Only include substitutions where the OCR-B font glyphs are visually similar.
+var confusionPairs = map[byte][]byte{
+	'O': {'0'},
+	'I': {'1'},
+	'S': {'5'},
+	'B': {'8'},
+	'G': {'6'},
+	'Z': {'2'},
+}
+
+// ComputeConfidence calculates a confidence score from 0.0 to 1.0
+// based on the ratio of passed check digits and corrections applied.
+func ComputeConfidence(data *MRZData) float64 {
+	if data == nil {
+		return 0
+	}
+	const totalChecks = 5
+	failedCount := len(data.ValidationErrors) - data.CorrectionCount
+	if failedCount < 0 {
+		failedCount = 0
+	}
+	passed := totalChecks - failedCount
+	if passed < 0 {
+		passed = 0
+	}
+	confidence := float64(passed) / float64(totalChecks)
+	penalty := float64(data.CorrectionCount) * 0.05
+	if confidence-penalty < 0 {
+		return 0
+	}
+	return confidence - penalty
 }

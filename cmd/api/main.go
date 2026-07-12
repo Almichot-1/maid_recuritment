@@ -137,9 +137,9 @@ func main() {
 		log.Fatalf("failed to initialize chat read repository: %v", err)
 	}
 
-	statusStepRepository, err := repository.NewGormStatusStepRepository(cfg)
+	selectionProgressRepository, err := repository.NewGormSelectionProgressRepository(cfg)
 	if err != nil {
-		log.Fatalf("failed to initialize status step repository: %v", err)
+		log.Fatalf("failed to initialize selection progress repository: %v", err)
 	}
 
 	type documentStorageService interface {
@@ -155,7 +155,7 @@ func main() {
 		storageService = service.NewDisabledStorageService(err)
 	}
 
-	pdfService := service.NewPDFService()
+	pdfService := service.NewPDFService(storageService)
 	operationalEmailService := service.EmailService(nil)
 	emailService, err := service.NewSMTPEmailService(cfg)
 	if err != nil {
@@ -193,13 +193,14 @@ func main() {
 	if err != nil {
 		log.Fatalf("failed to initialize medical document service: %v", err)
 	}
-	statusStepService, err := service.NewStatusStepService(statusStepRepository, candidateRepository, selectionRepository, notificationService)
-	if err != nil {
-		log.Fatalf("failed to initialize status step service: %v", err)
-	}
-	statusStepService.SetDocumentRepository(documentRepository)
 
-	candidateService, err := service.NewCandidateService(candidateRepository, documentRepository, storageService, pdfService, userRepository, candidatePairShareRepository, pairOverrideRepository, pairingService, passportRepository, medicalRepository, medicalDocumentService, passportOCRService, statusStepService)
+	selectionProgressService, err := service.NewSelectionProgressService(selectionProgressRepository, selectionRepository, candidateRepository, notificationService)
+	if err != nil {
+		log.Fatalf("failed to initialize selection progress service: %v", err)
+	}
+	selectionProgressService.SetStorageService(storageService)
+
+	candidateService, err := service.NewCandidateService(candidateRepository, documentRepository, storageService, pdfService, userRepository, candidatePairShareRepository, pairOverrideRepository, pairingService, passportRepository, medicalRepository, medicalDocumentService, passportOCRService)
 	if err != nil {
 		log.Fatalf("failed to initialize candidate service: %v", err)
 	}
@@ -216,10 +217,11 @@ func main() {
 	selectionService.SetStorageService(storageService)
 	selectionService.SetPairingService(pairingService)
 
-	approvalService, err := service.NewApprovalService(approvalRepository, selectionRepository, candidateRepository, statusStepService, notificationService)
+	approvalService, err := service.NewApprovalService(approvalRepository, selectionRepository, candidateRepository, notificationService)
 	if err != nil {
 		log.Fatalf("failed to initialize approval service: %v", err)
 	}
+	approvalService.SetProgressService(selectionProgressService)
 	agencyApprovalService.SetPlatformSettingsReader(settingsCacheService)
 	notificationService.SetPlatformSettingsReader(settingsCacheService)
 	selectionService.SetPlatformSettingsReader(settingsCacheService)
@@ -227,21 +229,25 @@ func main() {
 
 	authHandler := handler.NewAuthHandler(authService, userRepository, agencyApprovalService)
 	userHandler := handler.NewUserHandler(userRepository, userSessionRepository, storageService, pairingService)
-	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService, passportRepository, medicalRepository, statusStepRepository)
+	dashboardHandler := handler.NewDashboardHandler(candidateRepository, selectionRepository, notificationRepository, pairingService, passportRepository, medicalRepository, selectionProgressRepository)
 	candidateHandler := handler.NewCandidateHandler(candidateService, passportOCRService, candidateRepository, selectionRepository, pairingService, candidatePairShareRepository)
 	candidateHandler.SetDocumentStorage(storageService)
 	selectionUpdatesHandler := handler.NewSelectionUpdatesHandler(cfg.CORSAllowedOrigins)
-	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService)
+	selectionHandler := handler.NewSelectionHandler(selectionService, candidateRepository, approvalRepository, pairingService, userRepository)
 	selectionHandler.SetDocumentStorage(storageService)
 	selectionHandler.SetSelectionUpdatesHandler(selectionUpdatesHandler)
+	selectionService.SetSelectionUpdateSender(selectionUpdatesHandler)
 	approvalHandler := handler.NewApprovalHandler(approvalService, selectionService, candidateRepository, pairingService)
-	statusHandler := handler.NewStatusHandler(statusStepService, candidateRepository, selectionRepository, documentRepository, userRepository, pairingService)
+	approvalService.SetSelectionUpdateSender(selectionUpdatesHandler)
+	selectionProgressHandler := handler.NewSelectionProgressHandler(selectionProgressService, userRepository)
+	selectionProgressHandler.SetDocumentStorage(storageService)
+	selectionProgressService.SetProgressUpdateSender(selectionUpdatesHandler)
 	notificationHandler := handler.NewNotificationHandler(notificationRepository, cfg.CORSAllowedOrigins)
 	chatHandler := handler.NewChatHandler(chatService, cfg.CORSAllowedOrigins)
 	chatHandler.SetContextRepositories(userRepository, candidateRepository, pairingService)
 	pairingHandler := handler.NewPairingHandler(pairingService, userRepository, candidateRepository, storageService)
 	adminAuthHandler := handler.NewAdminAuthHandler(adminAuthService, adminRepository)
-	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository)
+	adminDashboardHandler := handler.NewAdminDashboardHandler(userRepository, candidateRepository, selectionRepository, selectionProgressRepository)
 	adminAgencyHandler := handler.NewAdminAgencyHandler(userRepository, agencyApprovalRepository, agencyApprovalService, candidateRepository, selectionRepository)
 	adminReadonlyHandler := handler.NewAdminReadonlyHandler(userRepository, userSessionRepository, adminRepository, candidateRepository, selectionRepository, auditLogRepository)
 	adminManagementHandler := handler.NewAdminManagementHandler(adminRepository, auditLogRepository, adminAuthService, operationalEmailService)
@@ -264,6 +270,7 @@ func main() {
 	router.Use(appmiddleware.SecurityHeaders)
 	router.Use(appmiddleware.CORS(cfg.CORSAllowedOrigins))
 	router.Use(appmiddleware.Logging)
+	router.Use(appmiddleware.Compress)
 
 	apiRouter := chi.NewRouter()
 	apiRouter.Get("/health", handler.Health)
@@ -295,6 +302,7 @@ func main() {
 			protected.Post("/logout", adminAuthHandler.Logout)
 			protected.Post("/change-password", adminAuthHandler.ChangePassword)
 			protected.Get("/analytics/dashboard", adminDashboardHandler.GetStats)
+			protected.Get("/metrics/progress", adminDashboardHandler.GetProgressMetrics)
 			protected.Get("/audit-logs", adminReadonlyHandler.GetAuditLogs)
 			protected.Get("/agency-logins", adminReadonlyHandler.GetAgencyLogins)
 			protected.Get("/candidates", adminReadonlyHandler.GetCandidates)
@@ -351,6 +359,7 @@ func main() {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent)), appmiddleware.NewIPRateLimitMiddleware("passport-parse-preview", 12, time.Minute)).Post("/passport/parse-preview", candidateHandler.ParsePassportPreview)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}", candidateHandler.UpdateCandidate)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}", candidateHandler.DeleteCandidate)
+			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Patch("/{id}/status", candidateHandler.UpdateCandidateStatus)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}/documents/{documentId}", candidateHandler.DeleteCandidateDocument)
 			cr.Get("/{id}", candidateHandler.GetCandidate)
 			cr.Get("/", candidateHandler.ListCandidates)
@@ -368,18 +377,26 @@ func main() {
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}/pair-override", candidateHandler.SetPairOverride)
 			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/batch-set-pair-override", candidateHandler.BatchSetPairOverride)
 			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/select", selectionHandler.SelectCandidate)
-			cr.Get("/{id}/status-steps", statusHandler.GetCandidateStatusSteps)
-			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Patch("/{id}/status-steps/{step_name}", statusHandler.UpdateStatusStep)
-			cr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/batch-status-update", statusHandler.BatchUpdateStatusSteps)
+			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/lock", selectionHandler.LockCandidate)
+			cr.Post("/{id}/unlock", selectionHandler.UnlockCandidateHandler)
+			cr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/batch-lock", selectionHandler.BatchLockCandidates)
+			cr.Post("/batch-unlock", selectionHandler.BatchUnlockCandidates)
 		})
 
 		protected.Route("/selections", func(sr chi.Router) {
 			sr.Get("/my", selectionHandler.GetMySelections)
+			sr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/progress/batch", selectionProgressHandler.BatchUpdateProgress)
 			sr.Get("/{id}", selectionHandler.GetSelection)
 			sr.With(appmiddleware.RequireRole(string(domain.ForeignAgent))).Post("/{id}/documents", selectionHandler.UploadSelectionDocument)
+			sr.Post("/{id}/unlock", selectionHandler.UnlockSelection)
 			sr.Post("/{id}/approve", approvalHandler.ApproveSelection)
 			sr.Post("/{id}/reject", approvalHandler.RejectSelection)
 			sr.Get("/{id}/approvals", approvalHandler.GetApprovals)
+			// Progress tracking routes
+			sr.Get("/{id}/progress", selectionProgressHandler.GetProgress)
+			sr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Put("/{id}/progress", selectionProgressHandler.UpdateProgress)
+			sr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Post("/{id}/progress/documents/{type}", selectionProgressHandler.UploadDocument)
+			sr.With(appmiddleware.RequireRole(string(domain.EthiopianAgent))).Delete("/{id}/progress/documents/{type}", selectionProgressHandler.DeleteDocument)
 		})
 
 		protected.Route("/notifications", func(nr chi.Router) {
@@ -423,9 +440,9 @@ func main() {
 	server := &http.Server{
 		Addr:              ":" + cfg.Port,
 		Handler:           router,
-		ReadHeaderTimeout: 5 * time.Second,
-		ReadTimeout:       30 * time.Second,
-		WriteTimeout:      60 * time.Second,
+		ReadHeaderTimeout: 10 * time.Second,
+		ReadTimeout:       60 * time.Second,
+		WriteTimeout:      120 * time.Second,
 		IdleTimeout:       120 * time.Second,
 		MaxHeaderBytes:    1 << 20,
 	}

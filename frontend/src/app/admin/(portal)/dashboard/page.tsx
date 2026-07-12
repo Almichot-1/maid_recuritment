@@ -44,16 +44,14 @@ export default function AdminDashboardPage() {
   const { data: agencies = [] } = useAgencies({ status: "all", role: "all", search: "" })
   const { data: candidatesData } = useAdminCandidates()
   const { data: selectionsData } = useAdminSelections()
-  const candidates = candidatesData?.candidates ?? []
-  const selections = selectionsData?.selections ?? []
 
   const registrationTrend = React.useMemo(
     () => buildDailySeries(agencies.map((agency) => agency.registration_date), 7),
     [agencies]
   )
   const selectionTrend = React.useMemo(
-    () => buildDailySeries(selections.map((selection) => selection.selected_date), 7),
-    [selections]
+    () => buildDailySeries((selectionsData?.selections ?? []).map((selection) => selection.selected_date), 7),
+    [selectionsData]
   )
 
   const topEthiopian = React.useMemo(
@@ -75,12 +73,13 @@ export default function AdminDashboardPage() {
   )
 
   const candidateDistribution = React.useMemo(() => {
+    const list = candidatesData?.candidates ?? []
     const counts = new Map<string, number>()
-    for (const candidate of candidates) {
+    for (const candidate of list) {
       counts.set(candidate.status, (counts.get(candidate.status) ?? 0) + 1)
     }
     return Array.from(counts.entries()).sort((left, right) => right[1] - left[1])
-  }, [candidates])
+  }, [candidatesData])
 
   const metricCards = [
     {
@@ -137,7 +136,7 @@ export default function AdminDashboardPage() {
           <div className="grid gap-3 sm:grid-cols-3 lg:grid-cols-1">
             <HeroMetric label="Pending queue" value={pendingAgencies.length} />
             <HeroMetric label="Candidate states" value={candidateDistribution.length} />
-            <HeroMetric label="Selection stream" value={selections.length} />
+            <HeroMetric label="Selection stream" value={selectionsData?.selections?.length ?? 0} />
           </div>
         </CardContent>
       </Card>
@@ -207,7 +206,7 @@ export default function AdminDashboardPage() {
                 <div className="h-2 rounded-full bg-slate-100">
                   <div
                     className="h-2 rounded-full bg-slate-950"
-                    style={{ width: `${Math.max((count / Math.max(candidates.length, 1)) * 100, 8)}%` }}
+                    style={{ width: `${Math.max((count / Math.max(candidateDistribution.reduce((s, c) => s + c[1], 0), 1)) * 100, 8)}%` }}
                   />
                 </div>
               </div>

@@ -35,9 +35,14 @@ export function SelectionList({ selections, isLoading, sortBy: propSortBy = "new
     onSortByChange?.(value)
   }
 
-  // Filter by search query
+  // Filter by search query and valid candidate data
   const filteredSelections = React.useMemo(() => {
-    let filtered = selections
+    // First filter out selections without valid candidate data
+    let filtered = selections.filter((selection) => 
+      selection.candidate && 
+      selection.candidate.id && 
+      selection.candidate.full_name
+    )
 
     if (searchQuery) {
       filtered = filtered.filter((selection) =>

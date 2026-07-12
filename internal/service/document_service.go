@@ -112,6 +112,12 @@ func detectContentTypeFromFileName(fileName string) (string, error) {
 		return "image/jpeg", nil
 	case ".png":
 		return "image/png", nil
+	case ".webp":
+		return "image/webp", nil
+	case ".bmp":
+		return "image/bmp", nil
+	case ".tiff", ".tif":
+		return "image/tiff", nil
 	case ".mp4":
 		return "video/mp4", nil
 	case ".pdf":

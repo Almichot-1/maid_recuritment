@@ -12,9 +12,10 @@ import (
 type contextKey string
 
 const (
-	userIDContextKey  contextKey = "user_id"
-	roleContextKey    contextKey = "role"
-	sessionContextKey contextKey = "session_id"
+	userIDContextKey    contextKey = "user_id"
+	roleContextKey      contextKey = "role"
+	sessionContextKey   contextKey = "session_id"
+	tokenContextKey     contextKey = "auth_token"
 )
 
 func AuthMiddleware(authService *service.AuthService) func(http.Handler) http.Handler {
@@ -39,6 +40,7 @@ func AuthMiddleware(authService *service.AuthService) func(http.Handler) http.Ha
 			ctx := context.WithValue(r.Context(), userIDContextKey, userID)
 			ctx = context.WithValue(ctx, roleContextKey, role)
 			ctx = context.WithValue(ctx, sessionContextKey, sessionID)
+			ctx = context.WithValue(ctx, tokenContextKey, token)
 			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
@@ -57,4 +59,9 @@ func RoleFromContext(ctx context.Context) (string, bool) {
 func SessionIDFromContext(ctx context.Context) (string, bool) {
 	sessionID, ok := ctx.Value(sessionContextKey).(string)
 	return sessionID, ok
+}
+
+func TokenFromContext(ctx context.Context) (string, bool) {
+	token, ok := ctx.Value(tokenContextKey).(string)
+	return token, ok
 }

@@ -1,6 +1,7 @@
 package handler
 
 import (
+	"log"
 	"net/http"
 	"strings"
 	"sync"
@@ -20,9 +21,19 @@ type SelectionUpdateMessage struct {
 	PairingID   string    `json:"pairing_id"`
 }
 
+// ProgressUpdateMessage represents a real-time progress update sent to clients
+type ProgressUpdateMessage struct {
+	SelectionID string `json:"selection_id"`
+	StepName    string `json:"step_name"`
+	Status      string `json:"status"`
+	UpdatedAt   time.Time `json:"updated_at"`
+}
+
 type selectionUpdateConn struct {
-	conn *websocket.Conn
-	mu   sync.Mutex
+	conn      *websocket.Conn
+	userID    string
+	pairingID string
+	mu        sync.Mutex
 }
 
 type SelectionUpdatesHandler struct {
@@ -44,13 +55,20 @@ func NewSelectionUpdatesHandler(allowedOrigins []string) *SelectionUpdatesHandle
 	normalizedOrigins := normalizeAllowedOrigins(allowedOrigins)
 	handler := &SelectionUpdatesHandler{
 		upgrader: websocket.Upgrader{
-			CheckOrigin: func(r *http.Request) bool {
-				origin := strings.TrimSpace(r.Header.Get("Origin"))
-				if origin == "" {
-					return false
-				}
-				return isAllowedOrigin(origin, normalizedOrigins)
-			},
+		CheckOrigin: func(r *http.Request) bool {
+			origin := strings.TrimSpace(r.Header.Get("Origin"))
+			authToken := strings.TrimSpace(r.URL.Query().Get("auth_token"))
+			log.Printf("[CheckOrigin] selections/updates Origin=%q Host=%q auth_token_present=%v", origin, r.Host, authToken != "")
+			if origin == "" {
+				log.Printf("[CheckOrigin] WARN selections/updates: empty origin — allowing connection")
+				return true
+			}
+			allowed := isAllowedOrigin(origin, normalizedOrigins)
+			if !allowed {
+				log.Printf("[CheckOrigin] REJECTED: origin=%q not in allowed list", origin)
+			}
+			return allowed
+		},
 		},
 		connections: make(map[string]map[*selectionUpdateConn]struct{}),
 		broadcast:   make(chan *SelectionUpdateMessage, 100),
@@ -65,6 +83,7 @@ func NewSelectionUpdatesHandler(allowedOrigins []string) *SelectionUpdatesHandle
 // SelectionsWebSocket handles WebSocket connections for real-time selection updates
 func (h *SelectionUpdatesHandler) SelectionsWebSocket(w http.ResponseWriter, r *http.Request) {
 	userID, ok := middleware.UserIDFromContext(r.Context())
+	log.Printf("[SelectionsWebSocket] userID=%q ok=%v auth_token=%q", userID, ok, r.URL.Query().Get("auth_token"))
 	if !ok || strings.TrimSpace(userID) == "" {
 		http.Error(w, "unauthorized", http.StatusUnauthorized)
 		return
@@ -75,7 +94,13 @@ func (h *SelectionUpdatesHandler) SelectionsWebSocket(w http.ResponseWriter, r *
 		return
 	}
 
-	client := &selectionUpdateConn{conn: conn}
+	pairingID := strings.TrimSpace(r.URL.Query().Get("pairing_id"))
+
+	client := &selectionUpdateConn{
+		conn:      conn,
+		userID:    userID,
+		pairingID: pairingID,
+	}
 
 	// Add connection with limit check
 	if !h.addConnection(userID, client) {
@@ -125,14 +150,16 @@ func (h *SelectionUpdatesHandler) broadcastUpdates() {
 	}
 }
 
-// sendUpdateToUsers broadcasts an update to all users with active connections
-// In a real application, you'd filter by pairing_id subscription
+// sendUpdateToUsers broadcasts an update to users whose pairing matches the update
 func (h *SelectionUpdatesHandler) sendUpdateToUsers(update *SelectionUpdateMessage) {
 	h.connectionsMu.RLock()
 	defer h.connectionsMu.RUnlock()
 
 	for _, userConns := range h.connections {
 		for client := range userConns {
+			if client.pairingID != "" && update.PairingID != "" && client.pairingID != update.PairingID {
+				continue
+			}
 			go func(c *selectionUpdateConn) {
 				c.mu.Lock()
 				defer c.mu.Unlock()
@@ -197,6 +224,35 @@ func (h *SelectionUpdatesHandler) removeConnection(userID string, client *select
 	}
 
 	client.conn.Close()
+}
+
+// PushProgressUpdate broadcasts a progress update to all connected clients
+func (h *SelectionUpdatesHandler) PushProgressUpdate(selectionID, stepName, status string) {
+	msg := &ProgressUpdateMessage{
+		SelectionID: selectionID,
+		StepName:    stepName,
+		Status:      status,
+		UpdatedAt:   time.Now(),
+	}
+	h.sendToAll(msg)
+}
+
+// sendToAll sends a message to every connected client
+func (h *SelectionUpdatesHandler) sendToAll(msg interface{}) {
+	h.connectionsMu.RLock()
+	defer h.connectionsMu.RUnlock()
+	for _, userConns := range h.connections {
+		for client := range userConns {
+			go func(c *selectionUpdateConn) {
+				c.mu.Lock()
+				defer c.mu.Unlock()
+				c.conn.SetWriteDeadline(time.Now().Add(selectionWriteWait))
+				if err := c.conn.WriteJSON(msg); err != nil {
+					c.conn.Close()
+				}
+			}(client)
+		}
+	}
 }
 
 // PushSelectionUpdate broadcasts a selection update event

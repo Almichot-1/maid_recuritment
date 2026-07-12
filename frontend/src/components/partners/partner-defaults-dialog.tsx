@@ -81,8 +81,10 @@ export function PartnerDefaultsDialog({
     }
   }
 
+  const isFormValid = defaultCountry && defaultCurrency && defaultSalary
+
   const handleSave = async () => {
-    if (!workspace) return
+    if (!workspace || !isFormValid) return
 
     try {
       await updateDefaults.mutateAsync({
@@ -126,9 +128,9 @@ export function PartnerDefaultsDialog({
 
         <div className="space-y-4 py-4">
           <div className="space-y-2">
-            <Label htmlFor="country">Default Country</Label>
+            <Label htmlFor="country">Default Country <span className="text-destructive">*</span></Label>
             <Select value={defaultCountry} onValueChange={setDefaultCountry}>
-              <SelectTrigger id="country">
+              <SelectTrigger id="country" className={!defaultCountry ? "border-destructive" : ""}>
                 <SelectValue placeholder="Select a country" />
               </SelectTrigger>
               <SelectContent>
@@ -139,10 +141,11 @@ export function PartnerDefaultsDialog({
                 ))}
               </SelectContent>
             </Select>
+            {!defaultCountry && <p className="text-xs text-destructive">Country is required</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="salary">Default Salary Amount</Label>
+            <Label htmlFor="salary">Default Salary Amount <span className="text-destructive">*</span></Label>
             <Input
               id="salary"
               type="number"
@@ -150,13 +153,15 @@ export function PartnerDefaultsDialog({
               placeholder="e.g., 2000"
               value={defaultSalary}
               onChange={(e) => setDefaultSalary(e.target.value)}
+              className={!defaultSalary ? "border-destructive" : ""}
             />
+            {!defaultSalary && <p className="text-xs text-destructive">Salary is required</p>}
           </div>
 
           <div className="space-y-2">
-            <Label htmlFor="currency">Default Currency</Label>
+            <Label htmlFor="currency">Default Currency <span className="text-destructive">*</span></Label>
             <Select value={defaultCurrency} onValueChange={setDefaultCurrency}>
-              <SelectTrigger id="currency">
+              <SelectTrigger id="currency" className={!defaultCurrency ? "border-destructive" : ""}>
                 <SelectValue placeholder="Select currency" />
               </SelectTrigger>
               <SelectContent>
@@ -167,6 +172,7 @@ export function PartnerDefaultsDialog({
                 ))}
               </SelectContent>
             </Select>
+            {!defaultCurrency && <p className="text-xs text-destructive">Currency is required</p>}
           </div>
 
           <div className="space-y-2">
@@ -214,7 +220,7 @@ export function PartnerDefaultsDialog({
           >
             Cancel
           </Button>
-          <Button onClick={handleSave} disabled={isSaving}>
+          <Button onClick={handleSave} disabled={isSaving || !isFormValid}>
             {isSaving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             Save
           </Button>

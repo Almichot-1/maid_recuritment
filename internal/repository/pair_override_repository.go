@@ -23,7 +23,7 @@ func NewGormCandidatePairOverrideRepository(db *gorm.DB) *GormCandidatePairOverr
 }
 
 // Upsert inserts or updates the override row for (pairing_id, candidate_id).
-// On conflict it updates country_applied, salary_offered, and updated_at.
+// On conflict it updates country_applied, salary_offered, logo_url, and updated_at.
 func (r *GormCandidatePairOverrideRepository) Upsert(override *domain.CandidatePairOverride) error {
 	if override == nil {
 		return fmt.Errorf("upsert pair override: override is nil")
@@ -46,6 +46,7 @@ func (r *GormCandidatePairOverrideRepository) Upsert(override *domain.CandidateP
 			DoUpdates: clause.AssignmentColumns([]string{
 				"country_applied",
 				"salary_offered",
+				"logo_url",
 				"updated_at",
 			}),
 		}).
@@ -125,7 +126,7 @@ func (r *GormCandidatePairOverrideRepository) BulkUpsert(overrides []*domain.Can
 					{Name: "candidate_id"},
 				},
 				DoUpdates: clause.AssignmentColumns([]string{
-					"country_applied", "salary_offered", "updated_at",
+					"country_applied", "salary_offered", "logo_url", "updated_at",
 				}),
 			}).
 			Create(batch).Error; err != nil {

@@ -9,6 +9,7 @@ const (
 	SelectionApproved SelectionStatus = "approved"
 	SelectionRejected SelectionStatus = "rejected"
 	SelectionExpired  SelectionStatus = "expired"
+	SelectionReleased SelectionStatus = "released"
 )
 
 type Selection struct {
@@ -24,10 +25,11 @@ type Selection struct {
 	EmployerIDFileName         string
 	EmployerIDUploadedAt       *time.Time
 	WarningSentFlags           int
-	ExpiresAt                  time.Time  `gorm:"not null"`
-	CreatedAt                  time.Time  `gorm:"not null;default:now()"`
-	UpdatedAt                  time.Time  `gorm:"not null;default:now()"`
-	Candidate                  *Candidate `gorm:"foreignKey:CandidateID;references:ID"`
+	ExpiresAt                  time.Time           `gorm:"not null"`
+	CreatedAt                  time.Time           `gorm:"not null;default:now()"`
+	UpdatedAt                  time.Time           `gorm:"not null;default:now()"`
+	Candidate                  *Candidate          `gorm:"foreignKey:CandidateID;references:ID"`
+	Progress                   *SelectionProgress  `gorm:"foreignKey:SelectionID;references:ID"`
 }
 
 func (Selection) TableName() string {

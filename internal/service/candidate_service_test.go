@@ -1,6 +1,7 @@
 package service
 
 import (
+	"bytes"
 	"errors"
 	"fmt"
 	"io"
@@ -61,6 +62,9 @@ func (m *candidateRepoBehaviorMock) GetByIDs(ids []string) ([]*domain.Candidate,
 func (m *candidateRepoBehaviorMock) GetByIDLean(id string) (*domain.Candidate, error) {
 	return m.GetByID(id)
 }
+func (m *candidateRepoBehaviorMock) UpdateStatus(id string, status domain.CandidateStatus) error {
+	return nil
+}
 
 type documentRepositoryMock struct{}
 
@@ -76,6 +80,9 @@ func (m *storageServiceMock) Upload(file io.Reader, fileName, contentType string
 	return "", nil
 }
 func (m *storageServiceMock) Delete(url string) error { return nil }
+func (m *storageServiceMock) Open(fileURL string) (io.ReadCloser, string, error) {
+	return io.NopCloser(bytes.NewReader(nil)), "", nil
+}
 
 type userRepositoryBehaviorMock struct{}
 
@@ -189,7 +196,7 @@ func (m *auditLogRepositoryBehaviorMock) List(filters domain.AuditLogFilters) ([
 func newCandidateServiceForTests(t *testing.T, repo *candidateRepoBehaviorMock) *CandidateService {
 	t.Helper()
 
-	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil, nil)
+	svc, err := NewCandidateService(repo, &documentRepositoryMock{}, &storageServiceMock{}, &PDFService{}, &userRepositoryBehaviorMock{}, &candidatePairShareRepositoryBehaviorMock{}, &pairOverrideRepositoryBehaviorMock{}, nil, nil, nil, nil, nil)
 	require.NoError(t, err)
 	return svc
 }
@@ -212,7 +219,7 @@ func TestCandidateService_CreateCandidate_EthiopianAgentCanCreate(t *testing.T) 
 		FullName:        "Sara",
 		Age:             &age,
 		ExperienceYears: &exp,
-		Languages:       []string{"Amharic", "English"},
+		Languages:       []domain.LanguageEntry{{Language: "Amharic", Proficiency: "Basic"}, {Language: "English", Proficiency: "Basic"}},
 		Skills:          []string{"Cooking"},
 	})
 

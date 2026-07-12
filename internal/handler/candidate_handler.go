@@ -3,6 +3,7 @@ package handler
 import (
 	"archive/zip"
 	"bytes"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -28,14 +29,21 @@ type CreateCandidateRequest struct {
 	DateOfBirth         string   `json:"date_of_birth"`
 	Age                 *int     `json:"age" validate:"omitempty,min=18,max=65"`
 	PlaceOfBirth        string   `json:"place_of_birth"`
-	Religion            string   `json:"religion"`
-	MaritalStatus       string   `json:"marital_status"`
-	ChildrenCount       *int     `json:"children_count" validate:"omitempty,min=0"`
-	EducationLevel      string   `json:"education_level"`
-	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
-	CountryOfExperience string   `json:"country_of_experience"`
-	Languages           []string `json:"languages"`
-	Skills              []string `json:"skills"`
+	PassportNumber      string   `json:"passport_number"`
+	IssueDate           string   `json:"issue_date"`
+	ExpiryDate          string   `json:"expiry_date"`
+	Gender              string   `json:"gender"`
+	IssuingAuthority    string   `json:"issuing_authority"`
+	ExperienceAbroad    json.RawMessage `json:"experience_abroad"`
+	Religion            string          `json:"religion"`
+	MaritalStatus       string          `json:"marital_status"`
+	ChildrenCount       *int            `json:"children_count" validate:"omitempty,min=0"`
+	EducationLevel      string          `json:"education_level"`
+	ExperienceYears     *int            `json:"experience_years" validate:"omitempty,min=0,max=30"`
+	CountryOfExperience string          `json:"country_of_experience"`
+	Languages           json.RawMessage `json:"languages"`
+	Skills              []string        `json:"skills"`
+	Remark              string          `json:"remark"`
 }
 
 type UpdateCandidateRequest struct {
@@ -44,14 +52,21 @@ type UpdateCandidateRequest struct {
 	DateOfBirth         string   `json:"date_of_birth"`
 	Age                 *int     `json:"age" validate:"omitempty,min=18,max=65"`
 	PlaceOfBirth        string   `json:"place_of_birth"`
-	Religion            string   `json:"religion"`
-	MaritalStatus       string   `json:"marital_status"`
-	ChildrenCount       *int     `json:"children_count" validate:"omitempty,min=0"`
-	EducationLevel      string   `json:"education_level"`
-	ExperienceYears     *int     `json:"experience_years" validate:"omitempty,min=0,max=30"`
-	CountryOfExperience string   `json:"country_of_experience"`
-	Languages           []string `json:"languages"`
-	Skills              []string `json:"skills"`
+	PassportNumber      string   `json:"passport_number"`
+	IssueDate           string   `json:"issue_date"`
+	ExpiryDate          string   `json:"expiry_date"`
+	Gender              string   `json:"gender"`
+	IssuingAuthority    string          `json:"issuing_authority"`
+	ExperienceAbroad    json.RawMessage `json:"experience_abroad"`
+	Religion            string          `json:"religion"`
+	MaritalStatus       string          `json:"marital_status"`
+	ChildrenCount       *int            `json:"children_count" validate:"omitempty,min=0"`
+	EducationLevel      string          `json:"education_level"`
+	ExperienceYears     *int            `json:"experience_years" validate:"omitempty,min=0,max=30"`
+	CountryOfExperience string          `json:"country_of_experience"`
+	Languages           json.RawMessage `json:"languages"`
+	Skills              []string        `json:"skills"`
+	Remark              string          `json:"remark"`
 }
 
 type ListCandidatesQuery struct {
@@ -101,15 +116,22 @@ type CandidateResponse struct {
 	Nationality     string                      `json:"nationality,omitempty"`
 	DateOfBirth     *string                     `json:"date_of_birth,omitempty"`
 	Age             *int                        `json:"age,omitempty"`
-	PlaceOfBirth    string                      `json:"place_of_birth,omitempty"`
-	Religion        string                      `json:"religion,omitempty"`
+	PlaceOfBirth        string                      `json:"place_of_birth,omitempty"`
+	PassportNumber      string                      `json:"passport_number,omitempty"`
+	IssueDate           *string                     `json:"issue_date,omitempty"`
+	ExpiryDate          *string                     `json:"expiry_date,omitempty"`
+	Gender              string                      `json:"gender,omitempty"`
+	IssuingAuthority    string                      `json:"issuing_authority,omitempty"`
+	ExperienceAbroad    json.RawMessage             `json:"experience_abroad,omitempty"`
+	Religion            string                      `json:"religion,omitempty"`
 	MaritalStatus   string                      `json:"marital_status,omitempty"`
 	ChildrenCount       *int                        `json:"children_count,omitempty"`
 	EducationLevel      string                      `json:"education_level,omitempty"`
 	ExperienceYears     *int                        `json:"experience_years,omitempty"`
 	CountryOfExperience string                      `json:"country_of_experience,omitempty"`
-	Languages           []string                    `json:"languages"`
+	Languages           json.RawMessage             `json:"languages"`
 	Skills          []string                    `json:"skills"`
+	Remark          string                      `json:"remark,omitempty"`
 	Status          string                      `json:"status"`
 	LockedBy        *string                     `json:"locked_by,omitempty"`
 	LockedAt        *string                     `json:"locked_at,omitempty"`
@@ -176,12 +198,13 @@ type GenerateCVRequest struct {
 	PairingID string `json:"pairing_id"`
 }
 
-// SetPairOverrideRequest carries the per-pairing country/salary values
+// SetPairOverrideRequest carries the per-pairing country/salary/logo values
 // an Ethiopian agent wants to save for a specific foreign agency.
 type SetPairOverrideRequest struct {
 	PairingID      string `json:"pairing_id"      validate:"required"`
 	CountryApplied string `json:"country_applied"`
 	SalaryOffered  string `json:"salary_offered"`
+	LogoURL        string `json:"logo_url"`
 }
 
 type PublishCandidateRequest struct {
@@ -235,12 +258,22 @@ func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.inputValidator.Struct(req); err != nil {
-		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed"})
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed", "detail": err.Error()})
 		return
 	}
 	dateOfBirth, err := parseOptionalDateString(req.DateOfBirth)
 	if err != nil {
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid date of birth"})
+		return
+	}
+	issueDate, err := parseOptionalDateString(req.IssueDate)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid issue date"})
+		return
+	}
+	expiryDate, err := parseOptionalDateString(req.ExpiryDate)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid expiry date"})
 		return
 	}
 
@@ -250,14 +283,21 @@ func (h *CandidateHandler) CreateCandidate(w http.ResponseWriter, r *http.Reques
 		DateOfBirth:         dateOfBirth,
 		Age:                 req.Age,
 		PlaceOfBirth:        req.PlaceOfBirth,
+		PassportNumber:      req.PassportNumber,
+		IssueDate:           issueDate,
+		ExpiryDate:          expiryDate,
+		Gender:              req.Gender,
+		IssuingAuthority:    req.IssuingAuthority,
+		ExperienceAbroad:    parseExperienceAbroad(req.ExperienceAbroad),
 		Religion:            req.Religion,
 		MaritalStatus:       req.MaritalStatus,
 		ChildrenCount:       req.ChildrenCount,
 		EducationLevel:      req.EducationLevel,
 		ExperienceYears:     req.ExperienceYears,
 		CountryOfExperience: req.CountryOfExperience,
-		Languages:           req.Languages,
+		Languages:           parseLanguages(req.Languages),
 		Skills:              req.Skills,
+		Remark:              req.Remark,
 	})
 	if err != nil {
 		h.writeServiceError(w, err)
@@ -296,6 +336,16 @@ func (h *CandidateHandler) UpdateCandidate(w http.ResponseWriter, r *http.Reques
 		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid date of birth"})
 		return
 	}
+	issueDate, err := parseOptionalDateString(req.IssueDate)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid issue date"})
+		return
+	}
+	expiryDate, err := parseOptionalDateString(req.ExpiryDate)
+	if err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid expiry date"})
+		return
+	}
 
 	err = h.candidateService.UpdateCandidate(id, userID, service.CandidateInput{
 		FullName:            req.FullName,
@@ -303,14 +353,21 @@ func (h *CandidateHandler) UpdateCandidate(w http.ResponseWriter, r *http.Reques
 		DateOfBirth:         dateOfBirth,
 		Age:                 req.Age,
 		PlaceOfBirth:        req.PlaceOfBirth,
+		PassportNumber:      req.PassportNumber,
+		IssueDate:           issueDate,
+		ExpiryDate:          expiryDate,
+		Gender:              req.Gender,
+		IssuingAuthority:    req.IssuingAuthority,
+		ExperienceAbroad:    parseExperienceAbroad(req.ExperienceAbroad),
 		Religion:            req.Religion,
 		MaritalStatus:       req.MaritalStatus,
 		ChildrenCount:       req.ChildrenCount,
 		EducationLevel:      req.EducationLevel,
 		ExperienceYears:     req.ExperienceYears,
 		CountryOfExperience: req.CountryOfExperience,
-		Languages:           req.Languages,
+		Languages:           parseLanguages(req.Languages),
 		Skills:              req.Skills,
+		Remark:              req.Remark,
 	})
 	if err != nil {
 		h.writeServiceError(w, err)
@@ -318,6 +375,42 @@ func (h *CandidateHandler) UpdateCandidate(w http.ResponseWriter, r *http.Reques
 	}
 
 	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "candidate updated"})
+}
+
+// UpdateCandidateStatus changes only the candidate overall status (Ethiopian agent only)
+func (h *CandidateHandler) UpdateCandidateStatus(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if strings.TrimSpace(id) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "candidate id is required"})
+		return
+	}
+
+	userID, ok := middleware.UserIDFromContext(r.Context())
+	if !ok || strings.TrimSpace(userID) == "" {
+		_ = utils.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		return
+	}
+
+	var req struct {
+		Status string `json:"status"`
+	}
+	if err := decodeJSONBody(w, r, &req, 1024); err != nil {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+
+	if strings.TrimSpace(req.Status) == "" {
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "status is required"})
+		return
+	}
+
+	err := h.candidateService.UpdateCandidateStatus(id, userID, strings.TrimSpace(req.Status))
+	if err != nil {
+		h.writeServiceError(w, err)
+		return
+	}
+
+	_ = utils.WriteJSON(w, http.StatusOK, map[string]string{"message": "candidate status updated"})
 }
 
 func (h *CandidateHandler) GetCandidate(w http.ResponseWriter, r *http.Request) {
@@ -403,7 +496,7 @@ func (h *CandidateHandler) ListCandidates(w http.ResponseWriter, r *http.Request
 
 	query, err := parseListCandidatesQuery(r)
 	if err != nil {
-		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid query parameters"})
+		h.writeServiceError(w, err)
 		return
 	}
 
@@ -532,6 +625,10 @@ func (h *CandidateHandler) PublishCandidate(w http.ResponseWriter, r *http.Reque
 				"error":             "Pairing defaults (country, currency) must be configured before publishing.",
 				"requires_defaults": true,
 			})
+			return
+		}
+		if strings.HasPrefix(err.Error(), "publish candidate: candidate status must be draft or available") {
+			_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "This candidate cannot be published in their current status."})
 			return
 		}
 		log.Printf("publish_candidate: failed for candidate=%s user=%s: %v", id, userID, err)
@@ -931,7 +1028,7 @@ func (h *CandidateHandler) SetPairOverride(w http.ResponseWriter, r *http.Reques
 		return
 	}
 	if err := h.inputValidator.Struct(req); err != nil {
-		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "pairing_id is required"})
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "validation failed", "detail": err.Error()})
 		return
 	}
 
@@ -940,6 +1037,7 @@ func (h *CandidateHandler) SetPairOverride(w http.ResponseWriter, r *http.Reques
 		CandidateID:    id,
 		CountryApplied: strings.TrimSpace(req.CountryApplied),
 		SalaryOffered:  strings.TrimSpace(req.SalaryOffered),
+		LogoURL:        strings.TrimSpace(req.LogoURL),
 	}); err != nil {
 		h.writeServiceError(w, err)
 		return
@@ -1044,7 +1142,8 @@ func (h *CandidateHandler) writeServiceError(w http.ResponseWriter, err error) {
 	case errors.Is(err, repository.ErrUserNotFound):
 		_ = utils.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "user account not found — please log out and log back in"})
 	default:
-		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "internal server error"})
+		log.Printf("writeServiceError unhandled: %v (type: %T)", err, err)
+		_ = utils.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 	}
 }
 
@@ -1242,14 +1341,21 @@ func (h *CandidateHandler) mapCandidateResponse(candidate *domain.Candidate, doc
 		DateOfBirth:         formatOptionalDate(candidate.DateOfBirth),
 		Age:                 candidate.Age,
 		PlaceOfBirth:        candidate.PlaceOfBirth,
+		PassportNumber:      candidate.PassportNumber,
+		IssueDate:           formatOptionalDate(candidate.IssueDate),
+		ExpiryDate:          formatOptionalDate(candidate.ExpiryDate),
+		Gender:              candidate.Gender,
+		IssuingAuthority:    candidate.IssuingAuthority,
+		ExperienceAbroad:    decodeExperienceAbroad(candidate.ExperienceAbroad),
 		Religion:            candidate.Religion,
 		MaritalStatus:       candidate.MaritalStatus,
 		ChildrenCount:       candidate.ChildrenCount,
 		EducationLevel:      candidate.EducationLevel,
 		ExperienceYears:     candidate.ExperienceYears,
 		CountryOfExperience: candidate.CountryOfExperience,
-		Languages:           decodeStringSlice(candidate.Languages),
+		Languages:           decodeLanguages(candidate.Languages),
 		Skills:              decodeStringSlice(candidate.Skills),
+		Remark:              candidate.Remark,
 		Status:              string(candidate.Status),
 		LockedBy:            candidate.LockedBy,
 		LockedAt:            lockedAt,
@@ -1295,6 +1401,76 @@ func (h *CandidateHandler) mapDocumentResponse(document *domain.Document) Candid
 		FileSize:     document.FileSize,
 		UploadedAt:   document.UploadedAt.UTC().Format("2006-01-02T15:04:05Z07:00"),
 	}
+}
+
+func parseLanguages(raw json.RawMessage) []domain.LanguageEntry {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []domain.LanguageEntry{}
+	}
+
+	var entries []domain.LanguageEntry
+	if err := json.Unmarshal(raw, &entries); err == nil {
+		normalized := make([]domain.LanguageEntry, 0, len(entries))
+		for _, e := range entries {
+			lang := strings.TrimSpace(e.Language)
+			prof := strings.TrimSpace(e.Proficiency)
+			if lang == "" {
+				continue
+			}
+			if prof == "" {
+				prof = "Basic"
+			}
+			normalized = append(normalized, domain.LanguageEntry{Language: lang, Proficiency: prof})
+		}
+		return normalized
+	}
+
+	var legacy []string
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return []domain.LanguageEntry{}
+	}
+	entries = make([]domain.LanguageEntry, 0, len(legacy))
+	for _, s := range legacy {
+		lang := strings.TrimSpace(s)
+		if lang == "" {
+			continue
+		}
+		entries = append(entries, domain.LanguageEntry{Language: lang, Proficiency: "Basic"})
+	}
+	return entries
+}
+
+func parseExperienceAbroad(raw json.RawMessage) []domain.ExperienceEntry {
+	if len(raw) == 0 || string(raw) == "null" {
+		return []domain.ExperienceEntry{}
+	}
+
+	var entries []domain.ExperienceEntry
+	if err := json.Unmarshal(raw, &entries); err == nil {
+		normalized := make([]domain.ExperienceEntry, 0, len(entries))
+		for _, e := range entries {
+			country := strings.TrimSpace(e.Country)
+			if country == "" {
+				continue
+			}
+			years := e.Years
+			if years < 0 {
+				years = 0
+			}
+			normalized = append(normalized, domain.ExperienceEntry{Country: country, Years: years})
+		}
+		return normalized
+	}
+
+	var legacy string
+	if err := json.Unmarshal(raw, &legacy); err != nil {
+		return []domain.ExperienceEntry{}
+	}
+	legacy = strings.TrimSpace(legacy)
+	if legacy == "" {
+		return []domain.ExperienceEntry{}
+	}
+	return []domain.ExperienceEntry{{Country: legacy, Years: 0}}
 }
 
 func parseOptionalDateString(value string) (*time.Time, error) {
@@ -1503,7 +1679,16 @@ func (h *CandidateHandler) BulkDownloadCVZip(w http.ResponseWriter, r *http.Requ
 	var buf bytes.Buffer
 	zipWriter := zip.NewWriter(&buf)
 	generated := 0
-	var lastErr error
+	errLog := make([]string, 0)
+	lastErr := ""
+
+	// Try to resolve partner name for {partner} placeholder
+	partnerName := ""
+	if pairingID != "" && h.pairingService != nil {
+		if pairing, err := h.pairingService.GetPairingByID(pairingID); err == nil && pairing != nil && pairing.Notes != nil {
+			partnerName = *pairing.Notes
+		}
+	}
 
 	for _, cid := range req.CandidateIDs {
 		cid = strings.TrimSpace(cid)
@@ -1514,15 +1699,16 @@ func (h *CandidateHandler) BulkDownloadCVZip(w http.ResponseWriter, r *http.Requ
 		// 1. Regenerate the CV (Ethiopian agent only)
 		if isEthiopianAgent {
 			if err := h.candidateService.GenerateCV(cid, userID, pairingID, service.CandidateCVBranding{}); err != nil {
-				lastErr = err
-				continue
+				log.Printf("bulk_cv_zip: GenerateCV failed for candidate=%s pairing=%s: %v", cid, pairingID, err)
+				// Fallback: try to use existing CV URL even if regen failed
 			}
 		}
 
 		// 2. Get candidate details
 		candidate, _, err := h.candidateService.GetCandidate(cid)
 		if err != nil {
-			lastErr = err
+			log.Printf("bulk_cv_zip: GetCandidate failed for candidate=%s: %v", cid, err)
+			errLog = append(errLog, fmt.Sprintf("candidate=%s: %v", cid, err))
 			continue
 		}
 
@@ -1535,6 +1721,8 @@ func (h *CandidateHandler) BulkDownloadCVZip(w http.ResponseWriter, r *http.Requ
 		}
 
 		if strings.TrimSpace(cvURL) == "" {
+			log.Printf("bulk_cv_zip: no CV URL for candidate=%s (no existing CV and GenerateCV did not set one)", cid)
+			errLog = append(errLog, fmt.Sprintf("candidate=%s: no CV URL available", cid))
 			continue
 		}
 
@@ -1543,42 +1731,48 @@ func (h *CandidateHandler) BulkDownloadCVZip(w http.ResponseWriter, r *http.Requ
 		if h.documentStorage != nil {
 			reader, _, err := h.documentStorage.Open(cvURL)
 			if err != nil {
-				lastErr = err
+				log.Printf("bulk_cv_zip: Open failed for candidate=%s url=%s: %v", cid, cvURL, err)
+				errLog = append(errLog, fmt.Sprintf("candidate=%s: open CV failed: %v", cid, err))
 				continue
 			}
 			pdfBytes, err = io.ReadAll(reader)
 			reader.Close()
 			if err != nil {
-				lastErr = err
+				log.Printf("bulk_cv_zip: ReadAll failed for candidate=%s: %v", cid, err)
+				errLog = append(errLog, fmt.Sprintf("candidate=%s: read CV failed: %v", cid, err))
 				continue
 			}
 		} else {
 			resp, err := http.Get(cvURL)
 			if err != nil {
-				lastErr = err
+				log.Printf("bulk_cv_zip: HTTP GET failed for candidate=%s url=%s: %v", cid, cvURL, err)
+				errLog = append(errLog, fmt.Sprintf("candidate=%s: HTTP GET failed: %v", cid, err))
 				continue
 			}
 			pdfBytes, err = io.ReadAll(resp.Body)
 			resp.Body.Close()
 			if err != nil {
-				lastErr = err
+				log.Printf("bulk_cv_zip: HTTP read failed for candidate=%s: %v", cid, err)
+				errLog = append(errLog, fmt.Sprintf("candidate=%s: HTTP read failed: %v", cid, err))
 				continue
 			}
 		}
 
 		// 5. Build filename
-		name := sanitizeFilename(resolveCVFilename(candidate, pattern))
+		name := sanitizeFilename(resolveCVFilename(candidate, pattern, partnerName))
 		header := &zip.FileHeader{
 			Name:   name,
 			Method: zip.Deflate,
 		}
 		writer, err := zipWriter.CreateHeader(header)
 		if err != nil {
-			lastErr = err
+			log.Printf("bulk_cv_zip: zip.CreateHeader failed for candidate=%s: %v", cid, err)
+			errLog = append(errLog, fmt.Sprintf("candidate=%s: zip error: %v", cid, err))
 			continue
 		}
 		if _, err := writer.Write(pdfBytes); err != nil {
-			lastErr = err
+			log.Printf("bulk_cv_zip: zip.Write failed for candidate=%s: %v", cid, err)
+			errLog = append(errLog, fmt.Sprintf("candidate=%s: zip write error: %v", cid, err))
 			continue
 		}
 		generated++
@@ -1587,12 +1781,26 @@ func (h *CandidateHandler) BulkDownloadCVZip(w http.ResponseWriter, r *http.Requ
 	zipWriter.Close()
 
 	if generated == 0 {
-		errMsg := "failed to generate any CVs"
-		if lastErr != nil {
-			errMsg = lastErr.Error()
+		if lastErr == "" && len(errLog) > 0 {
+			lastErr = errLog[0]
 		}
-		_ = utils.WriteJSON(w, http.StatusBadGateway, map[string]string{"error": errMsg})
+		log.Printf("bulk_cv_zip: failed to generate any CVs (total candidates=%d, errors=%d)", len(req.CandidateIDs), len(errLog))
+		for _, e := range errLog {
+			log.Printf("bulk_cv_zip:   - %s", e)
+		}
+		_ = utils.WriteJSON(w, http.StatusBadRequest, map[string]any{
+			"error":  "failed to generate any CVs",
+			"detail": lastErr,
+			"errors": errLog,
+		})
 		return
+	}
+
+	if len(errLog) > 0 {
+		log.Printf("bulk_cv_zip: partial success (%d/%d) — errors:", generated, len(req.CandidateIDs))
+		for _, e := range errLog {
+			log.Printf("bulk_cv_zip:   - %s", e)
+		}
 	}
 
 	w.Header().Set("Content-Type", "application/zip")
@@ -1622,14 +1830,14 @@ func sanitizeFilename(name string) string {
 	return name
 }
 
-func resolveCVFilename(candidate *domain.Candidate, pattern string) string {
+func resolveCVFilename(candidate *domain.Candidate, pattern, partnerName string) string {
 	age := ""
 	if candidate.Age != nil {
 		age = fmt.Sprintf("%d", *candidate.Age)
 	}
 	r := strings.NewReplacer(
 		"{name}", candidate.FullName,
-		"{partner}", "",
+		"{partner}", partnerName,
 		"{status}", string(candidate.Status),
 		"{age}", age,
 		"{nationality}", candidate.Nationality,

@@ -38,6 +38,15 @@ export default function SelectionsPage() {
   const selections = React.useMemo(() => selectionsData?.selections || [], [selectionsData?.selections])
   const pagination = selectionsData?.pagination
   
+  // Debug: log selections data
+  React.useEffect(() => {
+    if (selections.length > 0) {
+      console.log('[Selections Page] Total selections:', selections.length)
+      console.log('[Selections Page] Selections with candidates:', selections.filter(s => s.candidate?.id).length)
+      console.log('[Selections Page] First selection:', selections[0])
+    }
+  }, [selections])
+  
   const { isConnected: isWebSocketConnected } = useSelectionUpdates(activeWorkspace?.id)
 
   const activeSelections = React.useMemo(

@@ -109,12 +109,18 @@ export function useUploadSelectionDocument(selectionId: string) {
 }
 
 export function useMySelections(sortBy?: string, page?: number, pageSize?: number) {
-  const { user } = useCurrentUser();
+  const { user, isEthiopianAgent } = useCurrentUser();
   const activePairingId = usePairingStore((state) => state.activePairingId);
   const isPairingReady = usePairingStore((state) => state.isReady);
 
+  // Ethiopian agents see all their selections across all pairings, so don't include pairingId in query key
+  // Foreign agents filter by pairing, so include pairingId in query key
+  const queryKey = isEthiopianAgent 
+    ? ['my-selections', 'ethiopian', sortBy || 'newest', page, pageSize]
+    : ['my-selections', activePairingId, sortBy || 'newest', page, pageSize];
+
   return useQuery({
-    queryKey: ['my-selections', activePairingId, sortBy || 'newest', page, pageSize],
+    queryKey,
     queryFn: async () => {
       const params = new URLSearchParams();
       if (sortBy) {
@@ -127,43 +133,60 @@ export function useMySelections(sortBy?: string, page?: number, pageSize?: numbe
         params.append('page_size', pageSize.toString());
       }
       const response = await api.get<{ selections: Selection[]; pagination: { page: number; page_size: number; total: number; has_more: boolean } }>(`/selections/my?${params.toString()}`);
+      console.log('[useMySelections] API Response:', response.data);
+      console.log('[useMySelections] Selections count:', response.data.selections?.length || 0);
+      console.log('[useMySelections] First selection:', response.data.selections?.[0]);
       return response.data;
     },
-    enabled: !!user && isPairingReady && !!activePairingId,
-    staleTime: 30_000,
-    refetchOnWindowFocus: false,
+    // Ethiopian agents own candidates, so they can fetch selections without needing an active pairing.
+    // Foreign agents must have an active pairing to see their selections.
+    enabled: !!user && isPairingReady && (isEthiopianAgent || !!activePairingId),
+    staleTime: 0, // Force fresh data
+    gcTime: 0, // Don't cache (replaces deprecated cacheTime)
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
 }
 
 export function useSelection(id?: string) {
-  const { user } = useCurrentUser();
+  const { user, isEthiopianAgent } = useCurrentUser();
   const activePairingId = usePairingStore((state) => state.activePairingId);
   const isPairingReady = usePairingStore((state) => state.isReady);
 
+  // Similar to useMySelections, Ethiopian agents don't need pairingId in query key
+  const queryKey = isEthiopianAgent
+    ? ['selection', id, 'ethiopian']
+    : ['selection', id, activePairingId];
+
   return useQuery({
-    queryKey: ['selection', id, activePairingId],
+    queryKey,
     queryFn: async () => {
       const response = await api.get<{ selection: Selection }>(`/selections/${id}`);
       return response.data.selection;
     },
-    enabled: !!id && !!user && isPairingReady && !!activePairingId,
+    enabled: !!id && !!user && isPairingReady && (isEthiopianAgent || !!activePairingId),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
 }
 
 export function useSelectionApprovals(id?: string) {
-  const { user } = useCurrentUser();
+  const { user, isEthiopianAgent } = useCurrentUser();
   const activePairingId = usePairingStore((state) => state.activePairingId);
   const isPairingReady = usePairingStore((state) => state.isReady);
 
+  // Similar to useMySelections, Ethiopian agents don't need pairingId in query key
+  const queryKey = isEthiopianAgent
+    ? ['selection-approvals', id, 'ethiopian']
+    : ['selection-approvals', id, activePairingId];
+
   return useQuery({
-    queryKey: ['selection-approvals', id, activePairingId],
+    queryKey,
     queryFn: async () => {
       const response = await api.get<SelectionApprovalStatus>(`/selections/${id}/approvals`);
       return response.data;
     },
-    enabled: !!id && !!user && isPairingReady && !!activePairingId,
+    enabled: !!id && !!user && isPairingReady && (isEthiopianAgent || !!activePairingId),
     staleTime: 30_000,
     refetchOnWindowFocus: false,
   });
@@ -217,6 +240,31 @@ export function useRejectSelection(id: string, candidateId?: string) {
     onError: (error: unknown) => {
       const response = axios.isAxiosError<ApiErrorResponse>(error) ? error.response : undefined;
       toast.error(response?.data?.error || response?.data?.message || 'Failed to reject selection');
+    },
+  });
+}
+
+export function useUnlockSelection(selectionId: string, candidateId?: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const response = await api.post(`/selections/${selectionId}/unlock`);
+      return response.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['selection', selectionId] });
+      queryClient.invalidateQueries({ queryKey: ['selection-approvals', selectionId] });
+      queryClient.invalidateQueries({ queryKey: ['my-selections'] });
+      queryClient.invalidateQueries({ queryKey: ['candidates'] });
+      if (candidateId) {
+        queryClient.invalidateQueries({ queryKey: ['candidate', candidateId] });
+      }
+      toast.success('Candidate unlocked successfully');
+    },
+    onError: (error: unknown) => {
+      const response = axios.isAxiosError<ApiErrorResponse>(error) ? error.response : undefined;
+      toast.error(response?.data?.error || response?.data?.message || 'Failed to unlock candidate');
     },
   });
 }
